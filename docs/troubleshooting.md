@@ -133,3 +133,20 @@ State whether the problem occurs after a fresh import, a restart or a layout
 change. Describe expected and actual results. Remove credentials, license text
 and private configuration before sharing. Never attach vendor images or full
 personal lab archives to a public issue.
+
+## Experimental WSL installations
+
+A user has reported running IOL from the prebuilt image under Windows 10 WSL
+with local DNS and hostname adjustments. This is a limited field report, not
+validation of all device families, Alpine/macvlan networking or Docker Desktop.
+The supported installation target remains rootful Docker Engine on x86-64 Linux.
+QEMU devices require usable `/dev/kvm` inside the application container; check
+that directly rather than inferring support from the Windows version alone.
+
+Check hostname resolution separately from external DNS. For a container named
+`weblab`, use `--hostname weblab --add-host weblab:127.0.0.1`, as in the
+[plain Docker example](installation.md#run-the-prebuilt-image-without-compose).
+The Compose files already include this mapping. An external `--dns` override is
+specific to the local resolver/network and is not a general installation step.
+Do not copy another machine's resolver address, loopback route or WSL address.
+Keep any required image licensing appropriate to its execution environment.

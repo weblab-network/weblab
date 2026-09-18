@@ -52,6 +52,37 @@ pin a version or digest when you want deliberate upgrades. `edge` follows main;
 stable release. Save configurations, export a ZIP and stop the lab before pulling
 and recreating an existing deployment. Preserve its image/data mounts.
 
+## Run the prebuilt image without Compose
+
+For the same Linux/KVM setup, with persistent named volumes:
+
+```sh
+docker pull alpine:latest
+docker pull ghcr.io/weblab-network/weblab:latest
+docker run -d --name weblab --init --stop-timeout 120 \
+  --hostname weblab --add-host weblab:127.0.0.1 \
+  --network host --cap-add NET_ADMIN \
+  --device /dev/net/tun --device /dev/kvm \
+  -e WL_BIND=127.0.0.1 \
+  -v weblab-images:/iou -v weblab-data:/data \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/weblab-network/weblab:latest
+```
+
+Omit `--device /dev/kvm` for IOL-only labs. Use `docker logs -f weblab` to inspect
+startup and `docker stop weblab` to stop gracefully. Keep the same named volumes
+when recreating the container to upgrade it. Uploaded images live in `/iou` and
+saved lab state in `/data`; without these mounts, removing a container also
+removes those files. Alpine PCs use the host's Docker image store, which is why
+`docker pull alpine:latest` is a separate step.
+
+The tested Linux setup needs the listed devices and NET_ADMIN, without
+`--privileged`. Change `WL_BIND` to a trusted LAN address when remote access is
+wanted. Do not add `-p` with `--network host`: Docker ignores published ports in
+[host networking](https://docs.docker.com/engine/network/drivers/host/).
+The `--add-host` entry makes the chosen hostname resolve inside the container
+for NETMAP; change both values if you choose a different hostname.
+
 ## Docker Compose
 
 Requires an **x86-64 Linux host**, rootful Docker Engine with Compose v2, and

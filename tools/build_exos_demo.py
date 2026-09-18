@@ -20,10 +20,29 @@ import lab_backup
 import lab_server
 
 
+class ReplayConsole(console_capture.Console):
+    """Keep boot/login output received while acquiring the console input lock."""
+    def __init__(self, port):
+        self.captured = bytearray()
+        super().__init__(port)
+
+    def receive(self, deadline):
+        data = super().receive(deadline)
+        if self.captured is not None:
+            self.captured.extend(data)
+        return data
+
+
 class EXOSConsole:
     def __init__(self, lab, node_id):
-        self.console = console_capture.Console(lab.runtime[node_id]['port'])
-        self.console.acquire()
+        self.console = ReplayConsole(lab.runtime[node_id]['port'])
+        try:
+            self.console.acquire()
+        except BaseException:
+            self.console.close()
+            raise
+        self.pending = bytes(self.console.captured)
+        self.console.captured = None
 
     def close(self):
         self.console.close()
@@ -33,20 +52,22 @@ class EXOSConsole:
 
     def wait(self, pattern, timeout=180):
         deadline = time.monotonic() + timeout
-        output = b''
+        output = self.pending
+        self.pending = b''
         while True:
+            text = console_capture.clean_output(output)
+            if re.search(pattern, text, re.I | re.M):
+                return text
             try:
                 output += self.console.receive(deadline)
             except Exception as error:
                 raise RuntimeError(f'EXOS console: {error}\n{console_capture.clean_output(output)[-2000:]}') from error
             if not self.console.lock or not self.console.lock['mine']:
                 raise RuntimeError('EXOS demo console input lock lost')
-            text = console_capture.clean_output(output)
-            if re.search(pattern, text, re.I | re.M):
-                return text
 
     def login(self, fresh):
-        self.send('')
+        # Even Enter can interrupt EXOS boot into its developer menu. Wait
+        # passively, including replay received during the lock handshake.
         self.wait(r'Authentication Service \(AAA\).*available|^(?:[\w-]+ )?login:\s*$', timeout=300)
         # The readiness announcement can precede successful AAA requests briefly.
         for attempt in range(12):

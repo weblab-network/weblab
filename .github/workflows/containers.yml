@@ -87,7 +87,18 @@ jobs:
       - name: Download and verify the pinned EXOS release
         run: python3 tools/fetch_exos_demo_image.py packaging/exos/build
       - name: Build saved baseline and test restored forwarding
-        run: sudo python3 -u tools/build_exos_demo.py packaging/exos/build/EXOS-VM_33.1.1.31.qcow2 packaging/exos/build/demo.zip
+        run: |
+          if sudo python3 -u tools/build_exos_demo.py packaging/exos/build/EXOS-VM_33.1.1.31.qcow2 packaging/exos/build/demo.zip 2>&1 | tee "$RUNNER_TEMP/exos-demo.log"; then
+            exit 0
+          fi
+          python3 - "$RUNNER_TEMP/exos-demo.log" <<'PY'
+          from pathlib import Path
+          import sys
+          message = Path(sys.argv[1]).read_text(errors='replace')[-6000:]
+          message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::error title=EXOS demo build failed::' + message)
+          PY
+          exit 1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
