@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Build, run and troubleshoot network labs in one browser workspace. Weblab brings your topology, device consoles and exercise instructions together.">
+  <meta name="theme-color" content="#10171c">
+  <title>Weblab — Your network lab. All in one view.</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="page.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="#" aria-label="Weblab home"><span class="brand-mark" aria-hidden="true">w<span>e</span>b<span class="brand-dot">.</span></span><span class="brand-label">LAB<span>NETWORK WORKSPACE</span></span></a>
+    <nav aria-label="Main navigation">
+      <a href="#features">Explore</a>
+      <a href="https://github.com/weblab-network/weblab/wiki">Documentation <span aria-hidden="true">↗</span></a>
+      <a class="nav-github" href="https://github.com/weblab-network/weblab">GitHub <span aria-hidden="true">↗</span></a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero container" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> OPEN SOURCE. SELF-HOSTED. YOUR LAB.</p>
+        <h1 id="hero-title">Your network lab.<br><span>All in one view.</span></h1>
+        <p class="hero-description">Build a topology. Open your consoles. Follow the exercise.<br class="desktop-break"> Keep your focus in one browser workspace.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="https://github.com/weblab-network/weblab/wiki/Installation">Build your first lab <span aria-hidden="true">→</span></a>
+          <a class="button secondary" href="https://github.com/weblab-network/weblab">Explore the source <span aria-hidden="true">↗</span></a>
+        </div>
+        <p class="hero-note">Runs on your Linux host. Works from your desktop or tablet.</p>
+      </div>
+      <figure class="workspace-shot">
+        <div class="shot-bar"><span><i aria-hidden="true"></i> THE WORKSPACE</span><span>TOPOLOGY + CONSOLES + INSTRUCTIONS</span></div>
+        <a href="assets/workspace.png" target="_blank" rel="noopener" aria-label="Open full-size Weblab workspace screenshot in a new tab">
+          <img src="assets/workspace.png" width="1920" height="1080" alt="A running ten-device Weblab topology with Cisco, Extreme and Arista devices, an EXOS console and the node inspector." fetchpriority="high">
+          <span class="image-hint">View full size ↗</span>
+        </a>
+        <figcaption>A mixed-vendor lab, connected and running. Your map and CLI stay together.</figcaption>
+      </figure>
+    </section>
+
+    <section class="platforms container" aria-labelledby="platforms-title">
+      <p id="platforms-title" class="eyebrow">BRING YOUR OWN IMAGES</p>
+      <ul><li>Cisco <span>IOL / IOSv / IOSvL2</span></li><li>Arista <span>vEOS-lab</span></li><li>Extreme <span>Virtual EXOS</span></li><li>Alpine <span>Linux PCs</span></li></ul>
+      <a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Device-profiles">See supported profiles and requirements <span aria-hidden="true">↗</span></a>
+    </section>
+
+    <section id="features" class="container feature-section" aria-labelledby="features-title">
+      <div class="section-heading"><p class="eyebrow">LESS WINDOW SWITCHING. MORE NETWORKING.</p><h2 id="features-title">A workspace that<br>works the way you do.</h2><p>From your first VLAN to a multi-vendor troubleshooting lab, keep the tools you need within reach.</p></div>
+      <div class="feature-grid">
+        <article><span class="feature-number">01 / WORKSPACE</span><h3>Make room for the whole lab.</h3><p>Float, resize and arrange the topology, consoles and instructions. Keep consoles in tabs or open them side by side. Go fullscreen when it’s time to focus.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Topology">Explore the workspace ↗</a></article>
+        <article><span class="feature-number">02 / CONSOLES</span><h3>Pick up where you left off.</h3><p>View the same device console from multiple workstations. Input locks and confirmed takeover keep typing coordinated. On a tablet, Ctrl+C, Tab and arrow keys are within reach.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Consoles">Meet the console tools ↗</a></article>
+        <article><span class="feature-number">03 / PRACTICE</span><h3>Keep the exercise beside the CLI.</h3><p>Open Markdown or text instructions in a floating window. Copy commands into a console and work through the lab without leaving the page.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Instructions">Read about instructions ↗</a></article>
+      </div>
+      <figure class="workspace-shot floating-shot">
+        <div class="shot-bar"><span><i aria-hidden="true"></i> YOUR LAYOUT, YOUR FOCUS</span><span>FLOAT · RESIZE · ARRANGE</span></div>
+        <a href="assets/floating-windows.png" target="_blank" rel="noopener" aria-label="Open full-size floating-window screenshot in a new tab">
+          <img src="assets/floating-windows.png" width="1920" height="1080" alt="Six arranged windows show a topology, four device consoles and Markdown instructions together in Weblab." loading="lazy">
+          <span class="image-hint">View full size ↗</span>
+        </a>
+        <figcaption>The map, four consoles and instructions, arranged side by side in one browser tab.</figcaption>
+      </figure>
+    </section>
+
+    <section class="spotlight container" aria-labelledby="fault-title">
+      <div class="spotlight-copy"><p class="eyebrow">BREAK IT. UNDERSTAND IT. FIX IT.</p><h2 id="fault-title">See how your<br>network reacts.</h2><p>Block traffic in one direction or both while a lab is running. Model a silent link failure, watch a protocol converge, and restore traffic when you’re ready.</p><p>For supported IOSv and IOL profiles, cable controls also request a link-down state at the selected endpoint.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Link-failures">Explore link failure controls <span aria-hidden="true">↗</span></a><div class="inline-note"><span aria-hidden="true">↔</span><p>Frame loss and carrier state are separate controls, so you can practice different kinds of failure.</p></div></div>
+      <figure class="detail-shot"><img src="assets/link-actions.png" alt="Link actions with separate controls for directional frame loss and unplugging each endpoint." width="713" height="840" loading="lazy"><figcaption>Change link behavior without rebuilding your topology.</figcaption></figure>
+    </section>
+
+    <section class="spotlight reverse container" aria-labelledby="images-title">
+      <div class="spotlight-copy"><p class="eyebrow">YOUR IMAGES. YOUR TOPOLOGIES.</p><h2 id="images-title">Build once.<br>Practice, save, share.</h2><p>Upload supported device images, connect the interfaces and start your lab. Mix device families in the same topology to explore how they work together.</p><p>Share a topology as JSON, seed fresh Cisco devices with initial configurations, or export a stopped lab’s saved device storage as a ZIP.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Saving-and-restoring-labs">Find the right export for your lab <span aria-hidden="true">↗</span></a><p class="small-note">Device images and required licenses are supplied by you. Save device configurations before stopping; Alpine PC filesystems are temporary.</p></div>
+      <figure class="detail-shot upload-shot"><img src="assets/upload-image.png" alt="Weblab image upload dialog with a file picker for supported device images." width="602" height="447" loading="lazy"><figcaption>Add your images directly from the device library.</figcaption></figure>
+    </section>
+
+    <section id="start" class="start-section container" aria-labelledby="start-title">
+      <div class="section-heading"><p class="eyebrow">FROM SOURCE TO YOUR FIRST LAB</p><h2 id="start-title">Start small. Connect more.</h2><p>Use an x86-64 Linux host or VM with rootful Docker and Compose. Enable KVM for QEMU devices.</p></div>
+      <ol class="steps"><li><span>01</span><h3>Set up Weblab</h3><p>Follow the installation guide for Docker, host permissions and remote access.</p><a href="https://github.com/weblab-network/weblab/wiki/Installation">Installation guide ↗</a></li><li><span>02</span><h3>Add your devices</h3><p>Supply your images, then build a topology or import the starter example.</p><a href="https://github.com/weblab-network/weblab/blob/main/examples/starter.md">Try the starter lab ↗</a></li><li><span>03</span><h3>Make it your own</h3><p>Practice routing, switching and failure scenarios. Save your work and share an exercise.</p><a href="https://github.com/weblab-network/weblab/blob/main/examples/ospf-practice.md">Explore an OSPF exercise ↗</a></li></ol>
+      <div class="install-command"><div><span class="eyebrow">GET THE SOURCE</span><code id="clone-command">git clone https://github.com/weblab-network/weblab.git</code></div><button type="button" id="copy-command" hidden>Copy command</button></div><p id="copy-status" role="status" aria-live="polite"></p>
+      <p class="deployment-note">Designed for your own host or a trusted group. Weblab currently has no authentication or per-user isolation; keep the lab service on a trusted network or behind an SSH tunnel.</p>
+    </section>
+    <section class="closing container"><div><p class="eyebrow">BUILT TO BE SHARED</p><h2>Your next lab<br>starts here.</h2></div><div><p>Free, open-source tools for hands-on networking.<br>Try a lab, report an issue, or help improve the project.</p><a class="button primary" href="https://github.com/weblab-network/weblab">Find Weblab on GitHub <span aria-hidden="true">↗</span></a></div></section>
+  </main>
+  <footer class="container"><a class="footer-brand" href="#">weblab<span>.</span></a><p>© 2026 weblab.network · Weblab code: <a href="https://github.com/weblab-network/weblab/blob/main/LICENSE">MIT</a> · <a href="https://github.com/weblab-network/weblab/blob/main/THIRD_PARTY.md">Third-party licenses</a></p><a href="https://github.com/weblab-network/weblab/issues">Feedback &amp; issues ↗</a></footer>
+</body>
+</html>

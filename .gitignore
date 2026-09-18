@@ -36,3 +36,6 @@ node_modules/
 test-results/
 playwright-report/
 .DS_Store
+
+# Local media staging; publish selected assets separately.
+/1st_page/
