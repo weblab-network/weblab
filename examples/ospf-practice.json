@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "name": "OSPF multi-area practice \u2014 baseline",
+  "nodes": [
+    {
+      "id": "ospf_practice_r1",
+      "name": "R1",
+      "type": "router",
+      "image": "cisco_iol-17.18.02.bin",
+      "x": 250,
+      "y": 250,
+      "memory": 1024,
+      "ethernet": 1,
+      "ipv4": "",
+      "gateway": "",
+      "startup_config": "hostname R1\nno ip domain lookup\ninterface Loopback0\n ip address 10.255.0.1 255.255.255.255\ninterface Ethernet0/0\n ip address 10.0.12.1 255.255.255.252\n no shutdown\ninterface Ethernet0/1\n ip address 192.0.2.1 255.255.255.0\n no shutdown\nend\n"
+    },
+    {
+      "id": "ospf_practice_r2",
+      "name": "R2",
+      "type": "router",
+      "image": "cisco_iol-17.18.02.bin",
+      "x": 650,
+      "y": 250,
+      "memory": 1024,
+      "ethernet": 1,
+      "ipv4": "",
+      "gateway": "",
+      "startup_config": "hostname R2\nno ip domain lookup\ninterface Loopback0\n ip address 10.255.0.2 255.255.255.255\ninterface Ethernet0/0\n ip address 10.0.12.2 255.255.255.252\n no shutdown\ninterface Ethernet0/1\n ip address 10.0.23.1 255.255.255.252\n no shutdown\nend\n"
+    },
+    {
+      "id": "ospf_practice_r3",
+      "name": "R3",
+      "type": "router",
+      "image": "cisco_iol-17.18.02.bin",
+      "x": 1050,
+      "y": 250,
+      "memory": 1024,
+      "ethernet": 1,
+      "ipv4": "",
+      "gateway": "",
+      "startup_config": "hostname R3\nno ip domain lookup\ninterface Loopback0\n ip address 10.255.0.3 255.255.255.255\ninterface Ethernet0/0\n ip address 10.0.23.2 255.255.255.252\n no shutdown\ninterface Ethernet0/1\n ip address 198.51.100.1 255.255.255.0\n no shutdown\nend\n"
+    },
+    {
+      "id": "ospf_practice_pc1",
+      "name": "PC1",
+      "type": "pc",
+      "image": "alpine:latest",
+      "x": 250,
+      "y": 550,
+      "ipv4": "192.0.2.10/24",
+      "gateway": "192.0.2.1"
+    },
+    {
+      "id": "ospf_practice_pc2",
+      "name": "PC2",
+      "type": "pc",
+      "image": "alpine:latest",
+      "x": 1050,
+      "y": 550,
+      "ipv4": "198.51.100.10/24",
+      "gateway": "198.51.100.1"
+    }
+  ],
+  "links": [
+    {
+      "id": "ospf_practice_l1",
+      "a": {
+        "node": "ospf_practice_r1",
+        "port": "0/0"
+      },
+      "b": {
+        "node": "ospf_practice_r2",
+        "port": "0/0"
+      }
+    },
+    {
+      "id": "ospf_practice_l2",
+      "a": {
+        "node": "ospf_practice_r2",
+        "port": "0/1"
+      },
+      "b": {
+        "node": "ospf_practice_r3",
+        "port": "0/0"
+      }
+    },
+    {
+      "id": "ospf_practice_l3",
+      "a": {
+        "node": "ospf_practice_r1",
+        "port": "0/1"
+      },
+      "b": {
+        "node": "ospf_practice_pc1",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "ospf_practice_l4",
+      "a": {
+        "node": "ospf_practice_r3",
+        "port": "0/1"
+      },
+      "b": {
+        "node": "ospf_practice_pc2",
+        "port": "eth0"
+      }
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+# Optional IOSv acceleration. Stop/save the lab before recreating its container:
+# docker compose -f compose.yaml -f compose.kvm.yaml up -d --build
+services:
+  lab:
+    devices:
+      - /dev/kvm:/dev/kvm

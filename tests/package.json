@@ -1,0 +1,12 @@
+{
+  "name": "weblab-browser-tests",
+  "private": true,
+  "description": "Development-only browser regression dependencies for Weblab",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "playwright": "1.55.1"
+  },
+  "license": "MIT"
+}

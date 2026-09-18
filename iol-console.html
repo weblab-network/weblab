@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cisco IOL Console</title>
+
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0b0f14;
+      color: #d7dde5;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+    }
+
+    body {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      padding: 12px;
+      gap: 10px;
+    }
+
+    .toolbar {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 10px;
+      border: 1px solid #28323f;
+      border-radius: 8px;
+      background: #121820;
+      box-shadow: 0 5px 18px rgb(0 0 0 / 25%);
+    }
+
+    .title {
+      flex: 0 0 auto;
+      margin-right: 4px;
+      font-weight: 650;
+      letter-spacing: .01em;
+    }
+
+    #url {
+      min-width: 170px;
+      flex: 1 1 440px;
+      height: 34px;
+      padding: 0 10px;
+      border: 1px solid #344151;
+      border-radius: 6px;
+      outline: none;
+      background: #0a0f15;
+      color: #d7dde5;
+      font: 13px ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    #url:focus { border-color: #5596e6; }
+
+    button {
+      height: 34px;
+      padding: 0 13px;
+      border: 1px solid #3a4859;
+      border-radius: 6px;
+      background: #202a36;
+      color: #edf3fa;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button:hover { background: #2a3746; }
+    button:disabled { cursor: default; opacity: .48; }
+
+    #connect { border-color: #376aa5; background: #184f88; }
+    #connect:hover:not(:disabled) { background: #1d609f; }
+
+    .status {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 116px;
+      color: #aeb8c4;
+      font-size: 13px;
+    }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #78828d;
+      box-shadow: 0 0 0 3px rgb(120 130 141 / 12%);
+    }
+
+    .status.connecting .status-dot {
+      background: #d9a441;
+      box-shadow: 0 0 0 3px rgb(217 164 65 / 14%);
+    }
+
+    .status.connected .status-dot {
+      background: #45bd72;
+      box-shadow: 0 0 0 3px rgb(69 189 114 / 14%);
+    }
+
+    .status.error .status-dot {
+      background: #e05b65;
+      box-shadow: 0 0 0 3px rgb(224 91 101 / 14%);
+    }
+
+    .terminal-shell {
+      min-height: 0;
+      overflow: hidden;
+      padding: 8px;
+      border: 1px solid #28323f;
+      border-radius: 8px;
+      background: #000;
+      box-shadow: 0 5px 18px rgb(0 0 0 / 25%);
+    }
+
+    #terminal { width: 100%; height: 100%; }
+
+    @media (max-width: 760px) {
+      body { padding: 6px; gap: 6px; }
+      .toolbar { flex-wrap: wrap; }
+      .title { width: 100%; }
+      #url { flex-basis: 100%; }
+      .status { margin-left: auto; }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="toolbar">
+    <span class="title">IOL Console</span>
+    <input id="url" type="text" spellcheck="false"
+           aria-label="WebSocket URL">
+    <button id="connect" type="button">Connect</button>
+    <button id="disconnect" type="button" disabled>Disconnect</button>
+    <button id="clear" type="button">Clear</button>
+    <span id="status" class="status disconnected">
+      <span class="status-dot"></span>
+      <span id="statusText">Disconnected</span>
+    </span>
+  </header>
+
+  <main class="terminal-shell">
+    <div id="terminal"></div>
+  </main>
+
+  <script type="module">
+    import { Terminal } from
+      "https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/+esm";
+    import { FitAddon } from
+      "https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/+esm";
+
+    const WS_PORT = 8020;
+    const WS_PATH = "/console";
+
+    const terminalElement = document.getElementById("terminal");
+    const urlElement = document.getElementById("url");
+    const connectButton = document.getElementById("connect");
+    const disconnectButton = document.getElementById("disconnect");
+    const clearButton = document.getElementById("clear");
+    const statusElement = document.getElementById("status");
+    const statusText = document.getElementById("statusText");
+
+    // When opened as a local file, change the hostname here or in the URL box.
+    const defaultHost = window.location.hostname || "127.0.0.1";
+    const defaultScheme = window.location.protocol === "https:" ? "wss" : "ws";
+    urlElement.value = `${defaultScheme}://${defaultHost}:${WS_PORT}${WS_PATH}`;
+
+    const terminal = new Terminal({
+      cursorBlink: true,
+      cursorStyle: "block",
+      convertEol: false,
+      fontFamily: '"Cascadia Mono", "DejaVu Sans Mono", Consolas, monospace',
+      fontSize: 12,
+      lineHeight: 1.1,
+      scrollback: 5000,
+      theme: {
+        background: "#000000",
+        foreground: "#d6d6d6",
+        cursor: "#f2f2f2",
+        cursorAccent: "#000000",
+        selectionBackground: "#3b638c99",
+        black: "#000000",
+        brightBlack: "#686868",
+        red: "#cd3131",
+        brightRed: "#f14c4c",
+        green: "#0dbc79",
+        brightGreen: "#23d18b",
+        yellow: "#e5e510",
+        brightYellow: "#f5f543",
+        blue: "#2472c8",
+        brightBlue: "#3b8eea",
+        magenta: "#bc3fbc",
+        brightMagenta: "#d670d6",
+        cyan: "#11a8cd",
+        brightCyan: "#29b8db",
+        white: "#e5e5e5",
+        brightWhite: "#ffffff"
+      }
+    });
+
+    const fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon);
+    terminal.open(terminalElement);
+    fitAddon.fit();
+    terminal.focus();
+
+    let socket = null;
+    let reconnectTimer = null;
+    let reconnectDelay = 1000;
+    let reconnectWanted = true;
+
+    function setStatus(state, text) {
+      statusElement.className = `status ${state}`;
+      statusText.textContent = text;
+      connectButton.disabled = state === "connected" || state === "connecting";
+      disconnectButton.disabled = state === "disconnected";
+    }
+
+    function cancelReconnect() {
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    }
+
+    function scheduleReconnect() {
+      if (!reconnectWanted || reconnectTimer !== null) return;
+      const seconds = Math.ceil(reconnectDelay / 1000);
+      setStatus("error", `Retry in ${seconds}s`);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+    }
+
+    function connect() {
+      if (socket &&
+          (socket.readyState === WebSocket.OPEN ||
+           socket.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
+      cancelReconnect();
+      reconnectWanted = true;
+      const url = urlElement.value.trim();
+      if (!/^wss?:\/\//i.test(url)) {
+        setStatus("error", "Invalid URL");
+        return;
+      }
+
+      setStatus("connecting", "Connecting");
+      const currentSocket = new WebSocket(url);
+      currentSocket.binaryType = "arraybuffer";
+      socket = currentSocket;
+
+      currentSocket.addEventListener("open", () => {
+        if (socket !== currentSocket) return;
+        reconnectDelay = 1000;
+        setStatus("connected", "Connected");
+        terminal.focus();
+      });
+
+      currentSocket.addEventListener("message", async event => {
+        if (socket !== currentSocket) return;
+        if (event.data instanceof ArrayBuffer) {
+          terminal.write(new Uint8Array(event.data));
+        } else if (event.data instanceof Blob) {
+          terminal.write(new Uint8Array(await event.data.arrayBuffer()));
+        } else {
+          terminal.write(event.data);
+        }
+      });
+
+      currentSocket.addEventListener("error", () => {
+        if (socket === currentSocket) setStatus("error", "Socket error");
+      });
+
+      currentSocket.addEventListener("close", event => {
+        if (socket !== currentSocket) return;
+        socket = null;
+        if (!reconnectWanted) {
+          setStatus("disconnected", "Disconnected");
+          return;
+        }
+        if (event.code === 1002) {
+          terminal.writeln(`\r\n[WebSocket protocol error: ${event.reason || "unknown"}]`);
+        }
+        scheduleReconnect();
+      });
+    }
+
+    function disconnect() {
+      reconnectWanted = false;
+      cancelReconnect();
+      const currentSocket = socket;
+      socket = null;
+      if (currentSocket &&
+          (currentSocket.readyState === WebSocket.OPEN ||
+           currentSocket.readyState === WebSocket.CONNECTING)) {
+        currentSocket.close(1000, "User disconnected");
+      }
+      setStatus("disconnected", "Disconnected");
+    }
+
+    terminal.onData(data => {
+      if (socket?.readyState === WebSocket.OPEN) socket.send(data);
+    });
+
+    connectButton.addEventListener("click", connect);
+    disconnectButton.addEventListener("click", disconnect);
+    clearButton.addEventListener("click", () => {
+      terminal.clear();
+      terminal.focus();
+    });
+    urlElement.addEventListener("keydown", event => {
+      if (event.key === "Enter") connect();
+    });
+
+    let resizeTimer = null;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        fitAddon.fit();
+        terminal.focus();
+      }, 80);
+    });
+
+    window.addEventListener("beforeunload", () => {
+      reconnectWanted = false;
+      socket?.close(1000, "Page closed");
+    });
+
+    connect();
+  </script>
+</body>
+</html>

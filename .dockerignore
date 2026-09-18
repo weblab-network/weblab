@@ -1,0 +1,25 @@
+# Allowlist the build context: never send local images, licenses, state or Git history.
+**
+!Dockerfile
+!lab_server.py
+!link_fabric.py
+!iol_l1.py
+!qmp.py
+!lab_backup.py
+!console_capture.py
+!cisco_config.py
+!saved_config.py
+!initial_config.py
+!vios.py
+!qemu_net.py
+!start-lab.sh
+!wrapper.pl
+!wrapper-ws.pl
+!iou2net.pl
+!iol-console.html
+!web/
+!web/**
+!THIRD_PARTY.md
+!licenses/
+!licenses/**
+!LICENSE

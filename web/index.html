@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+  <title>Weblab · Topology workspace</title>
+  <link rel="stylesheet" href="/vendor/xterm.css">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/vendor/xterm.js" defer></script>
+  <script src="/vendor/addon-fit.js" defer></script>
+  <script src="/vendor/markdown-it.js" defer></script>
+  <script src="/app.js" defer></script>
+  <script src="/instructions.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Weblab home"><span class="brand-mark">w<span>e</span>b</span><span>LAB<span class="brand-sub">NETWORK WORKSPACE</span></span></a>
+    <div class="lab-heading"><span class="eyebrow">TOPOLOGY</span><input id="lab-name" aria-label="Lab name" value="Untitled lab" maxlength="80"></div>
+    <span id="save-state" class="save-state">Connecting…</span>
+    <div class="header-actions"><button id="export" aria-label="Export lab" title="Export topology or saved lab">Export</button><button id="import" aria-label="Import lab" title="Import lab">Import</button><button id="stop-all">■ <span>Stop lab</span></button><button class="primary" id="start-all">▶ <span>Start lab</span></button><button id="open-instructions" aria-label="Open lab instructions" title="Open instructions (.md or .txt)" aria-controls="instructions-panel" aria-expanded="false">▤ <span>Instructions</span></button></div>
+  </header>
+  <div class="workspace" id="workspace">
+    <aside class="palette" id="device-library" aria-label="Device library">
+      <div class="panel-heading"><div class="section-label">DEVICE LIBRARY <span>03</span></div><button class="panel-close" id="close-palette" aria-label="Hide device library" title="Hide device library">‹</button></div>
+      <p class="muted intro">Drag a device onto the canvas<br>to start building.</p>
+      <button class="device-template" draggable="true" data-type="switch"><span class="device-icon switch" data-icon="switch"></span><span><strong>Switch</strong><small>Cisco IOL / IOSv · Layer 2</small></span><span class="drag-dots">⠿</span></button>
+      <button class="device-template" draggable="true" data-type="router"><span class="device-icon router" data-icon="router"></span><span><strong>Router</strong><small>Cisco IOL / IOSv · Layer 3</small></span><span class="drag-dots">⠿</span></button>
+      <button class="device-template" draggable="true" data-type="pc"><span class="device-icon pc" data-icon="pc"></span><span><strong>PC</strong><small>Alpine Linux</small></span><span class="drag-dots">⠿</span></button>
+      <button class="wide" id="upload-image">↑ Upload image</button>
+      <div class="palette-divider"></div>
+      <div class="section-label">IN THIS LAB <span id="node-count">00</span></div>
+      <div id="node-list" class="node-list"></div>
+      <div class="palette-bottom"><span class="little-dot"></span> LOCAL LAB ENVIRONMENT<p>Build. Connect. Experiment.</p></div>
+    </aside>
+    <main class="workarea">
+      <div id="topology-placeholder" hidden><button id="show-topology">Show topology window</button><button data-arrange-windows>Arrange windows</button></div>
+      <section id="topology-panel" class="topology-panel" aria-label="Topology workspace">
+      <div id="topology-window-toolbar" class="console-toolbar" hidden><button id="topology-move" class="console-move" aria-label="Move topology window" title="Drag to move, or use arrow keys">⠿</button><div id="topology-toolbar-scroll" class="toolbar-scroll"><strong class="topology-window-title">Topology</strong><div class="console-actions"><button data-arrange-windows>Arrange windows</button><button data-show-instructions title="Open or show lab instructions">Instructions</button><button id="dock-topology">Dock</button><button id="expand-topology" aria-label="Maximize topology" title="Maximize topology">↗</button></div></div><button id="hide-topology" class="window-hide" aria-label="Hide topology window" title="Hide topology (show again with Map)">−</button></div>
+      <div class="canvas-toolbar"><button class="panel-toggle" id="toggle-palette" aria-controls="device-library" aria-expanded="true" aria-label="Hide device library" title="Hide device library"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="3" width="16" height="14" rx="2"/><path d="M7 3v14"/></svg><span>Devices</span></button><div class="tools"><button id="select-tool" class="active" title="Move and select nodes (V)">↖ <span>Select</span></button><button id="link-tool" title="Choose two nodes to connect (L)">⌁ <span>Connect</span></button></div><div class="map-view-controls" role="group" aria-label="Map view"><button id="zoom-out" aria-label="Zoom out" title="Zoom out">−</button><button id="zoom-reset" title="Reset zoom to 100%" aria-label="Reset zoom to 100%">100%</button><button id="zoom-in" aria-label="Zoom in" title="Zoom in">+</button><button id="zoom-fit" title="Fit topology in view">Fit</button></div><button class="panel-toggle" id="fullscreen" aria-label="Enter fullscreen" aria-pressed="false" title="Enter fullscreen"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 2H2v5m11-5h5v5M2 13v5h5m11-5v5h-5"/></svg></button><button id="float-topology" title="Float the topology in its own window">Float map</button><button data-arrange-windows title="Tile topology and visible console windows">Arrange windows</button><span class="canvas-hint" id="canvas-hint"></span><span id="running-count" class="running-count">0 running</span><button class="panel-toggle" id="toggle-inspector" aria-controls="inspector" aria-expanded="true" aria-label="Hide inspector" title="Hide inspector"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="3" width="16" height="14" rx="2"/><path d="M13 3v14"/></svg><span>Inspector</span></button></div>
+      <div class="canvas-scroll" id="canvas-scroll">
+        <div class="canvas-extent" id="canvas-extent">
+        <div class="canvas" id="canvas">
+          <svg id="links" width="2400" height="1600" aria-label="Topology connections"></svg>
+          <div id="nodes"></div>
+          <div class="empty-state" id="empty-state"><div class="empty-art">⌘</div><span class="eyebrow">YOUR NEXT NETWORK STARTS HERE</span><h1>A blank canvas.<br>Endless possibilities.</h1><p>Drop in a switch, router or PC.<br>Connect the interfaces, then bring your lab to life.</p><button class="primary" id="starter">Create a starter topology <span>→</span></button><small>Router + switch + Alpine PC</small></div>
+        </div>
+        </div>
+      </div>
+      <footer class="canvas-footer"><span><span class="legend-dot"></span> Running <span class="legend-dot stopped"></span> Stopped <span class="legend-dot error"></span> Error</span><span id="link-count">0 devices · 0 links</span><span>Drag background to pan · Ctrl + wheel to zoom</span></footer>
+      <button id="topology-resize" class="console-resize" aria-label="Resize topology window" title="Drag to resize, or use arrow keys" hidden>◢</button>
+      </section>
+      <section class="console-panel" id="console-panel" aria-label="Device console workspace" hidden>
+        <div id="console-divider" class="console-divider" role="separator" aria-label="Console panel height" aria-orientation="horizontal" tabindex="0" title="Drag to resize console height, or use Up and Down arrow keys"></div>
+        <div class="console-toolbar" id="console-toolbar"><button id="console-move" class="console-move" aria-label="Move console window" title="Drag to move, or use arrow keys" hidden>⠿</button><div class="toolbar-scroll"><span class="console-title">&gt;_ <strong id="console-name">Console</strong></span><span id="console-status" class="console-connection" role="status" aria-label="Disconnected" title="Disconnected"><svg class="console-status-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4m-7 7-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m4 10a4 4 0 0 0 6 0l4-4a4 4 0 0 0-6-6l-1 1" transform="translate(1 0) scale(.9)"/><path class="connection-off" d="M3 3l18 18"/></svg><svg class="console-observer-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg><span class="console-status-text">Disconnected</span></span><div class="console-lock-controls"><label id="console-lock-label" class="console-lock-control"><input type="checkbox" id="lock-console" aria-label="Lock console input" disabled><svg class="console-lock-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path class="lock-closed" d="M8 10V6a4 4 0 0 1 8 0v4"/><path class="lock-open" d="M8 10V6a4 4 0 0 1 8 0"/></svg><span class="console-lock-text">Lock input</span></label><button id="takeover-console" hidden>Take over</button></div><div class="console-font-controls" role="group" aria-label="Console text size"><button id="console-font-decrease" aria-label="Decrease console text size" title="Smaller console text">A−</button><button id="console-font-reset" aria-label="Reset console text size to 12 pixels" title="Reset console text size">12px</button><button id="console-font-increase" aria-label="Increase console text size" title="Larger console text">A+</button></div><button id="console-interrupt" class="console-interrupt" data-console-key="03" title="Send Ctrl+C to interrupt the console command" disabled>Ctrl+C</button><button id="console-tab" class="console-interrupt" data-console-key="09" title="Send Tab for console completion" disabled>Tab</button><div class="console-arrow-keys" role="group" aria-label="Terminal arrow keys"><button data-console-key="1b5b44" aria-label="Left arrow" title="Left arrow" disabled>←</button><button data-console-key="1b5b41" aria-label="Up arrow" title="Up arrow" disabled>↑</button><button data-console-key="1b5b42" aria-label="Down arrow" title="Down arrow" disabled>↓</button><button data-console-key="1b5b43" aria-label="Right arrow" title="Right arrow" disabled>→</button></div><details class="console-menu console-keys"><summary title="Send terminal keys without a physical keyboard">Keys</summary><div class="console-menu-list"><button data-console-key="03" title="Interrupt (Ctrl+C)" disabled>Ctrl+C</button><button data-console-key="04" title="End of input / log out (Ctrl+D)" disabled>Ctrl+D</button><button data-console-key="1a" title="Suspend / exit configuration (Ctrl+Z)" disabled>Ctrl+Z</button><button data-console-key="1e" title="Cisco interrupt (Ctrl+Shift+6)" disabled>Ctrl+Shift+6</button><button data-console-key="01" title="Beginning of line" disabled>Ctrl+A</button><button data-console-key="05" title="End of line" disabled>Ctrl+E</button><button data-console-key="15" title="Erase to beginning of line" disabled>Ctrl+U</button><button data-console-key="17" title="Erase previous word" disabled>Ctrl+W</button><button data-console-key="0c" title="Redraw screen" disabled>Ctrl+L</button><button data-console-key="09" title="Tab completion" disabled>Tab</button><button data-console-key="1b" title="Escape" disabled>Esc</button><button data-console-key="1b5b41" title="Up arrow" disabled>↑</button><button data-console-key="1b5b42" title="Down arrow" disabled>↓</button><button data-console-key="1b5b44" title="Left arrow" disabled>←</button><button data-console-key="1b5b43" title="Right arrow" disabled>→</button></div></details><details class="console-actions console-menu"><summary title="Console window and session actions">Actions</summary><div class="console-menu-list"><button data-float-consoles title="Float all open consoles; new consoles open floated">Float all</button><button data-dock-consoles title="Dock all consoles; new consoles open docked">Dock all</button><button data-show-topology title="Show the topology window">Map</button><button data-show-instructions>Instructions</button><button data-arrange-windows title="Tile topology and visible console windows">Arrange</button><button data-console-clipboard>Clipboard: off</button><button id="reconnect-console">Reconnect</button><button id="clear-console">Clear</button><button id="detach-console-tab" title="Float the active console in its own window">Float tab</button><button id="detach-console" aria-label="Float console panel" title="Float console panel" aria-pressed="false">Float</button><button id="expand-console" aria-label="Expand console" title="Expand console" aria-pressed="false">↕</button></div></details></div><button id="close-console" class="window-hide" aria-label="Hide console pane" title="Hide pane (keep consoles open)">−</button></div>
+        <div id="console-tabs" class="console-tabs" role="tablist" aria-label="Device consoles"></div>
+        <div id="terminal"></div>
+        <button id="console-resize" class="console-resize" aria-label="Resize console window" title="Drag to resize, or use arrow keys" hidden>◢</button>
+      </section>
+    </main>
+    <div id="console-windows" aria-label="Floating workspace windows">
+      <section id="instructions-panel" class="instructions-panel floating" aria-label="Lab instructions" hidden>
+        <div id="instructions-toolbar" class="console-toolbar">
+          <button id="instructions-move" class="console-move" aria-label="Move instructions window" title="Drag to move, or use arrow keys">⠿</button>
+          <div class="toolbar-scroll"><strong id="instructions-title" class="topology-window-title">Instructions</strong>
+          <button data-console-clipboard>Clipboard: off</button><button id="instructions-open" title="Open another Markdown or text file">Open file</button>
+          <div class="console-font-controls" role="group" aria-label="Instructions text size"><button id="instructions-smaller" aria-label="Decrease instructions text size">A−</button><button id="instructions-font" title="Reset instructions text size" aria-label="Reset instructions text size">15px</button><button id="instructions-larger" aria-label="Increase instructions text size">A+</button></div>
+          <div class="console-actions"><button data-arrange-windows>Arrange</button><button id="instructions-maximize" aria-label="Maximize instructions" aria-pressed="false" title="Maximize instructions">↗</button></div></div><button id="instructions-hide" class="window-hide" aria-label="Hide instructions" title="Hide instructions (keep file open)">−</button>
+        </div>
+        <article id="instructions-body" class="instructions-body" tabindex="0" aria-label="Instructions document"></article>
+        <button id="instructions-resize" class="console-resize" aria-label="Resize instructions window" title="Drag to resize, or use arrow keys">◢</button>
+      </section>
+    </div>
+    <input id="instructions-file" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>
+    <button id="panel-backdrop" aria-label="Close side panel" tabindex="-1" hidden></button>
+    <aside class="inspector" id="inspector" aria-label="Inspector">
+      <div class="panel-heading"><div class="section-label">INSPECTOR <span>⌘</span></div><button class="panel-close" id="close-inspector" aria-label="Hide inspector" title="Hide inspector">›</button></div>
+      <div id="inspector-empty"><div class="inspect-symbol">↖</div><h3>A closer look</h3><p>Select a device to configure its interfaces, manage its power and open a console.</p><div class="tip"><strong>A little room to experiment</strong><p>Topology changes are available when all devices are stopped. Positions and names can be changed at any time.</p></div></div>
+      <form id="node-form" hidden>
+        <div class="selected-heading"><span class="device-icon" id="selected-icon"></span><div><h2 id="selected-title"></h2><span id="selected-status" class="muted"></span></div></div>
+        <label>Device name<input id="node-name" maxlength="40" required></label>
+        <label>Image<select id="node-image"></select></label>
+        <div id="iol-settings"><div class="field-row"><label>Memory (MB)<input id="node-memory" type="number" min="256" max="8192" step="1"></label><label><span id="ethernet-label">Ethernet slots</span><select id="node-ethernet"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label></div><p class="field-help" id="ethernet-help">Four Ethernet ports per slot. Interfaces are shown as slot/port.</p></div>
+        <div id="pc-settings" hidden><label>IPv4 address / prefix<input id="node-ipv4" placeholder="10.0.10.10/24"></label><label>Default gateway <span class="optional">optional</span><input id="node-gateway" placeholder="10.0.10.1"></label><p class="field-help">Applied to eth0 on startup. Stop this PC to edit, even while other devices run. You can also configure it from its shell.</p></div>
+        <button class="wide" type="submit" id="apply-node">Apply settings</button>
+        <div class="node-actions"><button type="button" class="primary" id="start-node">▶ Start</button><button type="button" id="stop-node">■ Stop</button></div>
+        <button type="button" class="wide" id="open-console">&gt;_ Open console</button>
+        <div class="error-box" id="node-error" hidden></div>
+        <div class="section-label interfaces-heading">INTERFACES <span id="interface-count"></span></div>
+        <div id="interfaces"></div>
+        <div class="inspector-bottom"><button type="button" id="logs">Launcher logs</button><button type="button" class="danger-text" id="delete-node">Delete device</button></div>
+      </form>
+    </aside>
+  </div>
+  <div id="toast" role="status" hidden></div>
+  <dialog id="link-actions-dialog" aria-labelledby="link-actions-title">
+    <span class="eyebrow">LINK ACTIONS</span><h2 id="link-actions-title">Link traffic</h2>
+    <p id="link-actions-endpoints"></p><p id="link-actions-state" role="status"></p>
+    <p class="muted">Traffic loss leaves interfaces up. Block one direction to model a silent unidirectional fault, or both to drop all frames. These temporary settings are not saved in exports.</p>
+    <div class="link-traffic-actions">
+      <button data-link-traffic="none">Clear frame loss</button>
+      <button data-link-traffic="a">Block A → B</button>
+      <button data-link-traffic="b">Block B → A</button>
+      <button data-link-traffic="both">Block both directions</button>
+    </div>
+    <div id="link-carrier-actions"><p class="muted">Unplug stops traffic both ways and requests link-down on the selected interface. IOL detection takes about 10 seconds. Each endpoint is controlled separately; Reconnect keeps any frame-loss setting.</p>
+      <button data-link-carrier="a"></button><button data-link-carrier="b"></button>
+    </div>
+    <p class="muted" id="link-actions-help"></p>
+    <div class="dialog-actions"><button id="link-actions-delete" class="danger-text">Delete cable</button><button id="link-actions-close" autofocus>Close</button></div>
+  </dialog>
+  <dialog id="link-dialog"><form method="dialog" id="link-form"><span class="eyebrow">NEW CONNECTION</span><h2>Choose your interfaces</h2><p class="muted">Each interface connects to one cable.</p><div class="link-endpoints"><label><span id="link-a-name"></span><select id="link-a-port"></select></label><span>↔</span><label><span id="link-b-name"></span><select id="link-b-port"></select></label></div><div class="dialog-actions"><button value="cancel" formnovalidate>Cancel</button><button class="primary" id="confirm-link" value="connect">Connect devices</button></div></form></dialog>
+  <dialog id="takeover-dialog" aria-labelledby="takeover-title"><form method="dialog" id="takeover-form"><h2 id="takeover-title">Take over console input?</h2><p id="takeover-description" class="muted"></p><div class="dialog-actions"><button value="cancel" autofocus>Cancel</button><button class="primary" id="confirm-takeover" value="takeover">Take over</button></div></form></dialog>
+  <dialog id="logs-dialog"><div class="logs-heading"><h2>Launcher logs</h2><button id="close-logs">✕</button></div><pre id="log-content"></pre></dialog>
+  <dialog id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description"><form method="dialog" id="delete-form"><span class="eyebrow">CONFIRM DELETION</span><h2 id="delete-title"></h2><p id="delete-description" class="muted"></p><div class="dialog-actions"><button id="cancel-delete" value="cancel" autofocus>Cancel</button><button class="danger-button" id="confirm-delete" value="delete">Delete</button></div></form></dialog>
+  <dialog id="clipboard-dialog" aria-labelledby="clipboard-title">
+    <h2 id="clipboard-title">Clipboard preferences</h2>
+    <label class="export-log-option"><input id="clipboard-enabled" type="checkbox"> Copy on selection and paste on right-click</label>
+    <label>Clipboard source<select id="clipboard-source"><option value="system">System clipboard</option><option value="workspace">Workspace clipboard (this page)</option></select></label>
+    <p id="clipboard-help" class="muted"></p>
+    <p class="field-help">Copy selections from terminal text and Instructions. Right-click paste applies only inside terminals; the topology is excluded. Shift+right-click opens the browser menu. Keyboard copy/paste and touch menus keep their normal behavior. Pasting respects input locks. Preferences stay in this browser; workspace clipboard text stays only in this page's memory.</p>
+    <div class="dialog-actions"><button id="clipboard-close">Done</button></div>
+  </dialog>
+  <dialog id="export-dialog" aria-labelledby="export-title">
+    <h2 id="export-title">Export lab</h2>
+    <p class="muted">Topology JSON includes devices, cables, PC network settings and any original startup snippets.</p>
+    <p class="muted"><strong>JSON + saved configs</strong> reads saved Cisco configurations directly from NVRAM or IOSv disks as first-boot snippets for a new lab. Stop the Cisco devices first. No console access is needed. Unsaved changes are excluded; this does not save device configurations.</p>
+    <p class="muted"><strong>JSON + live configs</strong> includes unsaved changes by reading current running configurations. Start every Cisco device, leave its console at the privileged (#) prompt and release input locks. Capture locks each console, temporarily suppresses console logging when enabled, and restores the original settings before export. It does not save to NVRAM. Use this option when saved-config retrieval is unavailable.</p>
+    <p class="muted">Saved lab ZIP also includes IOL NVRAM and IOSv disk changes. Save device configurations (for example, <code>write memory</code>), then stop the lab before exporting.</p>
+    <p class="field-help">ZIP backups need the same device images on import. Images, licenses and temporary PC files are excluded. Limit: 8 GiB.</p>
+    <label class="export-log-option"><input type="checkbox" id="export-logs"> Include available console and launcher logs in ZIP</label>
+    <p class="field-help">Console output is recorded on the server, including while browser tabs are closed. Up to 8 MiB of recent output per device is retained, starting with the next device launch after this update. Logs may contain configuration details; review before sharing. Logs are for reading and are not restored into devices.</p>
+    <p id="export-message" class="field-help" role="status"></p>
+    <div class="dialog-actions"><button id="cancel-export">Cancel</button><button id="export-json">Topology JSON</button><button class="primary" id="export-saved">JSON + saved configs</button><button id="export-initial">JSON + live configs</button><button id="export-zip">Saved lab ZIP</button></div>
+  </dialog>
+  <dialog id="import-dialog" aria-labelledby="import-title">
+    <h2 id="import-title">Restore saved lab?</h2>
+    <p class="muted">This replaces the current topology and saved device state with the selected backup. Export the current lab first if you want to keep it.</p>
+    <p class="field-help">All devices will remain stopped. The required device images must already be installed and match the backup.</p>
+    <p id="import-message" role="status"></p>
+    <progress id="import-progress" max="100" value="0" hidden aria-label="Backup upload progress"></progress>
+    <div class="dialog-actions"><button id="cancel-import" autofocus>Cancel</button><button class="primary" id="confirm-import">Restore lab</button></div>
+  </dialog>
+  <input id="import-file" type="file" accept="application/json,.json,application/zip,.zip" hidden>
+  <dialog id="image-dialog" aria-labelledby="image-title">
+    <form id="image-form">
+      <span class="eyebrow">DEVICE LIBRARY</span><h2 id="image-title">Upload a device image</h2>
+      <p class="muted">Choose an IOL .bin or supported .qcow2 file, up to 1 GiB.<br>Arista vEOS also requires Aboot-veos-serial-8.0.2.iso. Preserve vendor filenames for EXOS and vEOS.</p>
+      <label>Image file<input id="image-file" type="file" accept=".bin,.qcow2,.iso" required></label>
+      <p class="field-help">Images are saved for future labs. Existing files are never replaced.</p>
+      <progress id="image-progress" max="100" value="0" hidden aria-label="Upload progress"></progress>
+      <p id="image-message" role="status" aria-live="polite"></p>
+      <div class="dialog-actions"><button type="button" id="cancel-image">Cancel</button><button class="primary" id="submit-image" type="submit">Upload image</button></div>
+    </form>
+  </dialog>
+</body>
+</html>
