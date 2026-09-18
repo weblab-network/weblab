@@ -47,7 +47,7 @@ class EXOSConsole:
 
     def login(self, fresh):
         self.send('')
-        self.wait(r'Authentication Service \(AAA\).*available|^[\w-]+ login:\s*$', timeout=300)
+        self.wait(r'Authentication Service \(AAA\).*available|^(?:[\w-]+ )?login:\s*$', timeout=300)
         # The readiness announcement can precede successful AAA requests briefly.
         for attempt in range(12):
             time.sleep(5)
@@ -85,6 +85,44 @@ class EXOSConsole:
             raise RuntimeError('EXOS did not confirm saving: ' + output)
 
 
+def verify(image, archive, directory):
+    directory.mkdir()
+    images = directory / 'images'
+    images.mkdir()
+    (images / image.name).symlink_to(image)
+    print('Restoring the ZIP into a second lab and booting all five nodes', flush=True)
+    restored = lab_server.Lab(directory / 'data', images)
+    try:
+        with archive.open('rb') as archive:
+            lab_backup.restore(restored, archive, lab_server.run)
+        restored.start_all()
+        for node_id in ('exos-demo-r1', 'exos-demo-sw1', 'exos-demo-sw2'):
+            console = EXOSConsole(restored, node_id)
+            try:
+                console.login(fresh=False)
+                print(console.command('disable cli paging'), flush=True)
+                print(console.command('show vlan'), flush=True)
+                print(console.command('show lldp neighbors'), flush=True)
+            finally:
+                console.close()
+        for node_id, destination in [('exos-demo-pc1', '10.10.20.10'), ('exos-demo-pc2', '10.10.10.10')]:
+            for attempt in range(12):
+                try:
+                    report = lab_server.run('docker', 'exec', restored.runtime[node_id]['container'],
+                                            'ping', '-c', '3', '-W', '2', destination)
+                    if ', 0% packet loss' not in report:
+                        raise RuntimeError(report)
+                    print(report, flush=True)
+                    break
+                except (lab_server.LabError, RuntimeError):
+                    if attempt == 11:
+                        raise
+                    time.sleep(5)
+    finally:
+        restored.stop_all()
+        restored.file_lock.close()
+
+
 def build(image, output, temporary_parent):
     metadata = json.loads((ROOT / 'packaging/exos/image.json').read_text())
     if image.name != metadata['filename'] or lab_backup.digest(image) != metadata['sha256']:
@@ -112,6 +150,7 @@ def build(image, output, temporary_parent):
                 finally:
                     console.close()
                 lab.stop(node_id)
+            print("Exporting saved EXOS disks", flush=True)
             result = lab_backup.create(lab)
             stream, _ = lab_backup.take(lab, result['url'].rsplit('/', 1)[1])
             with stream, (directory / 'demo.zip').open('wb') as target:
@@ -120,37 +159,7 @@ def build(image, output, temporary_parent):
             lab.stop_all()
             lab.file_lock.close()
 
-        # Verify the exported state in a second empty lab, using the real importer.
-        restored = lab_server.Lab(directory / 'verify', images)
-        try:
-            with (directory / 'demo.zip').open('rb') as archive:
-                lab_backup.restore(restored, archive, lab_server.run)
-            restored.start_all()
-            for node_id in ('exos-demo-r1', 'exos-demo-sw1', 'exos-demo-sw2'):
-                console = EXOSConsole(restored, node_id)
-                try:
-                    console.login(fresh=False)
-                    print(console.command('disable cli paging'), flush=True)
-                    print(console.command('show vlan'), flush=True)
-                    print(console.command('show lldp neighbors'), flush=True)
-                finally:
-                    console.close()
-            for node_id, destination in [('exos-demo-pc1', '10.10.20.10'), ('exos-demo-pc2', '10.10.10.10')]:
-                for attempt in range(12):
-                    try:
-                        report = lab_server.run('docker', 'exec', restored.runtime[node_id]['container'],
-                                                'ping', '-c', '3', '-W', '2', destination)
-                        if '0% packet loss' not in report or '100% packet loss' in report:
-                            raise RuntimeError(report)
-                        print(report, flush=True)
-                        break
-                    except (lab_server.LabError, RuntimeError):
-                        if attempt == 11:
-                            raise
-                        time.sleep(5)
-        finally:
-            restored.stop_all()
-            restored.file_lock.close()
+        verify(image, directory / 'demo.zip', directory / 'verification')
         if lab_backup.digest(image) != metadata['sha256']:
             raise RuntimeError('Base image changed during test')
         output.parent.mkdir(parents=True, exist_ok=True)
