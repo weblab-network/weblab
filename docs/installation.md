@@ -22,6 +22,36 @@ Open `http://127.0.0.1:8080/` on the client. Do not expose this preview directly
 the public internet. Console input locks coordinate users; they are not access
 control.
 
+## Pull a prebuilt container
+
+GHCR provides the same application as the source build for **Linux amd64**.
+The standard image includes Weblab and its runtime dependencies; supply your own
+network-device images and any required licenses. Host requirements and permissions
+are the same as the source build.
+
+From the source checkout, or a directory containing `compose.prebuilt.yaml` and
+`compose.kvm.yaml` downloaded from this repository:
+
+```sh
+mkdir -p images lab-data
+docker pull alpine:latest
+docker compose -f compose.prebuilt.yaml -f compose.kvm.yaml pull
+docker compose -f compose.prebuilt.yaml -f compose.kvm.yaml up -d
+```
+
+Omit the KVM override for IOL-only installations. Open **http://127.0.0.1:8080/**,
+or use the SSH tunnel above. Public images require no registry login.
+Use `compose.prebuilt.yaml` instead of `compose.yaml`, not as an override of it.
+Keep the same Compose files and directory on subsequent `logs`, `pull`, `up` and
+`down` commands. Legacy `docker-compose` accepts the same arguments.
+
+`WL_IMAGE` selects the application image, defaulting to
+`ghcr.io/weblab-network/weblab:latest`. Stable versions also have numbered tags;
+pin a version or digest when you want deliberate upgrades. `edge` follows main;
+`preview` is used while testing the container publication branch. Neither is a
+stable release. Save configurations, export a ZIP and stop the lab before pulling
+and recreating an existing deployment. Preserve its image/data mounts.
+
 ## Docker Compose
 
 Requires an **x86-64 Linux host**, rootful Docker Engine with Compose v2, and

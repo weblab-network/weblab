@@ -52,6 +52,9 @@ Keep both `-f` arguments on subsequent commands for that deployment. See
 [installation](docs/installation.md) for prerequisites, native Linux execution,
 remote access, resource requirements and upgrades.
 
+Prefer to skip the build? See [prebuilt containers](docs/installation.md#pull-a-prebuilt-container)
+for the GHCR pull-and-start commands.
+
 ## Intended use
 
 Weblab is a trusted personal/group lab tool with **no login or per-user isolation**.
