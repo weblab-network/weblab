@@ -1,4 +1,4 @@
-ARG WEBLAB_IMAGE=weblab-ghcr-test:local
+ARG WEBLAB_IMAGE=ghcr.io/weblab-network/weblab:latest
 FROM ${WEBLAB_IMAGE}
 COPY packaging/exos/initialize.py /app/initialize_exos_demo.py
 COPY packaging/exos/image.json packaging/exos/build/demo.zip packaging/exos/build/EXOS-VM_33.1.1.31.qcow2 /opt/weblab/exos-demo/

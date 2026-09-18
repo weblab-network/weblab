@@ -153,6 +153,30 @@ Before sharing logs or screenshots, remove private configuration. Licensing and
 component provenance are tracked in [third-party notices](../THIRD_PARTY.md);
 do not silently add a license to a component whose distribution terms are unresolved.
 
+## Building the optional EXOS edition
+
+The standard `Dockerfile` still excludes vendor images. The separate demo build
+uses only the pinned public EXOS release and files generated from the committed
+exercise configuration. Run from a disposable development host with root, KVM,
+Docker, Alpine and the native dependencies listed above:
+
+```sh
+python3 tools/fetch_exos_demo_image.py packaging/exos/build
+sudo python3 tools/build_exos_demo.py \
+  packaging/exos/build/EXOS-VM_33.1.1.31.qcow2 packaging/exos/build/demo.zip
+docker build -t weblab-base:local .
+docker build -f packaging/exos/Dockerfile \
+  --build-arg WEBLAB_IMAGE=weblab-base:local -t weblab-exos:local .
+python3 tools/smoke_exos_container.py weblab-exos:local
+```
+
+Use current Docker with BuildKit for the Dockerfile-specific context allowlist.
+The builder configures fresh switches, saves their disks, exports a ZIP, restores
+it into another disposable lab, and checks traffic between both PCs. It stops and
+removes only its own test nodes. Run it sequentially with other native suites.
+`packaging/exos/build/` is ignored by Git; never force-add its binary artifacts.
+The normal EXOS profile still rejects generic `startup_config` snippets.
+
 ## Updating the GitHub wiki
 
 Edit the help in `docs/` so downloaded source retains an offline copy. Render
