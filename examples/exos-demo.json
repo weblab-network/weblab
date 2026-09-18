@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "name": "EXOS: VLANs and routing",
+  "nodes": [
+    {
+      "id": "exos-demo-r1",
+      "name": "R1",
+      "type": "switch",
+      "image": "EXOS-VM_33.1.1.31.qcow2",
+      "memory": 1024,
+      "ethernet": 13,
+      "x": 500,
+      "y": 140
+    },
+    {
+      "id": "exos-demo-sw1",
+      "name": "SW1",
+      "type": "switch",
+      "image": "EXOS-VM_33.1.1.31.qcow2",
+      "memory": 1024,
+      "ethernet": 13,
+      "x": 250,
+      "y": 340
+    },
+    {
+      "id": "exos-demo-sw2",
+      "name": "SW2",
+      "type": "switch",
+      "image": "EXOS-VM_33.1.1.31.qcow2",
+      "memory": 1024,
+      "ethernet": 13,
+      "x": 750,
+      "y": 340
+    },
+    {
+      "id": "exos-demo-pc1",
+      "name": "PC1",
+      "type": "pc",
+      "image": "alpine:latest",
+      "x": 250,
+      "y": 560,
+      "ipv4": "10.10.10.10/24",
+      "gateway": "10.10.10.1"
+    },
+    {
+      "id": "exos-demo-pc2",
+      "name": "PC2",
+      "type": "pc",
+      "image": "alpine:latest",
+      "x": 750,
+      "y": 560,
+      "ipv4": "10.10.20.10/24",
+      "gateway": "10.10.20.1"
+    }
+  ],
+  "links": [
+    {
+      "id": "exos-demo-uplink1",
+      "a": {
+        "node": "exos-demo-r1",
+        "port": "1"
+      },
+      "b": {
+        "node": "exos-demo-sw1",
+        "port": "1"
+      }
+    },
+    {
+      "id": "exos-demo-access1",
+      "a": {
+        "node": "exos-demo-sw1",
+        "port": "2"
+      },
+      "b": {
+        "node": "exos-demo-pc1",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "exos-demo-uplink2",
+      "a": {
+        "node": "exos-demo-r1",
+        "port": "2"
+      },
+      "b": {
+        "node": "exos-demo-sw2",
+        "port": "1"
+      }
+    },
+    {
+      "id": "exos-demo-access2",
+      "a": {
+        "node": "exos-demo-sw2",
+        "port": "2"
+      },
+      "b": {
+        "node": "exos-demo-pc2",
+        "port": "eth0"
+      }
+    }
+  ]
+}

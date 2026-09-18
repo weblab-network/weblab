@@ -39,3 +39,8 @@ playwright-report/
 
 # Local media staging; publish selected assets separately.
 /1st_page/
+
+# Generated demo assets and standalone demo storage.
+/packaging/exos/build/
+/exos-images/
+/exos-lab-data/

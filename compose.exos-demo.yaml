@@ -1,0 +1,34 @@
+# Standalone EXOS demo deployment with KVM; do not combine with compose.yaml.
+services:
+  lab:
+    image: ${WL_DEMO_IMAGE:-ghcr.io/weblab-network/weblab-exos:latest}
+    platform: linux/amd64
+    # Stable hostname for NETMAP and user-supplied IOL licensing.
+    hostname: ${WL_HOSTNAME:-weblab}
+    # Host networking inherits the host's hosts file, which lacks this name.
+    # Every managed IOL/iou2net endpoint runs locally in this container.
+    extra_hosts:
+      - "${WL_HOSTNAME:-weblab}:127.0.0.1"
+    init: true
+    # TAP parents must be in the network namespace of the Docker daemon.
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+      - /dev/kvm:/dev/kvm
+    volumes:
+      - ${WL_IMAGES_DIR:-./exos-images}:/iou
+      - ${WL_DATA_DIR:-./exos-lab-data}:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WL_BIND: ${WL_BIND:-127.0.0.1}
+      WL_PORT: ${WL_PORT:-8080}
+    command: ["--bind", "${WL_BIND:-127.0.0.1}", "--port", "${WL_PORT:-8080}", "--image-dir", "/iou", "--data-dir", "/data"]
+    stop_grace_period: 2m
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import os, urllib.request; host=os.environ['WL_BIND']; host='127.0.0.1' if host=='0.0.0.0' else host; urllib.request.urlopen('http://'+host+':'+os.environ['WL_PORT']+'/api/state', timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3

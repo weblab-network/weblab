@@ -85,8 +85,9 @@ to an untrusted network.
 ## Native image checks
 
 These need user-supplied vendor images and any required licenses. Never bundle
-those assets in tests, CI or a release. Read each script's header before running.
-Tests create disposable nodes and must run sequentially with sufficient RAM and
+user-supplied assets in tests, CI or a release. Read each script's header before running.
+The optional EXOS distribution is a separate, explicitly pinned exception; see
+[container images](containers.md). Native tests create disposable nodes and must run sequentially with sufficient RAM and
 free Docker provisioning subnets/application IDs.
 
 | Script | Additional requirements / coverage |

@@ -1,0 +1,34 @@
+{
+  "exos-demo-r1": [
+    "disable cli paging",
+    "configure vlan Default delete ports all",
+    "configure snmp sysName R1",
+    "create vlan USERS tag 10",
+    "configure vlan USERS add ports 1 tagged",
+    "configure vlan USERS ipaddress 10.10.10.1/24",
+    "enable ipforwarding vlan USERS",
+    "create vlan SERVERS tag 20",
+    "configure vlan SERVERS add ports 2 tagged",
+    "configure vlan SERVERS ipaddress 10.10.20.1/24",
+    "enable ipforwarding vlan SERVERS",
+    "enable lldp ports all"
+  ],
+  "exos-demo-sw1": [
+    "disable cli paging",
+    "configure vlan Default delete ports all",
+    "configure snmp sysName SW1",
+    "create vlan USERS tag 10",
+    "configure vlan USERS add ports 1 tagged",
+    "configure vlan USERS add ports 2 untagged",
+    "enable lldp ports all"
+  ],
+  "exos-demo-sw2": [
+    "disable cli paging",
+    "configure vlan Default delete ports all",
+    "configure snmp sysName SW2",
+    "create vlan SERVERS tag 20",
+    "configure vlan SERVERS add ports 1 tagged",
+    "configure vlan SERVERS add ports 2 untagged",
+    "enable lldp ports all"
+  ]
+}

@@ -18,6 +18,8 @@ jobs:
   standard:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
     permissions:
       contents: read
       packages: write
@@ -39,7 +41,6 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
             type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=preview,enable=${{ github.ref == 'refs/heads/feature/container-images' }}
             type=sha
@@ -55,6 +56,7 @@ jobs:
       - name: Smoke test container
         run: python3 tools/smoke_container.py weblab-smoke:ci
       - name: Publish tested image
+        id: publish
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
@@ -65,3 +67,62 @@ jobs:
           provenance: mode=max
           sbom: true
           cache-from: type=gha
+
+  exos-demo:
+    needs: standard
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install native demo dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 perl libnet-pcap-perl iproute2 qemu-system-x86 qemu-utils mtools
+          test -c /dev/kvm
+          test -c /dev/net/tun
+          docker pull alpine:latest
+      - name: Download and verify the pinned EXOS release
+        run: python3 tools/fetch_exos_demo_image.py packaging/exos/build
+      - name: Build saved baseline and test restored forwarding
+        run: sudo python3 -u tools/build_exos_demo.py packaging/exos/build/EXOS-VM_33.1.1.31.qcow2 packaging/exos/build/demo.zip
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}-exos
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=preview,enable=${{ github.ref == 'refs/heads/feature/container-images' }}
+            type=sha
+      - name: Build demo image for smoke test
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: packaging/exos/Dockerfile
+          platforms: linux/amd64
+          build-args: WEBLAB_IMAGE=ghcr.io/${{ github.repository }}@${{ needs.standard.outputs.digest }}
+          load: true
+          tags: weblab-exos-smoke:ci
+      - name: Check packaged initialization and persistence
+        run: python3 tools/smoke_exos_container.py weblab-exos-smoke:ci
+      - name: Publish tested EXOS edition
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: packaging/exos/Dockerfile
+          platforms: linux/amd64
+          build-args: WEBLAB_IMAGE=ghcr.io/${{ github.repository }}@${{ needs.standard.outputs.digest }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true

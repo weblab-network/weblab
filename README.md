@@ -28,7 +28,7 @@ docker compose up -d --build
 
 Open **http://127.0.0.1:8080/**. Upload your device images, then create a starter
 topology or import an example. Supply your own images and any required licenses;
-Weblab does not include vendor images or generate licenses.
+the standard Weblab image does not include vendor images or generate licenses.
 
 For IOSv, EXOS or vEOS, enable KVM and include the override:
 
@@ -53,7 +53,9 @@ Keep both `-f` arguments on subsequent commands for that deployment. See
 remote access, resource requirements and upgrades.
 
 Prefer to skip the build? See [prebuilt containers](docs/installation.md#pull-a-prebuilt-container)
-for the GHCR pull-and-start commands.
+for the GHCR pull-and-start commands. The optional
+[EXOS demo edition](docs/containers.md) includes Virtual EXOS and a configured
+three-switch/two-PC exercise.
 
 ## Intended use
 

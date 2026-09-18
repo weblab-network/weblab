@@ -19,6 +19,9 @@ workspace and its supported profiles.
 9. [Troubleshooting](troubleshooting.md) — common setup, console, storage and networking issues.
 10. [Supported scope and limitations](limitations.md) — deployment boundaries and known gaps.
 
+[Prebuilt container images and EXOS demo](containers.md) provide an alternative
+to building locally, including a ready-configured introductory lab.
+
 ## Examples and contributors
 
 - [Starter lab](../examples/starter.md) and [JSON](../examples/starter.json).

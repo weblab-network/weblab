@@ -50,7 +50,8 @@ active lab. Do not delete saved storage to force snippets without a reset reques
   Preserve socket identity checks and runtime-only link faults; validate native
   behavior before enabling other profiles. Unplug is a requested state with a
   detection delay, not an instant guest acknowledgment.
-- Vendor images and licenses are user-supplied. Do not generate licenses or add
+- Except for the explicitly pinned optional EXOS demo distribution described in
+  `docs/containers.md`, vendor images and licenses are user-supplied. Do not generate licenses or add
   images, credentials, runtime data or personal lab files to source control.
 - Keep user documentation and JSON examples consistent with implemented behavior.
   Licensing/provenance decisions are separate from routine code changes; preserve
