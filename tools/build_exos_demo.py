@@ -66,9 +66,19 @@ class EXOSConsole:
                 raise RuntimeError('EXOS demo console input lock lost')
 
     def login(self, fresh):
-        # Even Enter can interrupt EXOS boot into its developer menu. Wait
-        # passively, including replay received during the lock handshake.
-        self.wait(r'Authentication Service \(AAA\).*available|^(?:[\w-]+ )?login:\s*$', timeout=300)
+        # Wait passively, including replay received during the lock handshake.
+        # The pinned image sometimes stops at this menu on CI hosts. Continue
+        # only at its complete, recognized prompt; never change boot settings.
+        ready = r'Authentication Service \(AAA\).*available|^(?:[\w-]+ )?login:\s*$'
+        menu = r'(?s:===== developer menu =====.*?\nc\) continue with boot process\s*\n~>\s*\Z)'
+        for attempt in range(2):
+            output = self.wait(f'{ready}|{menu}', timeout=300)
+            if not re.search(menu, output, re.I | re.M):
+                break
+            if attempt:
+                raise RuntimeError('EXOS returned to its developer menu after continuing boot')
+            print('EXOS developer menu detected; continuing boot without changing settings', flush=True)
+            self.send('c')
         # The readiness announcement can precede successful AAA requests briefly.
         for attempt in range(12):
             time.sleep(5)

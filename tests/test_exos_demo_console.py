@@ -60,6 +60,55 @@ class DemoConsoleTests(unittest.TestCase):
         self.login(transport, fresh=False)
         self.assertEqual(transport.sent, [b'admin\r', b'\r'])
 
+    def test_developer_menu_continues_after_complete_prompt(self):
+        for replay in (False, True):
+            with self.subTest(replay=replay):
+                transport = MenuConsole(replay=replay)
+                self.login(transport, fresh=True)
+                self.assertEqual(transport.sent, [b'c\r', b'admin\r', b'\r', b'q\r'])
+
+    def test_repeated_developer_menu_fails_without_repeated_input(self):
+        transport = MenuConsole(repeat=True)
+        with self.assertRaisesRegex(RuntimeError, 'returned to its developer menu'):
+            self.login(transport, fresh=True)
+        self.assertEqual(transport.sent, [b'c\r'])
+
+    def test_unknown_prompt_does_not_receive_continue(self):
+        transport = BootConsole()
+        transport.output = [b'Unknown menu\r\nc) continue with boot process\r\n~>']
+        with self.assertRaisesRegex(RuntimeError, 'EXOS console:'):
+            self.login(transport, fresh=True)
+        self.assertEqual(transport.sent, [])
+
+
+class MenuConsole(BootConsole):
+    menu = b'===== developer menu =====\r\noptions\r\nc) continue with boot process\r\n~>'
+
+    def __init__(self, *, replay=False, repeat=False):
+        super().__init__()
+        self.boot_output = self.output
+        self.repeat = repeat
+        self.menu_ready = replay
+        self.captured = bytearray(self.menu if replay else b'')
+        # Split the prompt across frames to catch premature commands.
+        self.output = [] if replay else [self.menu[:-1], self.menu[-1:]]
+
+    def receive(self, deadline):
+        output = super().receive(deadline)
+        if output == b'>':
+            self.menu_ready = True
+        return output
+
+    def send(self, data):
+        if data == b'c\r':
+            if not self.menu_ready:
+                raise AssertionError('Continued before the full developer-menu prompt')
+            self.sent.append(data)
+            self.output = [self.menu] if self.repeat else self.boot_output
+            self.menu_ready = False
+        else:
+            super().send(data)
+
 
 if __name__ == '__main__':
     unittest.main()
