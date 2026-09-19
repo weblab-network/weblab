@@ -157,14 +157,12 @@ do not silently add a license to a component whose distribution terms are unreso
 ## Building the optional EXOS edition
 
 The standard `Dockerfile` still excludes vendor images. The separate demo build
-uses only the pinned public EXOS release and files generated from the committed
-exercise configuration. Run from a disposable development host with root, KVM,
-Docker, Alpine and the native dependencies listed above:
+uses the pinned public EXOS release and the committed topology JSON. Packaging
+requires Docker and Python; it does not require KVM or boot guest devices:
 
 ```sh
 python3 tools/fetch_exos_demo_image.py packaging/exos/build
-sudo python3 tools/build_exos_demo.py \
-  packaging/exos/build/EXOS-VM_33.1.1.31.qcow2 packaging/exos/build/demo.zip
+python3 tools/validate_topology.py examples/exos-demo.json --image-dir packaging/exos/build
 docker build -t weblab-base:local .
 docker build -f packaging/exos/Dockerfile \
   --build-arg WEBLAB_IMAGE=weblab-base:local -t weblab-exos:local .
@@ -172,9 +170,15 @@ python3 tools/smoke_exos_container.py weblab-exos:local
 ```
 
 Use current Docker with BuildKit for the Dockerfile-specific context allowlist.
-The builder configures fresh switches, saves their disks, exports a ZIP, restores
-it into another disposable lab, and checks traffic between both PCs. It stops and
-removes only its own test nodes. Run it sequentially with other native suites.
+The packaged smoke test checks five stopped nodes, fresh storage, and preservation
+of edits across container recreation. It does not test guest boot or protocols.
+
+For a separate, opt-in saved-state integration test on a capable KVM host,
+`tools/build_exos_demo.py IMAGE OUTPUT.zip` configures fresh switches, saves their
+disks, restores the ZIP into a second disposable lab and checks traffic between
+both PCs. It needs root, Docker, Alpine and the native dependencies above. Run it
+sequentially with other native suites. Its ZIP is a test output, not part of the
+container distribution.
 `packaging/exos/build/` is ignored by Git; never force-add its binary artifacts.
 The normal EXOS profile still rejects generic `startup_config` snippets.
 

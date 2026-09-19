@@ -1,7 +1,6 @@
 import importlib.util
 import json
 from pathlib import Path
-import shutil
 import tempfile
 import unittest
 
@@ -25,23 +24,18 @@ class DemoInitializationTests(unittest.TestCase):
         self.image = self.bundle / 'EXOS-VM_fixture.qcow2'
         self.image.write_bytes(b'fixture only, never booted')
         (self.bundle / 'image.json').write_text(json.dumps({'filename': self.image.name, 'sha256': lab_backup.digest(self.image)}))
-        lab = lab_server.Lab(self.root / 'source', self.bundle)
-        try:
-            lab.save({'name': 'Fixture demo', 'nodes': [
-                {'id': 'demo-pc', 'name': 'PC', 'type': 'pc', 'image': 'alpine:latest'}], 'links': []})
-            result = lab_backup.create(lab)
-            stream, _ = lab_backup.take(lab, result['url'].rsplit('/', 1)[1])
-            with stream, (self.bundle / 'demo.zip').open('wb') as output:
-                shutil.copyfileobj(stream, output)
-        finally:
-            lab.file_lock.close()
+        (self.bundle / 'topology.json').write_text(json.dumps({
+            'name': 'Fixture demo', 'nodes': [
+                {'id': 'demo-switch', 'name': 'SW', 'type': 'switch', 'image': self.image.name},
+                {'id': 'demo-pc', 'name': 'PC', 'type': 'pc', 'image': 'alpine:latest'}], 'links': []}))
 
-    def test_empty_workspace_restores_once_and_preserves_user_changes(self):
+    def test_empty_workspace_initializes_without_disks_and_preserves_user_changes(self):
         self.assertTrue(demo.initialize(self.bundle, self.images, self.data))
         self.assertEqual((self.images / self.image.name).read_bytes(), self.image.read_bytes())
         topology = self.data / 'topology.json'
         value = json.loads(topology.read_text())
         self.assertEqual(value['name'], 'Fixture demo')
+        self.assertEqual(list(self.data.rglob('*.qcow2')), [])
         value['name'] = 'My subsequent work'
         topology.write_text(json.dumps(value))
         self.assertFalse(demo.initialize(self.bundle, self.images, self.data))
@@ -63,7 +57,7 @@ class DemoInitializationTests(unittest.TestCase):
         self.assertFalse(self.data.exists())
 
     def test_corrupt_seed_fails_closed_and_does_not_launch_blank_lab(self):
-        (self.bundle / 'demo.zip').write_bytes(b'broken ZIP')
+        (self.bundle / 'topology.json').write_bytes(b'broken JSON')
         with self.assertRaises(Exception):
             demo.initialize(self.bundle, self.images, self.data)
         self.assertTrue((self.data / '.weblab-demo-initializing').exists())

@@ -7,7 +7,7 @@
 | Image | Contents |
 | --- | --- |
 | `ghcr.io/weblab-network/weblab` | Weblab and runtime dependencies; supply device images |
-| `ghcr.io/weblab-network/weblab-exos` | Weblab plus pinned Virtual EXOS 33.1.1.31 and a saved five-node demo |
+| `ghcr.io/weblab-network/weblab-exos` | Weblab plus pinned Virtual EXOS 33.1.1.31 and an unconfigured five-node topology |
 
 Both are **Linux amd64** images. Use an x86-64 Linux host/VM with rootful Docker
 Engine and Compose. The EXOS edition requires working `/dev/kvm`, including
@@ -44,9 +44,12 @@ the switches to boot. Open **Instructions → Open file** and select `exercise.m
 to keep the exercise beside the consoles. For a remote host, use the SSH tunnel
 in the installation guide. EXOS console login is `admin` with an empty password.
 
-The demo has two VLANs and two PCs, with an EXOS device routing between them.
-It starts with a saved, working configuration. See the
-[exercise](../examples/exos-demo.md) for addresses, ports and troubleshooting tasks.
+The topology contains three EXOS switches and two PCs, already cabled together.
+EXOS starts with factory defaults; no saved switch configuration is included.
+On first login, answer `q` to accept the remaining setup defaults. Use
+`enable lldp ports all` and `show lldp neighbors` on each switch to check its
+switch-to-switch connections. PCs do not advertise LLDP by default. See the
+[exercise](../examples/exos-demo.md) for optional VLAN/routing configuration tasks.
 The Alpine image runs as sibling PC containers on the host, so it is pulled
 separately. No network devices start until you click **Start lab**.
 
@@ -62,12 +65,13 @@ above avoids accidentally selecting existing storage.
 The binary is stored separately from writable mounts inside the container. On
 startup it is copied into the image directory only if absent, and its SHA-256 is
 checked. A same-name file with different contents causes an error; it is never
-overwritten. The baseline ZIP is restored with Weblab's normal validated importer
-**only when the data directory is empty**. Existing workspaces are left intact.
+overwritten. The topology JSON is validated and installed **only when the data directory is
+empty**. No writable guest disks are bundled; they are created when devices first
+start. Existing workspaces, including previously configured demo labs, are left intact.
 
 Restarts, image updates and **Stop lab** do not reset the exercise. Save EXOS
 changes with `save configuration` before stopping. Export a saved ZIP before an
-upgrade. To start fresh, select a different empty `WL_DATA_DIR`; keep the old
+upgrade. To start with factory-default switches again, select a different empty `WL_DATA_DIR`; keep the old
 directory as your backup. Never delete storage belonging to a running lab.
 
 An interrupted initialization fails closed with an explanatory error. Preserve
@@ -90,8 +94,7 @@ docker compose -f compose.exos-demo.yaml up -d
 The optional EXOS edition uses the unmodified QCOW2 linked by the
 [official Virtual EXOS repository](https://github.com/extremenetworks/Virtual_EXOS).
 Its filename, upstream URL and SHA-256 are pinned in
-[image metadata](../packaging/exos/image.json). The saved demo disks are writable
-overlays; each guest shares the same read-only base image.
+[image metadata](../packaging/exos/image.json). At runtime, each guest gets a writable overlay over the same read-only base image.
 
 Extreme's published redistribution notice is retained in
 [Virtual-EXOS.txt](../licenses/Virtual-EXOS.txt), in the container's
@@ -110,9 +113,10 @@ The [container workflow](../.github/workflows/containers.yml) uses the repositor
 automatic `GITHUB_TOKEN` with `packages: write`; no personal access token is
 required. It tests the backend, builds Linux amd64, smoke-tests the packaged
 server, then publishes to GHCR. The EXOS job downloads the pinned binary, verifies
-its checksum and generates the seed ZIP by configuring disposable KVM guests.
-It restores that ZIP into a separate lab and checks inter-VLAN traffic before
-packaging it. It never uses a maintainer's running lab or private image directory.
+its checksum, validates the topology JSON, and tests packaged initialization and
+persistence. It does not boot EXOS VMs or require KVM on the build runner.
+Real guest boot, LLDP and forwarding checks are separate, opt-in native tests;
+passing the packaging pipeline alone does not establish protocol behavior.
 
 After the first upload, the repository owner must make each GHCR package public
 in its package settings so anonymous pulls work. Package visibility is separate

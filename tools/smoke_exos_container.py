@@ -34,6 +34,10 @@ def main():
             assert len(state['topology']['nodes']) == 5, state
             assert all(s['state'] == 'stopped' for s in state['status'].values()), state
             assert state['topology']['name'] == ('EXOS: VLANs and routing' if iteration == 0 else 'User saved changes')
+            docker('exec', name, 'python3', '-c',
+                   "from pathlib import Path; "
+                   "assert not Path('/opt/weblab/exos-demo/demo.zip').exists(); "
+                   "assert not list(Path('/data').rglob('*.qcow2'))")
             docker('stop', '--time', '20', name)
             assert docker('inspect', '-f', '{{.State.ExitCode}}', name) == '0'
             print(docker('logs', name))

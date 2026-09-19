@@ -20,7 +20,7 @@ workspace and its supported profiles.
 10. [Supported scope and limitations](limitations.md) — deployment boundaries and known gaps.
 
 [Prebuilt container images and EXOS demo](containers.md) provide an alternative
-to building locally, including a ready-configured introductory lab.
+to building locally, including a wired introductory topology and bundled EXOS image.
 
 ## Examples and contributors
 

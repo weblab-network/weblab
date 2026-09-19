@@ -4,9 +4,9 @@
 !packaging/exos/initialize.py
 !packaging/exos/image.json
 !packaging/exos/build/
-!packaging/exos/build/demo.zip
 !packaging/exos/build/EXOS-VM_33.1.1.31.qcow2
 !examples/
 !examples/exos-demo.md
+!examples/exos-demo.json
 !licenses/
 !licenses/Virtual-EXOS.txt

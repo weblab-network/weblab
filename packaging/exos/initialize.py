@@ -53,8 +53,7 @@ def initialize(bundle, images, data):
         stream.write('EXOS demo initialization in progress\n')
     lab = lab_server.Lab(data, images)
     try:
-        with (bundle / 'demo.zip').open('rb') as archive:
-            lab_backup.restore(lab, archive, lab_server.run)
+        lab.save(json.loads((bundle / 'topology.json').read_text()))
         marker.unlink()
         print('EXOS demo initialized. Open Weblab and click Start lab.', flush=True)
         return True
