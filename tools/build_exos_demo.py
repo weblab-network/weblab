@@ -61,7 +61,7 @@ class EXOSConsole:
             try:
                 output += self.console.receive(deadline)
             except Exception as error:
-                raise RuntimeError(f'EXOS console: {error}\n{console_capture.clean_output(output)[-2000:]}') from error
+                raise RuntimeError(f'EXOS console: {error}\n{console_capture.clean_output(output)[-16000:]}') from error
             if not self.console.lock or not self.console.lock['mine']:
                 raise RuntimeError('EXOS demo console input lock lost')
 
