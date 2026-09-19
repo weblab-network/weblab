@@ -164,7 +164,11 @@ def command(node, disk, socket_dir, config=None, boot=None):
         raise ValueError('Initial config disks are only supported for IOSv')
     interface = "ide" if exos or veos else "virtio"
     adapter = "virtio-net-pci" if veos else "rtl8139" if exos else "e1000"
-    args = ["-name", node["id"], "-machine", "pc,accel=kvm", "-cpu", "host",
+    # EXOS 33.1 classifies x86 using the CPU model-name string. An AMD host
+    # name sends it into a development-board boot path. Keep host features
+    # and vendor ID; override only the guest-visible description for EXOS.
+    cpu = "host,model-id=Intel-compatible virtual CPU" if exos else "host"
+    args = ["-name", node["id"], "-machine", "pc,accel=kvm", "-cpu", cpu,
             "-smp", "2" if veos else "1", "-m", str(node["memory"]), "-display", "none",
             "-monitor", "none", "-qmp", f"unix:{socket_dir / 'qmp'},server=on,wait=off", "-serial", "stdio", "-boot", "order=dc" if veos else "c",
             "-drive", f"file={str(disk).replace(',', ',,')},format=qcow2,if={interface},cache=writeback"]

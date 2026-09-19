@@ -85,6 +85,10 @@ Copying a file manually does not bypass validation at startup.
 
 ## Virtual EXOS
 
+The EXOS QEMU profile supplies a compatible CPU model-name string while retaining
+the host's CPU features. EXOS 33.1 uses this name to detect x86; passing through an
+AMD model name can otherwise stop boot at a developer menu and shell.
+
 Upload the vendor QCOW2 with its original filename, for example
 `EXOS-VM_33.1.1.31.qcow2`, then add a **switch** and select that image. Names starting
 with `EXOS-VM_` or `EXOS-VM-` (case insensitive) select the EXOS profile. Other QCOW2

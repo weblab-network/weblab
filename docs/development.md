@@ -98,6 +98,7 @@ free Docker provisioning subnets/application IDs.
 | `tests/iol_l1_experiment.py` | Low-level isolated L1 signal diagnostic; not the managed application |
 | `tests/link_faults_native.cjs` | `VIOS_IMAGE`, `IOL_SWITCH_IMAGE`, `IOL_LICENSE`, KVM, Docker/TAP; mixed forwarding and faults |
 | `tests/exos_native.cjs` | `EXOS_IMAGE`, KVM, Docker/TAP, Alpine; EXOS boot/console/forwarding |
+| `tests/exos_cpu_native.py IMAGE` | Root, KVM, QEMU and EXOS 33.1; reproduce AMD CPU-name boot failure, then verify the compatible profile |
 | `tests/veos_native.cjs` | `VEOS_IMAGE` and Aboot beside it, KVM, Docker/TAP, Alpine; vEOS boot/console/forwarding |
 
 For example, with your own license and IOL L2 image installed:

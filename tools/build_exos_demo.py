@@ -67,18 +67,14 @@ class EXOSConsole:
 
     def login(self, fresh):
         # Wait passively, including replay received during the lock handshake.
-        # The pinned image sometimes stops at this menu on CI hosts. Continue
-        # only at its complete, recognized prompt; never change boot settings.
+        # An unrecognized CPU model name sends EXOS into development-board
+        # boot. Continuing its menu only reaches a shell, not a usable switch.
         ready = r'Authentication Service \(AAA\).*available|^(?:[\w-]+ )?login:\s*$'
-        menu = r'(?s:===== developer menu =====.*?\nc\) continue with boot process\s*\n~>\s*\Z)'
-        for attempt in range(2):
-            output = self.wait(f'{ready}|{menu}', timeout=300)
-            if not re.search(menu, output, re.I | re.M):
-                break
-            if attempt:
-                raise RuntimeError('EXOS returned to its developer menu after continuing boot')
-            print('EXOS developer menu detected; continuing boot without changing settings', flush=True)
-            self.send('c')
+        unsupported = r'Could not determine the CPU Family|===== developer menu ====='
+        output = self.wait(f'{ready}|{unsupported}', timeout=300)
+        if re.search(unsupported, output, re.I):
+            raise RuntimeError('EXOS entered development-board boot; check the EXOS QEMU CPU model-name profile.\n'
+                               + output[-2000:])
         # The readiness announcement can precede successful AAA requests briefly.
         for attempt in range(12):
             time.sleep(5)

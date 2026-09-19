@@ -33,6 +33,7 @@ class ExosTests(unittest.TestCase):
         disk=vios.disk_paths(node,self.root)[1]
         self.assertTrue(lab_backup.saved_path(node,disk.name))
         args=vios.command(node,disk,self.root)
+        self.assertEqual(args[args.index('-cpu')+1], 'host,model-id=Intel-compatible virtual CPU')
         self.assertEqual(sum('rtl8139,netdev=' in a for a in args),13)
         self.assertTrue(any('if=ide' in a for a in args))
         self.assertIn('stdio',args)
