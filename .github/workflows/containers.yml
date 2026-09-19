@@ -83,7 +83,7 @@ jobs:
           sudo apt-get install -y python3 perl libnet-pcap-perl iproute2 qemu-system-x86 qemu-utils mtools
           test -c /dev/kvm
           test -c /dev/net/tun
-          lscpu
+          lscpu > "$RUNNER_TEMP/exos-host-cpu.log"
           docker pull alpine:latest
       - name: Download and verify the pinned EXOS release
         run: python3 tools/fetch_exos_demo_image.py packaging/exos/build
@@ -98,7 +98,9 @@ jobs:
           python3 - "$RUNNER_TEMP/exos-demo.log" <<'PY'
           from pathlib import Path
           import sys
-          message = Path(sys.argv[1]).read_text(errors='replace')[-20000:]
+          log = Path(sys.argv[1])
+          host = log.with_name('exos-host-cpu.log').read_text(errors='replace')
+          message = 'Host CPU:\n' + host + '\nEXOS build:\n' + log.read_text(errors='replace')[-20000:]
           message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
           print('::error title=EXOS demo build failed::' + message)
           PY

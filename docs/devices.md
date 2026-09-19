@@ -85,8 +85,8 @@ Copying a file manually does not bypass validation at startup.
 
 ## Virtual EXOS
 
-The EXOS QEMU profile uses the fixed `Nehalem-v1` virtual CPU model for consistent
-CPU identification and features across hosts. EXOS 33.1 uses the model name to
+The EXOS QEMU profile uses the fixed `Nehalem-v1` virtual CPU model with RDTSCP for
+consistent CPU identification and features across hosts. EXOS 33.1 uses the model name to
 detect x86; an AMD model name can otherwise stop boot at a developer menu and shell.
 
 Upload the vendor QCOW2 with its original filename, for example

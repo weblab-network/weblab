@@ -166,7 +166,8 @@ def command(node, disk, socket_dir, config=None, boot=None):
     adapter = "virtio-net-pci" if veos else "rtl8139" if exos else "e1000"
     # EXOS 33.1 recognizes x86 via an Intel model name. Use a fixed CPU profile
     # so boot and userspace see consistent features across Intel/AMD hosts.
-    cpu = "Nehalem-v1" if exos else "host"
+    # Its entropy service executes RDTSCP unconditionally during startup.
+    cpu = "Nehalem-v1,rdtscp=on" if exos else "host"
     args = ["-name", node["id"], "-machine", "pc,accel=kvm", "-cpu", cpu,
             "-smp", "2" if veos else "1", "-m", str(node["memory"]), "-display", "none",
             "-monitor", "none", "-qmp", f"unix:{socket_dir / 'qmp'},server=on,wait=off", "-serial", "stdio", "-boot", "order=dc" if veos else "c",
