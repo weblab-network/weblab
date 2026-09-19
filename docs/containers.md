@@ -20,6 +20,11 @@ not remove the KVM requirement. Docker Desktop, rootless Docker and ARM hosts
 are not supported by this deployment. See [installation](installation.md) for
 permissions, trusted-network access and the standard edition.
 
+The `edge` edition has also been independently field-tested on a fresh minimal
+Debian 13 installation with KVM enabled. The documented deployment uses explicit
+device access, NET_ADMIN and persistent storage; a successful privileged test does
+not make `--privileged` a requirement.
+
 ## Start the EXOS demo
 
 Use a new directory, separate from any existing Weblab checkout or `.env`:
