@@ -12,7 +12,7 @@ let statuses = {}, images = [], selected = null, busy = false, loaded = false, d
 const selectedNodes = new Set();
 let multiSelect = false;
 let mode = "select", linkSource = null, pendingLink = null, toastTimer;
-let pendingDelete = null;
+let pendingDelete = null, pendingStop = null;
 const MAP_WIDTH = 2400, MAP_HEIGHT = 1600, MIN_ZOOM = .2, MAX_ZOOM = 2;
 let mapZoom = 1, suppressMapClick = false;
 const consoleSessions = new Map();
@@ -473,7 +473,7 @@ function renderEthernetSettings(n) {
   $("ethernet-label").textContent = qcow || frr ? "Ethernet interfaces" : "Ethernet slots";
   $("node-ethernet").innerHTML = Array.from({length: exos ? 12 : veos || junos ? 15 : qcow ? 16 : 8}, (_, i) => `<option>${i + (exos || veos || junos ? 2 : 1)}</option>`).join("");
   $("node-ethernet").value = n.ethernet;
-  $("ethernet-help").textContent = junos ? "Junos: 4 vCPUs, management plus ge-/et-0/0/x data ports. Switch needs nested Intel KVM and at least 5120 MB; Evolved needs UEFI and 8192 MB. Configure via console; commit before stopping. Initial snippets and config-text export are not supported." : frr ? "FRR container: eth0–eth7, no KVM. Pull quay.io/frrouting/frr:10.7.1 on the Docker host first. Configure in vtysh; write memory before stopping. Memory is the container limit." : veos ? "Includes Management1 plus Ethernet data ports. Uses 2 vCPUs; tested with 6144 MB RAM. Requires Aboot-veos-serial-8.0.2.iso. On first boot, log in as admin and run zerotouch disable (reboots)." : exos ? "Includes Mgmt plus numbered data ports (1–12). Allow a few minutes for EXOS to boot." : qcow
+  $("ethernet-help").textContent = junos ? "Junos: 4 vCPUs, management plus ge-/et-0/0/x data ports. Switch needs bare-metal Intel KVM and at least 5120 MB; Evolved needs UEFI and 8192 MB. Before Stop: commit, then request system power-off and wait for shutdown. Initial snippets and config-text export are not supported." : frr ? "FRR container: eth0–eth7, no KVM. Pull quay.io/frrouting/frr:10.7.1 on the Docker host first. Configure in vtysh; write memory before stopping. Memory is the container limit." : veos ? "Includes Management1 plus Ethernet data ports. Uses 2 vCPUs; tested with 6144 MB RAM. Requires Aboot-veos-serial-8.0.2.iso. On first boot, log in as admin and run zerotouch disable (reboots)." : exos ? "Includes Mgmt plus numbered data ports (1–12). Allow a few minutes for EXOS to boot." : qcow
     ? "Up to 16 GigabitEthernet interfaces. Allow a few minutes for IOSv to boot."
     : "Four Ethernet ports per slot. Interfaces are shown as slot/port.";
 }
@@ -772,10 +772,32 @@ $("node-form").addEventListener("submit", e => {
 });
 $("lab-name").addEventListener("change", () => edit(() => topology.name = $("lab-name").value.trim()));
 $("delete-node").onclick = () => requestDelete("node", selected);
+function stopDevices(id) {
+  return perform(id === null ? "Stopping lab…" : "Stopping device…",
+    () => api(id === null ? "/api/lab/stop" : `/api/nodes/${id}/stop`, "POST", {}));
+}
+function requestStop(id = null) {
+  if (busy || !loaded) return;
+  const junos = topology.nodes.filter(n => (id === null || n.id === id) && isJunos(n) && state(n.id) === "running");
+  if (!junos.length) return stopDevices(id);
+  pendingStop = {id};
+  $("stop-junos-names").textContent = junos.map(n => n.name).join(", ");
+  $("confirm-stop").textContent = id === null ? "Stop lab" : "Stop node";
+  $("stop-dialog").showModal();
+}
+$("stop-form").addEventListener("submit", event => {
+  if (event.submitter?.value !== "stop" || !pendingStop) return;
+  const {id} = pendingStop;
+  pendingStop = null;
+  stopDevices(id);
+});
+$("stop-dialog").addEventListener("close", () => {
+  if (!$("stop-dialog").open) pendingStop = null;
+});
 $("start-all").onclick = () => { setMode("select"); perform("Starting lab…", () => api("/api/lab/start", "POST", {})); };
-$("stop-all").onclick = () => perform("Stopping lab…", () => api("/api/lab/stop", "POST", {}));
+$("stop-all").onclick = () => requestStop();
 $("start-node").onclick = () => { setMode("select"); perform("Starting device…", () => api(`/api/nodes/${selected}/start`, "POST", {})); };
-$("stop-node").onclick = () => perform("Stopping device…", () => api(`/api/nodes/${selected}/stop`, "POST", {}));
+$("stop-node").onclick = () => requestStop(selected);
 $("open-console").onclick = () => openConsole(selected);
 $("starter").onclick = () => structuralEdit(() => {
   const r = newNode("router", 180, 180), s = newNode("switch", 420, 320), p = newNode("pc", 660, 180);

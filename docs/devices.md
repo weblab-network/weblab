@@ -14,8 +14,8 @@ network feature works. Supply your own images and any required licenses.
 | Virtual EXOS | `EXOS-VM_33.1.1.31.qcow2` | 1024 MB / 1 | Mgmt + 1–12 | Yes | No / no | Yes |
 | Arista vEOS-lab | `vEOS64-lab-4.36.1F.qcow2` + serial Aboot 8.0.2 | 6144 MB / 2 | Management1 + Ethernet1–15 | Yes | No / no | Yes |
 | FRRouting container | `quay.io/frrouting/frr:10.7.1` | 512 MB container limit | eth0–eth7 | No | Yes / saved only | Saved frr.conf |
-| Juniper vJunos-switch (experimental) | `vJunos-switch-26.2R1.7.qcow2` | 5120 MB / 4 | fxp0 + ge-0/0/0–14 | Intel KVM, bare metal | No / no | Disk overlay |
-| Juniper vJunosEvolved (experimental) | `vJunosEvolved-26.2R1.7-EVO.qcow2` | 8192 MB / 4 | re0:mgmt-0 + et-0/0/0–14 | Yes; UEFI | No / no | Disk overlay |
+| Juniper vJunos-switch | `vJunos-switch-26.2R1.7.qcow2` | 5120 MB / 4 | fxp0 + ge-0/0/0–14 | Intel KVM, bare metal | No / no | Disk overlay |
+| Juniper vJunosEvolved | `vJunosEvolved-26.2R1.7-EVO.qcow2` | 8192 MB / 4 | re0:mgmt-0 + et-0/0/0–14 | Yes; UEFI | No / no | Disk overlay |
 | Alpine PC | locally installed `alpine:latest` | Host Docker container | eth0 | No | IPv4/gateway fields only | Settings only; no PC filesystem |
 
 ## Installing images
@@ -227,7 +227,7 @@ PID/network sharing. See the [FRR OSPF exercise](../examples/frr-ospf.md) and
 [its topology](../examples/frr-ospf.json) for a vendor-image-free starting point.
 
 
-## Juniper vJunos (experimental)
+## Juniper vJunos
 
 Copy `vJunos-switch-26.2R1.7.qcow2` or
 `vJunosEvolved-26.2R1.7-EVO.qcow2` into the image directory. These images exceed
@@ -271,7 +271,9 @@ inter-VLAN traffic between three Alpine PCs. This was a user-run integration
 test. A nested-VM test reached Junos but failed to initialize the forwarding
 plane; a working CLI alone is insufficient. Evolved boot/console and the UUID
 correction have been tested, but full forwarding and real-guest ZIP restore
-coverage remain incomplete. These profiles retain the experimental label.
+coverage remain incomplete. Repeated boots of both profiles and installation
+from the published instructions have also been user-tested. These results
+apply to the listed images and host requirements, not arbitrary Junos releases.
 
 On a fresh image, log in as `root` with an empty password, then enter `cli`.
 Set a root password before committing configuration. Use `show chassis fpc`
@@ -280,3 +282,12 @@ with `commit`. Before Weblab Stop, use `request system power-off` and wait for
 guest shutdown. Weblab Stop terminates QEMU; it does not currently perform a
 Junos-aware graceful shutdown. Juniper warns that abrupt termination can damage
 the switch's disk; see its [deployment guide](https://www.juniper.net/documentation/us/en/software/vjunos/vjunos-switch-kvm/topics/deploy-and-manage-vjunos-switch-onkvm.html).
+
+**Required shutdown sequence:** `commit` configuration changes, return to
+operational mode, run `request system power-off`, and wait for guest shutdown
+before using **Stop node**, **Stop lab**, or stopping/recreating the Weblab
+container. Stopping without this sequence has caused an unbootable switch disk
+in user testing. The workspace asks for confirmation when stopping running Junos
+nodes; Cancel lets you return to their consoles. The warning does not execute
+shutdown or verify that it completed. Direct API calls and container/host
+shutdowns bypass the browser warning.

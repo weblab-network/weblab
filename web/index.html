@@ -111,6 +111,14 @@
   <dialog id="link-dialog"><form method="dialog" id="link-form"><span class="eyebrow">NEW CONNECTION</span><h2>Choose your interfaces</h2><p class="muted">Each interface connects to one cable.</p><div class="link-endpoints"><label><span id="link-a-name"></span><select id="link-a-port"></select></label><span>↔</span><label><span id="link-b-name"></span><select id="link-b-port"></select></label></div><div class="dialog-actions"><button value="cancel" formnovalidate>Cancel</button><button class="primary" id="confirm-link" value="connect">Connect devices</button></div></form></dialog>
   <dialog id="takeover-dialog" aria-labelledby="takeover-title"><form method="dialog" id="takeover-form"><h2 id="takeover-title">Take over console input?</h2><p id="takeover-description" class="muted"></p><div class="dialog-actions"><button value="cancel" autofocus>Cancel</button><button class="primary" id="confirm-takeover" value="takeover">Take over</button></div></form></dialog>
   <dialog id="logs-dialog"><div class="logs-heading"><h2>Launcher logs</h2><button id="close-logs">✕</button></div><pre id="log-content"></pre></dialog>
+  <dialog id="stop-dialog" aria-labelledby="stop-title" aria-describedby="stop-description"><form method="dialog" id="stop-form">
+    <h2 id="stop-title">Shut down Junos before stopping</h2>
+    <p class="muted">Junos nodes: <strong id="stop-junos-names"></strong></p>
+    <p id="stop-description">Stopping a running Junos VM can corrupt its filesystem and prevent it from booting again.</p>
+    <p class="muted">In each Junos console, save with <code>commit</code>, return to operational mode, then run <code>request system power-off</code> and wait for shutdown to finish. Cancel to return to the consoles.</p>
+    <p class="muted">Continue only after guest shutdown. Weblab does not run these commands or verify shutdown for you.</p>
+    <div class="dialog-actions"><button value="cancel" id="cancel-stop" autofocus>Cancel</button><button class="danger-button" value="stop" id="confirm-stop">Stop node</button></div>
+  </form></dialog>
   <dialog id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description"><form method="dialog" id="delete-form"><span class="eyebrow">CONFIRM DELETION</span><h2 id="delete-title"></h2><p id="delete-description" class="muted"></p><div class="dialog-actions"><button id="cancel-delete" value="cancel" autofocus>Cancel</button><button class="danger-button" id="confirm-delete" value="delete">Delete</button></div></form></dialog>
   <dialog id="clipboard-dialog" aria-labelledby="clipboard-title">
     <h2 id="clipboard-title">Clipboard preferences</h2>

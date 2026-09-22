@@ -188,4 +188,6 @@ FRR configuration overrides snippets, including after ZIP restore.
 
 Junos ZIP storage is covered by synthetic-disk round-trip tests; a complete
 real-guest restore/forwarding test remains outstanding. Use `commit` and shut
-down Junos through its CLI before Stop/export; keep the original base image.
+down Junos with `request system power-off` and wait for shutdown before
+Stop/export; keep the original base image. The Stop confirmation is a reminder,
+not an automatic guest shutdown.

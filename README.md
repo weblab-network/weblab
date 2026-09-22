@@ -2,7 +2,7 @@
 
 A browser workspace for building and running network labs with Cisco IOL,
 IOSv/IOSvL2, Virtual EXOS, Arista vEOS-lab, FRRouting and Alpine PCs,
-plus experimental Juniper vJunos profiles.
+plus Juniper vJunos profiles.
 
 Keep the topology, multiple device consoles and lab instructions together in one
 page. Float, resize and arrange windows for desktop or tablet use; share consoles
@@ -61,7 +61,7 @@ three-switch/two-PC topology with a companion exercise.
 ## Recent additions
 
 - FRR container routers with saved configurations and an [OSPF exercise](examples/frr-ospf.md).
-- Experimental vJunos-switch and vJunosEvolved profiles; see [requirements and validation](docs/devices.md#juniper-vjunos-experimental).
+- vJunos-switch and vJunosEvolved profiles; see [requirements and validation](docs/devices.md#juniper-vjunos).
 - Multi-select and move groups of topology nodes, including on touch screens.
 - Compact vEOS ZIP backups with exact disk reconstruction on restore.
 

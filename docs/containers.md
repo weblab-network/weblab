@@ -122,3 +122,11 @@ After the first upload, the repository owner must make each GHCR package public
 in its package settings so anonymous pulls work. Package visibility is separate
 from repository visibility. Stable tags are published by pushing `vVERSION`;
 branch builds do not overwrite `latest`.
+
+For a numbered release, commit its notes at `docs/releases/vVERSION.md` and push
+an annotated `vVERSION` tag on the reviewed public commit (for example `v0.2.0`).
+A normal SemVer tag publishes both editions as `VERSION` and `latest` after their
+respective checks pass. The jobs publish sequentially, so the two `latest` tags
+are not updated atomically. After both succeed, the workflow creates a GitHub
+Release using the committed notes. Existing release pages are left unchanged
+on reruns. Do not move a published tag; use a new version for corrections.

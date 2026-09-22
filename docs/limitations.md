@@ -22,7 +22,7 @@ See [installation](installation.md).
   prove that every switching/routing protocol is implemented.
 - Extreme Networks Virtual EXOS and Arista vEOS support consoles, links and persistent
   disks, but not initial configuration snippets or configuration-text extraction.
-- Junos profiles are experimental. vJunos-switch forwarding was verified on bare
+- Junos support targets the documented 26.2R1.7 images. Switch forwarding was verified on bare
   metal; nested-VM forwarding failed. Junos snippets, config-text export and
   carrier control are unavailable; real-guest ZIP restore verification remains
   incomplete. Shut down Junos through its CLI before Weblab Stop.

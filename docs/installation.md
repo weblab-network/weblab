@@ -167,7 +167,7 @@ installations do not need the override. Legacy Compose uses `docker-compose`
 with the same arguments. Allocate enough host memory before starting large labs.
 vJunos-switch requires Intel VT-x and a bare-metal host for the supported
 deployment; running it inside another VM can leave its forwarding plane
-unavailable. See [Junos profiles](devices.md#juniper-vjunos-experimental).
+unavailable. See [Junos profiles](devices.md#juniper-vjunos).
 FRR uses Docker and does not require KVM; pull its [supported image](devices.md#frrouting) first.
 
 ## Why these container permissions?
