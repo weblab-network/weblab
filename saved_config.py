@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 import time
 
+import frr
 import vios
 
 MAX_NVRAM = 2 * 1024 * 1024
@@ -141,6 +142,11 @@ def read_node(lab, node, run):
     directory = lab.directory / 'nodes' / node['id']
     if directory.is_symlink() or directory.parent.is_symlink():
         raise ValueError('Device storage directory cannot be a symlink')
+    if frr.is_frr(node):
+        config = frr.read_config(frr.config_path(node, directory)).decode()
+        if len(config.encode()) > 16_384:
+            raise ValueError('Saved FRR config exceeds 16 KiB; use Saved lab ZIP')
+        return config
     if node['image'].endswith('.bin'):
         path = directory / f"nvram_{node['iol_id']:05d}"
         regular(path)
@@ -175,12 +181,14 @@ def read_node(lab, node, run):
 def export(lab, run):
     with lab.lock:
         for node in lab.topology['nodes']:
+            if vios.is_junos(node):
+                raise ValueError("Junos configuration-text export is not supported yet; use Saved lab ZIP")
             if vios.is_veos(node):
                 raise ValueError("Arista vEOS configuration extraction is not supported yet; use Saved lab ZIP")
             if vios.is_exos(node):
                 raise ValueError("EXOS configuration extraction is not supported yet; use Saved lab ZIP")
             if node['type'] != 'pc' and node['id'] in lab.runtime:
-                raise ValueError(f"Stop {node['name']} before reading saved configurations; live configs are available through the console")
+                raise ValueError(f"Stop {node['name']} before reading saved configurations")
         result = copy.deepcopy(lab.topology)
         for node in result['nodes']:
             if node['type'] == 'pc':
@@ -188,7 +196,8 @@ def export(lab, run):
             try:
                 node['startup_config'] = read_node(lab, node, run)
             except (ValueError, OSError, subprocess.SubprocessError) as error:
-                raise ValueError(f"{node['name']}: {error}. No file exported. Use JSON + live configs for console retrieval, or Saved lab ZIP to preserve device storage.") from error
+                alternative = "Use Saved lab ZIP to preserve device storage." if frr.is_frr(node) else "Use JSON + live configs for console retrieval, or Saved lab ZIP to preserve device storage."
+                raise ValueError(f"{node['name']}: {error}. No file exported. {alternative}") from error
         if len((json.dumps(result, indent=2) + '\n').encode()) > 1_000_000:
             raise ValueError('Result exceeds the 1 MB topology import limit; use Saved lab ZIP')
         return result

@@ -69,6 +69,12 @@ docker run -d --name weblab --init --stop-timeout 120 \
   ghcr.io/weblab-network/weblab:latest
 ```
 
+For an optional non-resolving DNS setting, add `--dns 127.0.0.199` after
+`-e WL_BIND=127.0.0.1`. With host networking this uses the host loopback;
+it only fails to resolve names if no DNS service answers at that address.
+It does not block internet access or change the host Docker daemon’s DNS
+for image pulls. See [Docker DNS services](https://docs.docker.com/engine/network/#dns-services).
+
 Omit `--device /dev/kvm` for IOL-only labs. Use `docker logs -f weblab` to inspect
 startup and `docker stop weblab` to stop gracefully. Keep the same named volumes
 when recreating the container to upgrade it. Uploaded images live in `/iou` and
@@ -150,7 +156,7 @@ are temporary. After a container restart, saved nodes are stopped until you star
 
 ## Enable KVM for QEMU devices
 
-IOSv/IOSvL2, Virtual EXOS and vEOS-lab require working `/dev/kvm`. Add the override:
+IOSv/IOSvL2, Virtual EXOS, vEOS-lab and Junos require working `/dev/kvm`. Add the override:
 
 ```sh
 docker compose -f compose.yaml -f compose.kvm.yaml up -d --build
@@ -159,6 +165,10 @@ docker compose -f compose.yaml -f compose.kvm.yaml up -d --build
 Keep both `-f` arguments on later Compose commands for this deployment. IOL-only
 installations do not need the override. Legacy Compose uses `docker-compose`
 with the same arguments. Allocate enough host memory before starting large labs.
+vJunos-switch requires Intel VT-x and a bare-metal host for the supported
+deployment; running it inside another VM can leave its forwarding plane
+unavailable. See [Junos profiles](devices.md#juniper-vjunos-experimental).
+FRR uses Docker and does not require KVM; pull its [supported image](devices.md#frrouting) first.
 
 ## Why these container permissions?
 
@@ -181,7 +191,7 @@ sudo docker pull alpine:latest
 sudo ./start-lab.sh --image-dir ./images --data-dir ./lab-data
 ```
 
-For IOSv, also install `qemu-system-x86 qemu-utils mtools` (QEMU 7.2+) and ensure the
+For QEMU profiles, also install `qemu-system-x86 qemu-utils mtools ovmf` (QEMU 7.2+) and ensure the
 server user can open `/dev/kvm`. Saved compressed NVRAM retrieval also requires `gzip`.
 
 Root is needed for PC TAP creation and access to the rootful Docker daemon. For

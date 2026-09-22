@@ -40,7 +40,7 @@ def main():
         result = Lab.validate(FileValidator(data, args.image_dir), data)
     except (LabError, ValueError, TypeError, OSError) as error:
         parser.exit(1, f'Invalid topology: {error}\n')
-    mode = 'installed image names checked' if args.image_dir else 'image availability not checked'
+    mode = 'installed VM/IOL image names checked; Docker images checked on Start' if args.image_dir else 'image availability not checked'
     print(f"Valid: {len(result['nodes'])} nodes, {len(result['links'])} links; {mode}.")
     print('Configuration syntax and device feature support require a device test.')
 

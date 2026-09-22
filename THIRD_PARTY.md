@@ -31,3 +31,9 @@ Container runtime packages (including Debian, QEMU, Perl, Python and the Docker
 client) retain their own licenses. Debian package copyright notices are retained
 under `/usr/share/doc/` in the image. Container tags identify the corresponding
 Weblab source revision; `iou2net.pl` is also included as source in `/app/`.
+
+The optional FRRouting profile runs the separately downloaded
+[upstream FRR container](https://github.com/FRRouting/frr). Its software and
+notices remain in that image under their upstream licenses. FRR binaries/source
+are not bundled into Weblab's standard image or source tree. The Weblab profile
+and TAP adapter are independently implemented.

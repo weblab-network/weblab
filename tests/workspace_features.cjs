@@ -62,7 +62,7 @@ let log=''; fixture.stderr.on('data',d=>log+=d);
     await page.locator('#export-logs').check();
     const exportRequest=page.waitForRequest(r=>r.url()===url+'/api/export' && r.method()==='POST');
     const zipDownload=page.waitForEvent('download');await page.locator('#export-zip').click();
-    assert.deepEqual((await exportRequest).postDataJSON(),{include_logs:true});
+    assert.deepEqual((await exportRequest).postDataJSON(),{include_logs:true,compact_veos:true});
     const zipFile=await zipDownload;assert.match(zipFile.suggestedFilename(),/\.zip$/);
     const zipPath=await zipFile.path();assert.ok(zipPath);
     await page.waitForFunction(()=>!busy);

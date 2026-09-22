@@ -7,13 +7,13 @@
 | Format | What it preserves | When to use it |
 | --- | --- | --- |
 | Topology JSON | Nodes, links, settings and original startup snippets | Share a topology or fresh exercise |
-| JSON + saved configs | Topology with saved Cisco startup text | Share a saved configuration baseline; stop Cisco devices first |
+| JSON + saved configs | Topology with saved Cisco/FRR startup text | Share a saved configuration baseline; stop Cisco/FRR devices first |
 | JSON + live configs | Topology with current Cisco running text | Share unsaved configuration; requires ready, unlocked privileged consoles |
-| Saved lab ZIP | Topology and supported persistent device storage | Resume a saved lab, including IOL VLAN databases and QEMU disks; stop all nodes first |
+| Saved lab ZIP | Topology and supported persistent device storage | Resume a saved lab, including IOL VLAN databases, QEMU disks and FRR configuration; stop all nodes first |
 
 A ZIP is a saved-storage backup, not a VM memory snapshot. Device images and
 licenses are not included. Instructions documents and window positions are not
-part of topology/ZIP exports. EXOS/Arista support topology JSON and saved ZIP,
+part of topology/ZIP exports. EXOS/Arista/Junos support topology JSON and saved ZIP,
 but not configuration-text export or initial snippets.
 
 ## Where state is stored
@@ -97,7 +97,7 @@ The validator checks topology shape, ports, addresses, snippet limits and (with 
 3. On the destination, install the same device images (and Arista Aboot where required) with the same filenames. Base images and licenses are excluded; SHA-256 checksums verify the installed image contents before restoring.
 4. Stop the destination lab, choose **Import**, select the ZIP, then **Restore lab**. This replaces the active topology and its saved device state. Export the old lab first if you want to keep it. Restored devices remain stopped.
 
-The ZIP includes IOL `nvram_<application-ID>`, `vlan.dat-<application-ID>` (for example, `vlan.dat-00100`), legacy `vlan.dat`, `startup-config`, `private-config`, and regular files under `CRDU/`, `flash/`, `flash0/`, `nvram/` and `pnp-info/`. It includes the current image's IOSv QCOW2 overlay for each node; overlays belonging to previously selected images are excluded. Runtime files, diagnostic dumps, symlinks and temporary Alpine files are excluded. Logs are excluded unless selected as described below. Newly created devices may have no saved files yet. Keep a stopped copy of the entire data directory if you also need historical disks or other files outside this list.
+The ZIP includes IOL `nvram_<application-ID>`, `vlan.dat-<application-ID>` (for example, `vlan.dat-00100`), legacy `vlan.dat`, `startup-config`, `private-config`, and regular files under `CRDU/`, `flash/`, `flash0/`, `nvram/` and `pnp-info/`. It includes the current image's IOSv, EXOS, Arista or Junos QCOW2 overlay for each node; overlays belonging to previously selected images are excluded. Runtime files, diagnostic dumps, symlinks and temporary Alpine files are excluded. Logs are excluded unless selected as described below. Newly created devices may have no saved files yet. Keep a stopped copy of the entire data directory if you also need historical disks or other files outside this list.
 
 An archive missing a VLAN database cannot restore its VLAN definitions. Keep the
 database alongside NVRAM when preserving a configured switch.
@@ -139,3 +139,53 @@ on the host. For another independent workspace:
 `./start-lab.sh --port 8081 --data-dir /path/to/another-lab`.
 Each manager checks ID conflicts when starting; if another lab has claimed a saved
 ID, recreate that stopped node to allocate a free one.
+
+## Compact vEOS disk backups
+
+For labs containing Arista vEOS, **Compact vEOS disks in ZIP** is enabled by
+default in the export dialog. It stores references to matching blocks in the
+installed base image instead of repeating them in the ZIP. This can substantially
+reduce backups when vEOS has copied its boot image into the writable disk.
+The saved disk and guest files are never modified. Restore reconstructs the exact
+original QCOW2 bytes and checks both the encoded data and reconstructed disk
+SHA-256 checksums before installing anything. All usual base-image/Aboot checks
+and transactional restore protections still apply.
+
+Compact archives use backup format version 2 with `.qcow2.wl-delta` entries.
+They require a Weblab installation supporting this format; those entries are
+not directly bootable disks. Turn the option off to produce a conventional
+version-1 ZIP for older installations, unless the lab contains FRR nodes
+(which require version 2). Existing version-1 archives remain
+importable. Topology JSON and configuration-text exports are unaffected.
+
+Compaction is used only for vEOS disks at least 1 MiB in size, with a base image
+file at most 1 GiB, and when block references save at least 10% of the uncompressed
+file size. Otherwise the ordinary disk entry is used automatically. Actual ZIP
+savings depend on disk contents. The block index uses additional memory (tens of
+MiB for typical images), and export needs temporary disk space for the encoded
+file alongside the ZIP. The 8 GiB device-data limit applies to the reconstructed
+files as well as the stored payload. This does not save unsaved running configs:
+save inside the device and stop the lab first.
+
+
+## FRR configuration
+
+FRR supports initial `startup_config` snippets using FRR configuration-file syntax.
+They seed only fresh nodes. Keep interface addresses, routes and routing protocols
+in FRR; arbitrary Linux commands are not startup snippets. Save with `write memory`
+and then Stop: Weblab collects the saved `frr.conf` before removing the container.
+Unsaved changes are intentionally excluded. If collection fails, the container is
+retained and Stop reports the error; retry after resolving it.
+
+Stopped **JSON + saved configs** includes this file as a fresh-device snippet,
+subject to the 16 KiB limit. FRR live console capture is not implemented. Saved
+lab ZIP preserves the configuration up to 1 MiB and records the pinned container
+image digest. FRR ZIPs use backup format version 2 and require an FRR-capable
+Weblab importer with the matching Docker image installed. No container image,
+daemon shell settings or arbitrary guest filesystem data is included. Existing
+FRR configuration overrides snippets, including after ZIP restore.
+
+
+Junos ZIP storage is covered by synthetic-disk round-trip tests; a complete
+real-guest restore/forwarding test remains outstanding. Use `commit` and shut
+down Junos through its CLI before Stop/export; keep the original base image.

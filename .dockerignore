@@ -6,6 +6,9 @@
 !iol_l1.py
 !qmp.py
 !lab_backup.py
+!disk_delta.py
+!frr.py
+!tap_net.py
 !console_capture.py
 !cisco_config.py
 !saved_config.py

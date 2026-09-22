@@ -175,7 +175,8 @@ while True:
         self.lab.file_lock.close()
         self.lab = lab_server.Lab(self.root / "data", images)
         self.server.lab = self.lab
-        self.assertEqual(self.lab.catalog(), [{"name": "fake.bin", "type": "router"}])
+        self.assertEqual(self.lab.catalog(), [{"name": "fake.bin", "type": "router"},
+                                             {"name": lab_server.frr.IMAGE, "type": "router"}])
         self.lab.start("r1")
         self.assertEqual((self.lab.node_dir("r1") / "iourc").resolve(), images / "iourc")
         ws = WebSocket(self.port, "r1")

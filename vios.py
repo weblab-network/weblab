@@ -1,4 +1,5 @@
-"""QEMU image validation, persistent disks, and IOSv/EXOS/vEOS launch profiles."""
+"""QEMU image validation, persistent disks, and IOSv/EXOS/vEOS/Junos launch profiles."""
+import frr
 import hashlib
 import fcntl
 import json
@@ -6,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import struct
+import uuid
 
 ABOOT_IMAGE = "Aboot-veos-serial-8.0.2.iso"
 
@@ -19,15 +21,27 @@ def is_exos(node):
 
 
 def is_vios(node):
-    return is_qemu(node) and not is_exos(node) and not is_veos(node)
+    return is_qemu(node) and not is_exos(node) and not is_veos(node) and not is_junos(node)
 
 
 def is_veos(node):
     return is_qemu(node) and node['image'].lower().startswith(('veos64-lab-', 'veos-lab-'))
 
 
+def is_junos_switch(node):
+    return is_qemu(node) and node['image'].lower().startswith('vjunos-switch-')
+
+
+def is_junos_evolved(node):
+    return is_qemu(node) and node['image'].lower().startswith('vjunosevolved-')
+
+
+def is_junos(node):
+    return is_junos_switch(node) or is_junos_evolved(node)
+
+
 def required_images(nodes):
-    names = {n['image'] for n in nodes if n['type'] != 'pc'}
+    names = {n['image'] for n in nodes if n['type'] != 'pc' and not frr.is_frr(n)}
     if any(is_veos(n) for n in nodes):
         names.add(ABOOT_IMAGE)
     return names
@@ -48,7 +62,16 @@ def validate_aboot(path, error):
         raise error(f'Arista requires a valid {ABOOT_IMAGE} in the image directory: {exc}') from exc
 
 
-def boot_image(node, image_dir, error):
+def boot_image(node, image_dir, error, *, launch=False):
+    if launch and is_junos_switch(node):
+        # Juniper's nested FreeBSD control plane requires Intel VMX in the VM.
+        if 'vmx' not in Path('/proc/cpuinfo').read_text().split():
+            raise error('vJunos-switch requires Intel VT-x exposed to this host (vmx); enable nested virtualization')
+    if launch and is_junos_evolved(node):
+        firmware = Path('/usr/share/ovmf/OVMF.fd')
+        if not firmware.is_file():
+            raise error('vJunosEvolved requires OVMF UEFI firmware; install ovmf or rebuild the container')
+        return firmware
     if not is_veos(node):
         return None
     path = image_dir / ABOOT_IMAGE
@@ -97,7 +120,7 @@ def validate_image(path, run, error, backing_name=None):
 
 
 def disk_paths(node, cwd):
-    stem = ("veos-" if is_veos(node) else "exos-" if is_exos(node) else "vios-") + hashlib.sha256(node["image"].encode()).hexdigest()[:20]
+    stem = ("junos-" if is_junos(node) else "veos-" if is_veos(node) else "exos-" if is_exos(node) else "vios-") + hashlib.sha256(node["image"].encode()).hexdigest()[:20]
     return cwd / (stem + "-base.qcow2"), cwd / (stem + ".qcow2")
 
 
@@ -158,20 +181,36 @@ def config_disk(node, cwd, run, error):
 
 def command(node, disk, socket_dir, config=None, boot=None):
     exos, veos = is_exos(node), is_veos(node)
+    junos, evolved = is_junos(node), is_junos_evolved(node)
+    if evolved and boot is None:
+        raise ValueError("vJunosEvolved requires OVMF UEFI firmware")
     if veos and boot is None:
         raise ValueError(f'Arista requires {ABOOT_IMAGE}')
     if config is not None and not is_vios(node):
         raise ValueError('Initial config disks are only supported for IOSv')
     interface = "ide" if exos or veos else "virtio"
-    adapter = "virtio-net-pci" if veos else "rtl8139" if exos else "e1000"
+    adapter = "virtio-net-pci" if veos or junos else "rtl8139" if exos else "e1000"
     # EXOS 33.1 recognizes x86 via an Intel model name. Use a fixed CPU profile
     # so boot and userspace see consistent features across Intel/AMD hosts.
     # Its entropy service executes RDTSCP unconditionally during startup.
     cpu = "Nehalem-v1,rdtscp=on" if exos else "host"
     args = ["-name", node["id"], "-machine", "pc,accel=kvm", "-cpu", cpu,
-            "-smp", "2" if veos else "1", "-m", str(node["memory"]), "-display", "none",
-            "-monitor", "none", "-qmp", f"unix:{socket_dir / 'qmp'},server=on,wait=off", "-serial", "stdio", "-boot", "order=dc" if veos else "c",
+            "-smp", "4,sockets=1,cores=4,threads=1" if junos else "2" if veos else "1", "-m", str(node["memory"]), "-display", "none",
+            "-monitor", "none", "-qmp", f"unix:{socket_dir / 'qmp'},server=on,wait=off", "-serial", "chardev:console" if junos else "stdio", "-boot", "order=dc" if veos else "c",
             "-drive", f"file={str(disk).replace(',', ',,')},format=qcow2,if={interface},cache=writeback"]
+    if junos:
+        # Fixed PCI slots match Juniper's management/data port enumeration.
+        args += ["-nodefaults", "-chardev", "stdio,id=console,signal=off"]
+        if evolved:
+            # Evolved chassis services need a nonzero system UUID. Derive it
+            # from the persistent node ID, not temporary socket/storage paths,
+            # so restarts and ZIP restores retain the same hardware identity.
+            vm_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"weblab.network:{node['id']}")
+            args += ["-uuid", str(vm_uuid), "-bios", str(boot), "-smbios", "type=0,vendor=Bochs,version=Bochs",
+                     "-smbios", "type=3,manufacturer=Bochs", "-smbios",
+                     "type=1,manufacturer=Bochs,product=Bochs,serial=chassis_no=0:slot=0:type=1:assembly_id=0x0D20:platform=251:master=0:channelized=no"]
+        else:
+            args += ["-smbios", "type=1,product=VM-VEX"]
     if veos:
         args += ["-drive", f"file={str(boot).replace(',', ',,')},format=raw,media=cdrom,if=ide,index=2,readonly=on"]
     if config is not None:
@@ -182,5 +221,6 @@ def command(node, disk, socket_dir, config=None, boot=None):
             f"{socket_dir.parent}:{node['id']}:{index}".encode()).digest()[:5])
         path = str(socket_dir / str(index)).replace(",", ",,")
         args += ["-netdev", f"stream,id=n{index},server=off,addr.type=unix,addr.path={path}",
-                 "-device", f"{adapter},netdev=n{index},id=nic{index},mac={mac}"]
+                 "-device", f"{adapter},netdev=n{index},id=nic{index},mac={mac}" +
+                 (f",bus=pci.0,addr=0x{3 if index == 0 else index+7:x}" if junos else "")]
     return args

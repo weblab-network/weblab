@@ -20,6 +20,7 @@ import tempfile
 import time
 import uuid
 import vios
+import frr
 import lab_backup
 import console_capture
 import saved_config
@@ -65,10 +66,16 @@ def process_stamp(pid):
 def ports(node):
     if node["type"] == "pc":
         return ["eth0"]
+    if frr.is_frr(node):
+        return [f"eth{i}" for i in range(node["ethernet"])]
     if vios.is_exos(node):
         return ["Mgmt"] + [str(i) for i in range(1, node["ethernet"])]
     if vios.is_veos(node):
         return ["Management1"] + [f"Ethernet{i}" for i in range(1, node["ethernet"])]
+    if vios.is_junos(node):
+        return (["re0:mgmt-0"] + [f"et-0/0/{i}" for i in range(node["ethernet"]-1)]
+                if vios.is_junos_evolved(node) else
+                ["fxp0"] + [f"ge-0/0/{i}" for i in range(node["ethernet"]-1)])
     if vios.is_qemu(node):
         return [f"Gi{index // 4}/{index % 4}" if node["type"] == "switch" else f"Gi0/{index}"
                 for index in range(node["ethernet"])]
@@ -78,7 +85,7 @@ def ports(node):
 def netmap_port(node, port):
     if node["type"] == "pc":
         return "0/0"
-    if vios.is_qemu(node):
+    if vios.is_qemu(node) or frr.is_frr(node):
         index = ports(node).index(port)
         return f"{index // 4}/{index % 4}"
     return port
@@ -125,10 +132,10 @@ class Lab:
         self.persist()
 
     def catalog(self):
-        return [{"name": p.name, "type": "switch" if "l2" in p.name.lower() or vios.is_exos({"image":p.name}) or vios.is_veos({"image":p.name}) else "router"}
+        return [{"name": p.name, "type": "switch" if "l2" in p.name.lower() or vios.is_exos({"image":p.name}) or vios.is_veos({"image":p.name}) or vios.is_junos_switch({"image":p.name}) else "router"}
                 for p in sorted(self.image_dir.iterdir()) if p.is_file() and
                 ((p.suffix == ".bin" and os.access(p, os.X_OK)) or
-                 (p.suffix == ".qcow2" and os.access(p, os.R_OK)))]
+                 (p.suffix == ".qcow2" and os.access(p, os.R_OK)))] + [{"name": frr.IMAGE, "type": "router"}]
 
     def upload_image(self, name, stream, length):
         iso = name == vios.ABOOT_IMAGE
@@ -239,11 +246,18 @@ class Lab:
             qcow = kind != "pc" and image.endswith(".qcow2")
             exos = vios.is_exos({"type":kind,"image":image})
             veos = vios.is_veos({"type":kind,"image":image})
+            junos = vios.is_junos({"type":kind,"image":image})
+            evolved = vios.is_junos_evolved({"type":kind,"image":image})
+            if junos and kind != ("router" if evolved else "switch"):
+                raise LabError("vJunosEvolved requires a router; vJunos-switch requires a switch")
+            is_frr = frr.is_frr({"image": image})
+            if is_frr and (kind != "router" or image != frr.IMAGE):
+                raise LabError(f"FRR requires a router node and image {frr.IMAGE}")
             if (exos or veos) and kind != "switch":
                 raise LabError(f"{'Arista vEOS' if veos else 'EXOS'} images require a switch node")
             for key, default, low, high in [("x", 350, 70, 2330), ("y", 250, 60, 1540),
-                                           ("memory", 6144 if veos else 1024, 256, 8192),
-                                           ("ethernet", 5 if veos else 13 if exos else 4 if qcow else 2, 2 if exos or veos else 1, 13 if exos else 16 if qcow else 8)]:
+                                           ("memory", 8192 if evolved else 5120 if junos else 512 if is_frr else 6144 if veos else 1024, 8192 if evolved else 5120 if junos else 256, 8192),
+                                           ("ethernet", 5 if junos else 4 if is_frr else 5 if veos else 13 if exos else 4 if qcow else 2, 2 if exos or veos or junos else 1, 13 if exos else 16 if qcow else 8)]:
                 value = raw.get(key, default)
                 if type(value) not in (int, float) or not low <= value <= high or int(value) != value:
                     raise LabError(f"{key} must be an integer between {low} and {high}")
@@ -251,8 +265,8 @@ class Lab:
             if kind == "pc":
                 if not re.fullmatch(r"alpine(?::[a-zA-Z0-9_.-]+)?", image):
                     raise LabError("PC image must be alpine or alpine:TAG")
-            elif image not in {i["name"] for i in self.catalog()}:
-                raise LabError("Select an IOL .bin or supported .qcow2 image from the image directory")
+            elif not is_frr and image not in {i["name"] for i in self.catalog()}:
+                raise LabError("Select an IOL .bin, supported .qcow2 image, or the supported FRR container")
             node["image"] = image
             snippet = raw.get("startup_config", "")
             if not isinstance(snippet, str) or len(snippet.encode("utf-8")) > 16_384:
@@ -260,6 +274,8 @@ class Lab:
             if any(ord(char) < 32 and char not in "\r\n\t" for char in snippet) or "\x7f" in snippet:
                 raise LabError("startup_config must contain configuration text, not control characters")
             if snippet.strip():
+                if junos:
+                    raise LabError("Junos startup snippets are not supported yet; configure through its console")
                 if exos or veos:
                     raise LabError(f"{'Arista vEOS' if veos else 'EXOS'} startup snippets are not supported yet; configure through its console")
                 if kind == "pc":
@@ -351,10 +367,10 @@ class Lab:
                                                      'carrier_a': 'up', 'carrier_b': 'up'}),
                             'available': bool(self.fabric and not self.fabric.error and
                                               any(link[side]['node'] in self.runtime for side in ('a', 'b'))),
-                            **{'carrier_capable_' + side: bool(vios.is_vios(self.node(link[side]['node'])) or
+                            **{'carrier_capable_' + side: bool(frr.is_frr(self.node(link[side]['node'])) or vios.is_vios(self.node(link[side]['node'])) or
                                                                iol_l1.supported(self.node(link[side]['node'])))
                                for side in ('a', 'b')},
-                            **{'carrier_supported_' + side: bool((vios.is_vios(self.node(link[side]['node'])) or
+                            **{'carrier_supported_' + side: bool((frr.is_frr(self.node(link[side]['node'])) or vios.is_vios(self.node(link[side]['node'])) or
                                                                self.runtime.get(link[side]['node'], {}).get('iol_l1_identity')) and
                                                                link[side]['node'] in self.runtime)
                                for side in ('a', 'b')},
@@ -375,7 +391,7 @@ class Lab:
                 raise LabError('Link does not exist')
             side = data['side']
             if not state['available'] or not state['carrier_supported_' + side]:
-                raise LabError('Cable link-down requires a running supported IOSv or IOL interface')
+                raise LabError('Cable link-down requires a running supported IOSv, IOL or FRR interface')
             endpoint = next(link for link in self.topology['links'] if link['id'] == link_id)[side]
             node = self.node(endpoint['node'])
             runtime = self.runtime[node['id']]
@@ -387,8 +403,12 @@ class Lab:
                 return self.snapshot()
             self.fabric.set_carrier(link_id, side, 'unknown')
             try:
-                qmp.set_link(Path(runtime['qemu_sockets']) / 'qmp', ports(node).index(endpoint['port']), data['up'])
-            except qmp.QMPError as exc:
+                if frr.is_frr(node):
+                    tap = runtime['frr_ports'][ports(node).index(endpoint['port'])]['tap']
+                    run('ip', 'link', 'set', 'dev', tap, 'carrier', 'on' if data['up'] else 'off')
+                else:
+                    qmp.set_link(Path(runtime['qemu_sockets']) / 'qmp', ports(node).index(endpoint['port']), data['up'])
+            except (qmp.QMPError, LabError) as exc:
                 raise LabError(f'{exc}. Link state is uncertain; traffic stays blocked. Use Reconnect on this endpoint to recover.') from exc
             self.fabric.set_carrier(link_id, side, 'up' if data['up'] else 'down')
             return self.snapshot()
@@ -554,6 +574,8 @@ class Lab:
                 if node["type"] == "pc":
                     self.start_pc(node)
                     image, arguments = shutil.which("docker"), ["exec", "-it", self.runtime[node_id]["container"], "/bin/sh"]
+                elif frr.is_frr(node):
+                    image, arguments = frr.start(self, node, run, LabError, ROOT)
                 elif vios.is_qemu(node):
                     image, arguments = self.start_vios(node)
                 else:
@@ -569,7 +591,7 @@ class Lab:
                                                 "--path", "/console", "--exit-output-bytes", "16384",
                                                 "--transcript", str(cwd / "console-output.log"),
                                                 "-m", image, "-p", str(port), "--", *arguments], cwd,
-                           {"IOURC": str(node_license)} if node["type"] != "pc" and not vios.is_qemu(node) and node_license.is_file() else None)
+                           {"IOURC": str(node_license)} if node["type"] != "pc" and not vios.is_qemu(node) and not frr.is_frr(node) and node_license.is_file() else None)
                 self.wait_ready(node_id, None if node["type"] == "pc" else socket_path)
                 if self.runtime[node_id].get('iol_l1_identity'):
                     self.l1.add_node(node_id, self.runtime[node_id]['iol_l1_identity'])
@@ -586,7 +608,7 @@ class Lab:
         if not qemu:
             raise LabError("Install qemu-system-x86 and qemu-utils, or rebuild the lab container for QEMU devices")
         vios.require_kvm(LabError)
-        boot = vios.boot_image(node, self.image_dir, LabError)
+        boot = vios.boot_image(node, self.image_dir, LabError, launch=True)
         cwd = self.node_dir(node["id"])
         # Decide before creating the writable disk: existing/restored disks win.
         fresh = not vios.disk_paths(node, cwd)[1].exists()
@@ -684,6 +706,11 @@ class Lab:
             runtime = self.runtime.get(node_id)
             if not runtime:
                 return
+            if runtime.get("frr"):
+                try:
+                    frr.save(self, node_id, run)
+                except (LabError, ValueError, OSError) as exc:
+                    raise LabError(f"FRR saved config could not be preserved; container retained. Retry Stop: {exc}") from exc
             if self.l1:
                 self.l1.remove_node(node_id)
             for key in ("console", "bridge"):
@@ -709,6 +736,8 @@ class Lab:
             if errors:
                 self.errors[node_id] = "Cleanup failed; retry Stop: " + "; ".join(errors)
                 raise LabError(self.errors[node_id])
+            if runtime.get("frr"):
+                frr.cleanup_ports(self, runtime, run, LabError)
             if runtime.get("qemu_sockets"):
                 try:
                     shutil.rmtree(runtime["qemu_sockets"])
@@ -920,7 +949,7 @@ class Handler(BaseHTTPRequestHandler):
             elif self.command == "POST" and re.fullmatch(r"/api/links/[\w-]+/traffic", path):
                 result = self.lab.set_link_traffic(path.split('/')[3], data)
             elif self.command == "POST" and path == "/api/export":
-                result = lab_backup.create(self.lab, data.get('include_logs', False))
+                result = lab_backup.create(self.lab, data.get('include_logs', False), data.get('compact_veos', True))
             elif self.command == "POST" and path == "/api/export/initial-configs":
                 result = console_capture.export(self.lab)
             elif self.command == "POST" and path == "/api/export/saved-configs":

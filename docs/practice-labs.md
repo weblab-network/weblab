@@ -59,13 +59,13 @@ Each node uses:
 | `id` | Unique string, 1–40 ASCII letters/digits/underscores/hyphens |
 | `name` | Display label, 1–40 characters |
 | `type` | `router`, `switch` or `pc` |
-| `image` | Exact `.bin` or `.qcow2` filename; PCs use `alpine:latest` or another installed Alpine tag |
+| `image` | Exact `.bin` or `.qcow2` filename, or supported FRR container tag; PCs use `alpine:latest` or another installed Alpine tag |
 | `x`, `y` | Integer canvas center coordinates; x 70–2330, y 60–1540 |
 | `memory` | Integer MB, 256–8192; normally 1024 for Cisco devices |
 | `ethernet` | IOL: 1–8 slots, four ports per slot; IOSv: 1–16 individual interfaces |
 | `ipv4` | PC startup address and prefix, e.g. `192.0.2.10/24`; otherwise empty |
 | `gateway` | PC gateway in its configured IPv4 subnet, or empty |
-| `startup_config` | Optional Cisco configuration-file text, up to 16 KiB UTF-8; see precedence below |
+| `startup_config` | Optional Cisco or FRR configuration-file text, up to 16 KiB UTF-8; see precedence below |
 
 Omit `iol_id` from new lab files; the importer allocates an available application
 ID. Defaults exist for position/memory/interface count, but specify them for a
@@ -77,13 +77,16 @@ Each link is `{"id":"cable1","a":{"node":"r1","port":"0/0"},
 No interface may appear on two cables. No self-links or direct PC-to-PC cables.
 An unconnected PC can be imported, but cannot start until cabled to a router/switch.
 
-| Device | Link `port` spelling | Interface spelling inside a Cisco snippet |
+| Device | Link `port` spelling | Interface spelling inside a startup snippet |
 | --- | --- | --- |
 | IOL router/switch | `0/0`…`0/3`, `1/0`… according to slot count | `Ethernet0/0`, `Ethernet1/0`, etc.; verify image |
 | IOSv router | `Gi0/0`…`Gi0/15` according to interface count | `GigabitEthernet0/0`, etc. |
 | IOSvL2 switch | `Gi0/0`…`Gi0/3`, `Gi1/0`…`Gi3/3` | `GigabitEthernet0/0`, etc. |
+| FRRouting router | `eth0`…`eth7` | FRR `interface eth0`, etc.; 1–8 interfaces, default 4 |
 | Alpine PC | `eth0` | Use JSON `ipv4`/`gateway`; Cisco `startup_config` is rejected |
 | Virtual EXOS | `Mgmt`, `1`…`12` | No startup snippets yet; configure through console |
+| vJunos-switch | `fxp0`, `ge-0/0/0`…`ge-0/0/14` | Switch node; no startup snippets |
+| vJunosEvolved | `re0:mgmt-0`, `et-0/0/0`…`et-0/0/14` | Router node; no startup snippets |
 | Arista vEOS-lab | `Management1`, `Ethernet1`…`Ethernet15` | No startup snippets yet; configure through console |
 
 EXOS images must keep the `EXOS-VM_` or `EXOS-VM-` filename prefix and use switch
@@ -174,3 +177,14 @@ The first command checks structure, interface allocation, addressing and snippet
 limits without requiring installed images. The second also checks image filenames
 against the local catalog. Neither writes lab state, imports a file or starts nodes.
 See [the OSPF exercise](../examples/ospf-practice.md) for an original exercise using initial snippets.
+
+
+## FRR exercises
+
+Use router nodes with image `quay.io/frrouting/frr:10.7.1`, default memory 512 MB
+and `ethernet` 1–8. Ports are `eth0` onward. The container image must be pulled on
+the Docker host before starting; topology validation does not contact Docker.
+Use FRR syntax in `startup_config`, including interface addressing and routing.
+Saved configuration takes precedence. Do not include shell commands or daemon
+startup scripts. See [FRR OSPF JSON](../examples/frr-ospf.json) and
+[exercise](../examples/frr-ospf.md); [profile details](devices.md#frrouting).

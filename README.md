@@ -1,7 +1,8 @@
 # Weblab
 
 A browser workspace for building and running network labs with Cisco IOL,
-IOSv/IOSvL2, Virtual EXOS, Arista vEOS-lab and Alpine PCs.
+IOSv/IOSvL2, Virtual EXOS, Arista vEOS-lab, FRRouting and Alpine PCs,
+plus experimental Juniper vJunos profiles.
 
 Keep the topology, multiple device consoles and lab instructions together in one
 page. Float, resize and arrange windows for desktop or tablet use; share consoles
@@ -30,7 +31,7 @@ Open **http://127.0.0.1:8080/**. Upload your device images, then create a starte
 topology or import an example. Supply your own images and any required licenses;
 the standard Weblab image does not include vendor images or generate licenses.
 
-For IOSv, EXOS or vEOS, enable KVM and include the override:
+For IOSv, EXOS, vEOS or Junos, enable KVM and include the override:
 
 ```sh
 docker compose -f compose.yaml -f compose.kvm.yaml up -d --build
@@ -54,8 +55,15 @@ remote access, resource requirements and upgrades.
 
 Prefer to skip the build? See [prebuilt containers](docs/installation.md#pull-a-prebuilt-container)
 for the GHCR pull-and-start commands. The optional
-[EXOS demo edition](docs/containers.md) includes Virtual EXOS and a configured
-three-switch/two-PC exercise.
+[EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
+three-switch/two-PC topology with a companion exercise.
+
+## Recent additions
+
+- FRR container routers with saved configurations and an [OSPF exercise](examples/frr-ospf.md).
+- Experimental vJunos-switch and vJunosEvolved profiles; see [requirements and validation](docs/devices.md#juniper-vjunos-experimental).
+- Multi-select and move groups of topology nodes, including on touch screens.
+- Compact vEOS ZIP backups with exact disk reconstruction on restore.
 
 ## Intended use
 
@@ -67,7 +75,7 @@ directly to the public internet.
 
 Save device configurations before stopping. QEMU disks and IOL NVRAM/VLAN files
 persist; Alpine PC filesystems are disposable. Use [saved lab ZIP](docs/backups.md)
-for supported saved storage. JSON snippets initialize fresh Cisco nodes only.
+for supported saved storage. JSON snippets initialize fresh Cisco/FRR nodes only.
 See [limitations](docs/limitations.md) before relying on a particular workflow.
 
 ## Documentation and development
@@ -90,3 +98,8 @@ Copyright © 2026 [weblab.network](https://weblab.network)
 
 Bundled third-party components retain their own licenses, including GPLv2 for
 `iou2net.pl`. See [third-party notices](THIRD_PARTY.md).
+
+
+For an open-source routing lab without vendor images or KVM, see the
+[FRR profile](docs/devices.md#frrouting) and [OSPF exercise](examples/frr-ospf.md).
+FRR uses a separately pulled, pinned upstream Docker image.

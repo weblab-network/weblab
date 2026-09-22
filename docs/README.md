@@ -25,6 +25,7 @@ to building locally, including a wired introductory topology and bundled EXOS im
 ## Examples and contributors
 
 - [Starter lab](../examples/starter.md) and [JSON](../examples/starter.json).
+- [FRR OSPF practice](../examples/frr-ospf.md) and [JSON](../examples/frr-ospf.json), without KVM/vendor images.
 - [OSPF practice](../examples/ospf-practice.md) and [JSON](../examples/ospf-practice.json).
 - [Development and testing](development.md).
 - [Agent instructions](../AGENTS.md).

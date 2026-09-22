@@ -9,6 +9,7 @@ import socket
 import struct
 import time
 from cisco_config import CiscoIOS
+import frr
 import vios
 
 ANSI = re.compile(r'\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))')
@@ -151,6 +152,10 @@ class Console:
                 return text[:match.start()], match.group(1)
 
 def handler_for(node):
+    if frr.is_frr(node):
+        raise ValueError('FRR live capture is not supported yet; save with write memory, stop, and use JSON + saved configs or Saved lab ZIP')
+    if vios.is_junos(node):
+        raise ValueError("Junos configuration-text export is not supported yet; use Saved lab ZIP")
     if vios.is_veos(node):
         raise ValueError("Arista vEOS configuration capture is not supported yet; use Saved lab ZIP")
     if vios.is_exos(node):

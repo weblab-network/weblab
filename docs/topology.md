@@ -96,3 +96,17 @@ connections and input locks survive layout changes.
 Swipe horizontally or scroll the mouse wheel over any toolbar to reach controls
 in a narrow window. Dropdowns retain their own vertical scrolling. Window positions
 belong to this browser page and reset on reload; they are not saved in lab exports.
+
+
+## Moving several nodes together
+
+Shift-, Ctrl-, or ⌘-click nodes to add or remove them from the selection.
+On a touch screen, enable **Multi-select** in the topology toolbar and tap nodes.
+These selection clicks do not open consoles. Drag any selected node to move the
+whole group; spacing is preserved, including at the edge of the canvas. This
+works while devices are running and in the floating map.
+
+Turn Multi-select off for ordinary console clicks. A normal node click selects
+that node alone; clicking blank canvas or pressing Escape clears the selection.
+Blank-canvas dragging still pans. The inspector edits only the last selected
+node, not the group. Selection is local to your browser; positions save together.

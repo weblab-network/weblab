@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "name": "FRR OSPF practice",
+  "nodes": [
+    {
+      "id": "frr_ospf_r1",
+      "name": "R1",
+      "type": "router",
+      "image": "quay.io/frrouting/frr:10.7.1",
+      "ethernet": 2,
+      "memory": 512,
+      "x": 480,
+      "y": 300,
+      "startup_config": "frr defaults traditional\nhostname R1\nservice integrated-vtysh-config\ninterface eth0\n ip address 10.0.12.1/30\n!\ninterface eth1\n ip address 10.0.1.1/24\n!\ninterface lo\n ip address 10.255.0.1/32\n!\n"
+    },
+    {
+      "id": "frr_ospf_pc1",
+      "name": "PC1",
+      "type": "pc",
+      "image": "alpine:latest",
+      "x": 480,
+      "y": 600,
+      "ipv4": "10.0.1.10/24",
+      "gateway": "10.0.1.1"
+    },
+    {
+      "id": "frr_ospf_r2",
+      "name": "R2",
+      "type": "router",
+      "image": "quay.io/frrouting/frr:10.7.1",
+      "ethernet": 2,
+      "memory": 512,
+      "x": 950,
+      "y": 300,
+      "startup_config": "frr defaults traditional\nhostname R2\nservice integrated-vtysh-config\ninterface eth0\n ip address 10.0.12.2/30\n!\ninterface eth1\n ip address 10.0.2.1/24\n!\ninterface lo\n ip address 10.255.0.2/32\n!\n"
+    },
+    {
+      "id": "frr_ospf_pc2",
+      "name": "PC2",
+      "type": "pc",
+      "image": "alpine:latest",
+      "x": 950,
+      "y": 600,
+      "ipv4": "10.0.2.10/24",
+      "gateway": "10.0.2.1"
+    }
+  ],
+  "links": [
+    {
+      "id": "frr_ospf_transit",
+      "a": {
+        "node": "frr_ospf_r1",
+        "port": "eth0"
+      },
+      "b": {
+        "node": "frr_ospf_r2",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "frr_ospf_access1",
+      "a": {
+        "node": "frr_ospf_r1",
+        "port": "eth1"
+      },
+      "b": {
+        "node": "frr_ospf_pc1",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "frr_ospf_access2",
+      "a": {
+        "node": "frr_ospf_r2",
+        "port": "eth1"
+      },
+      "b": {
+        "node": "frr_ospf_pc2",
+        "port": "eth0"
+      }
+    }
+  ]
+}

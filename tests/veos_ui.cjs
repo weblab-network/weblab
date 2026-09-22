@@ -76,6 +76,13 @@ fixture.stderr.on('data', data => log += data);
     assert.equal(await page.locator('#export-saved').isDisabled(),true);
     assert.equal(await page.locator('#export-zip').isDisabled(),false);
     assert.match(await page.locator('#export-message').innerText(),/Arista/);
+    assert.equal(await page.locator('#export-compact-option').isVisible(), true);
+    assert.equal(await page.locator('#export-compact').isChecked(), true);
+    await page.locator('#export-compact').uncheck();
+    const requestPromise = page.waitForRequest(r => r.url().endsWith('/api/export') && r.method() === 'POST');
+    await page.locator('#export-zip').click();
+    assert.equal((await requestPromise).postDataJSON().compact_veos, false);
+    await page.waitForFunction(() => !busy && !$('export-dialog').open);
     assert.deepEqual(errors, []);
     console.log('Arista/Aboot uploads, defaults, vendor changes, port cabling, export guards and reload passed');
   } finally {

@@ -1,4 +1,5 @@
 """Portable stopped-lab backups; device images and runtime resources stay local."""
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -11,7 +12,9 @@ import time
 import uuid
 import zipfile
 
+import frr
 import vios
+import disk_delta
 
 MAX_BYTES = 8 * 1024**3
 MAX_FILES = 4096
@@ -68,6 +71,8 @@ def saved_path(node, relative):
     """Allow device storage only; never import launcher inputs, logs or symlinks."""
     if not safe_path(relative) or node['type'] == 'pc':
         return False
+    if frr.is_frr(node):
+        return relative == frr.config_path(node, Path('.')).as_posix()
     if vios.is_qemu(node):
         return relative == vios.disk_paths(node, Path('.'))[1].name
     # IOL's NVRAM, VLAN database and emulated flash storage. Diagnostic output
@@ -91,9 +96,31 @@ def expire(lab, all_files=False):
             del lab.exports[token]
 
 
-def create(lab, include_logs=False):
+@contextmanager
+def export_source(lab, node, path, size, compact_veos):
+    """Prepare an optional lossless encoding without touching the saved disk."""
+    image = lab.image_dir / node['image']
+    with path.open('rb') as source:
+        if (compact_veos and vios.is_veos(node) and size >= CHUNK and
+                0 < image.stat().st_size <= disk_delta.MAX_BASE):
+            with tempfile.TemporaryFile(dir=lab.directory) as delta, image.open('rb') as base:
+                restored_hash = disk_delta.encode(source, base, delta, size, image.stat().st_size)
+                encoded_size = delta.tell()
+                # Skip the new format if the reference recipe provides little benefit.
+                if encoded_size < size * 0.9:
+                    delta.seek(0)
+                    yield delta, encoded_size, {'encoding': disk_delta.ENCODING,
+                                               'restored_size': size, 'restored_sha256': restored_hash}
+                    return
+            source.seek(0)
+        yield source, size, {}
+
+
+def create(lab, include_logs=False, compact_veos=True):
     if type(include_logs) is not bool:
         raise ValueError('include_logs must be a boolean')
+    if type(compact_veos) is not bool:
+        raise ValueError('compact_veos must be a boolean')
     with lab.lock:
         stopped(lab)
         expire(lab)
@@ -102,6 +129,11 @@ def create(lab, include_logs=False):
         stream = tempfile.TemporaryFile(dir=lab.directory)
         try:
             manifest = {'format': 'web-netlab-backup', 'version': 1, 'images': [], 'files': []}
+            if any(frr.is_frr(n) for n in lab.topology['nodes']):
+                # Pin container content as well as the topology's human-readable tag.
+                from lab_server import run, LabError
+                frr.check_image(run, LabError)
+                manifest.update(version=2, containers=[{'name': frr.IMAGE, 'digest': frr.DIGEST}])
             for node in lab.topology['nodes']:
                 vios.boot_image(node, lab.image_dir, ValueError)
             for name in sorted(vios.required_images(lab.topology['nodes'])):
@@ -129,11 +161,16 @@ def create(lab, include_logs=False):
                                 raise ValueError('Backup exceeds the 8 GiB / 4096 file limit')
                             entry = f"nodes/{node['id']}/{relative}"
                             checksum = hashlib.sha256()
-                            with path.open('rb') as source, archive.open(entry, 'w', force_zip64=True) as target:
-                                for chunk in iter(lambda: source.read(CHUNK), b''):
-                                    checksum.update(chunk)
-                                    target.write(chunk)
-                            manifest['files'].append({'path': entry, 'size': size, 'sha256': checksum.hexdigest()})
+                            with export_source(lab, node, path, size, compact_veos) as (source, stored_size, extra):
+                                if extra:
+                                    entry += disk_delta.SUFFIX
+                                    manifest['version'] = 2
+                                with archive.open(entry, 'w', force_zip64=True) as target:
+                                    for chunk in iter(lambda: source.read(CHUNK), b''):
+                                        checksum.update(chunk)
+                                        target.write(chunk)
+                                manifest['files'].append({'path': entry, 'size': stored_size,
+                                                          'sha256': checksum.hexdigest(), **extra})
                 if include_logs:
                     manifest['logs'] = []
                     manifest['logs_exported_at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
@@ -279,7 +316,8 @@ def restore(lab, stream, run):
                         raise ValueError('Missing or oversized backup metadata')
                     return json.loads(archive.read(name))
                 manifest = metadata('manifest.json')
-                if not isinstance(manifest, dict) or manifest.get('format') != 'web-netlab-backup' or manifest.get('version') != 1:
+                if (not isinstance(manifest, dict) or manifest.get('format') != 'web-netlab-backup' or
+                        type(manifest.get('version')) is not int or manifest['version'] not in (1, 2)):
                     raise ValueError('Unsupported lab backup format')
                 original = metadata('topology.json')
                 topology = lab.validate(original)
@@ -293,6 +331,11 @@ def restore(lab, stream, run):
                 log_records = manifest.get('logs', [])
                 if not isinstance(image_records, list) or not isinstance(file_records, list) or not isinstance(log_records, list):
                     raise ValueError('Invalid backup manifest')
+                containers = [{'name': frr.IMAGE, 'digest': frr.DIGEST}] if any(frr.is_frr(n) for n in topology['nodes']) else []
+                if manifest.get('containers', []) != containers or (containers and manifest['version'] != 2):
+                    raise ValueError('Missing or mismatched FRR container image metadata')
+                if containers:
+                    frr.check_image(run, ValueError)
                 required = vios.required_images(topology['nodes'])
                 for node in topology['nodes']:
                     vios.boot_image(node, lab.image_dir, ValueError)
@@ -308,6 +351,7 @@ def restore(lab, stream, run):
                 if seen != required:
                     raise ValueError('Backup is missing required image checksums')
                 expected = {'topology.json', 'manifest.json'}
+                restored_total = 0
                 for record in file_records:
                     name = record['path']
                     if name not in names or name in expected:
@@ -317,6 +361,18 @@ def restore(lab, stream, run):
                     if len(parts) != 3 or parts[0] != 'nodes' or parts[1] not in sources:
                         raise ValueError('Saved file references an unknown device')
                     node_id, relative = parts[1:]
+                    encoding = record.get('encoding')
+                    if encoding is not None:
+                        if (manifest['version'] != 2 or encoding != disk_delta.ENCODING or
+                                not vios.is_veos(sources[node_id]) or not relative.endswith(disk_delta.SUFFIX)):
+                            raise ValueError('Unsupported saved disk encoding')
+                        relative = relative[:-len(disk_delta.SUFFIX)]
+                    restored_size = record.get('restored_size') if encoding else record['size']
+                    if type(restored_size) is not int or not 0 <= restored_size <= MAX_BYTES:
+                        raise ValueError('Invalid restored device file size')
+                    restored_total += restored_size
+                    if restored_total > MAX_BYTES:
+                        raise ValueError('Restored backup exceeds the 8 GiB limit')
                     if not saved_path(sources[node_id], relative):
                         raise ValueError('Unsupported saved device file')
                     member = archive.getinfo(name)
@@ -328,14 +384,25 @@ def restore(lab, stream, run):
                             break
                     target = stage / 'nodes' / node_id / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
+                    if target.exists():
+                        raise ValueError('Duplicate restored device file')
                     checksum = hashlib.sha256()
                     with archive.open(member) as source, target.open('xb') as output:
-                        for chunk in iter(lambda: source.read(CHUNK), b''):
-                            checksum.update(chunk)
-                            output.write(chunk)
+                        if encoding:
+                            image = lab.image_dir / sources[node_id]['image']
+                            with image.open('rb') as base:
+                                payload_hash, restored_hash = disk_delta.decode(
+                                    source, base, output, restored_size, image.stat().st_size)
+                            if restored_hash != record['restored_sha256']:
+                                raise ValueError('Restored disk checksum mismatch')
+                        else:
+                            for chunk in iter(lambda: source.read(CHUNK), b''):
+                                checksum.update(chunk)
+                                output.write(chunk)
+                            payload_hash = checksum.hexdigest()
                         output.flush()
                         os.fsync(output.fileno())
-                    if checksum.hexdigest() != record['sha256']:
+                    if payload_hash != record['sha256']:
                         raise ValueError('Saved file checksum mismatch')
                 # Logs are checked as untrusted archive data, then discarded.
                 # They must never become launcher inputs or writable device files.
@@ -347,6 +414,9 @@ def restore(lab, stream, run):
                     member = archive.getinfo(name)
                     if type(record['size']) is not int or record['size'] != member.file_size or member.file_size > LOG_BYTES:
                         raise ValueError('Log file size mismatch or limit exceeded')
+                    restored_total += member.file_size
+                    if restored_total > MAX_BYTES:
+                        raise ValueError('Restored backup exceeds the 8 GiB limit')
                     checksum = hashlib.sha256()
                     with archive.open(member) as source:
                         for chunk in iter(lambda: source.read(CHUNK), b''):
@@ -356,6 +426,10 @@ def restore(lab, stream, run):
                 if names != expected:
                     raise ValueError('Backup contains unlisted files')
                 for node in topology['nodes']:
+                    if frr.is_frr(node):
+                        config = frr.config_path(node, stage / 'nodes' / node['id'])
+                        if config.exists():
+                            frr.read_config(config)
                     if vios.is_qemu(node):
                         base, disk = vios.disk_paths(node, stage / 'nodes' / node['id'])
                         if disk.exists():

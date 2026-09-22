@@ -13,6 +13,9 @@ network feature works. Supply your own images and any required licenses.
 | Cisco IOSv / IOSvL2 | `cisco_vios-159-3.M12.qcow2`, `vios_l2-adventerprisek9-m.ssa.high_iron_20200929.qcow2` | 1024 MB / 1 | 1–16 | Yes | Yes / saved and live | Yes |
 | Virtual EXOS | `EXOS-VM_33.1.1.31.qcow2` | 1024 MB / 1 | Mgmt + 1–12 | Yes | No / no | Yes |
 | Arista vEOS-lab | `vEOS64-lab-4.36.1F.qcow2` + serial Aboot 8.0.2 | 6144 MB / 2 | Management1 + Ethernet1–15 | Yes | No / no | Yes |
+| FRRouting container | `quay.io/frrouting/frr:10.7.1` | 512 MB container limit | eth0–eth7 | No | Yes / saved only | Saved frr.conf |
+| Juniper vJunos-switch (experimental) | `vJunos-switch-26.2R1.7.qcow2` | 5120 MB / 4 | fxp0 + ge-0/0/0–14 | Intel KVM, bare metal | No / no | Disk overlay |
+| Juniper vJunosEvolved (experimental) | `vJunosEvolved-26.2R1.7-EVO.qcow2` | 8192 MB / 4 | re0:mgmt-0 + et-0/0/0–14 | Yes; UEFI | No / no | Disk overlay |
 | Alpine PC | locally installed `alpine:latest` | Host Docker container | eth0 | No | IPv4/gateway fields only | Settings only; no PC filesystem |
 
 ## Installing images
@@ -51,7 +54,7 @@ The same router and switch palette supports IOSv. Copy your `.qcow2` files into
 `images/`, or use **Upload image**. These files need read permission, not an
 executable bit. Filenames containing `l2` default to switches. Add a router or
 switch, select its QCOW2 image in the inspector and click **Apply settings**.
-Apart from the EXOS and Arista profiles below, QCOW2 profiles target IOSv and IOSvL2; arbitrary QCOW2 operating systems
+Apart from the EXOS, Arista and Junos profiles below, QCOW2 profiles target IOSv and IOSvL2; arbitrary QCOW2 operating systems
 are not supported. Both `cisco_vios-159-3.M12.qcow2` and
 `vios_l2-adventerprisek9-m.ssa.high_iron_20200929.qcow2` are supported profiles.
 
@@ -92,7 +95,7 @@ detect x86; an AMD model name can otherwise stop boot at a developer menu and sh
 Upload the vendor QCOW2 with its original filename, for example
 `EXOS-VM_33.1.1.31.qcow2`, then add a **switch** and select that image. Names starting
 with `EXOS-VM_` or `EXOS-VM-` (case insensitive) select the EXOS profile. Other QCOW2
-filenames retain the IOSv profile except the Arista prefixes documented below.
+filenames retain the IOSv profile except the Arista and Junos prefixes documented below.
 EXOS uses KVM, one vCPU, 1024 MB RAM by default,
 an IDE disk and RTL8139 NICs. Its writable disk is separate from the uploaded image.
 
@@ -163,3 +166,117 @@ The PC starts after its peer. Its shell provides ordinary Linux tools such as
 PC containers are disposable. Files, installed packages and shell-made network
 changes are lost on stop/start. Topology address/gateway settings are reapplied.
 PC resource fields do not enforce a Docker memory limit or add interfaces.
+
+
+## FRRouting
+
+FRR runs as a separate Docker container on the same Docker Engine used by Alpine
+PCs. No KVM, QCOW2 image or custom Dockerfile is needed. Pull the supported image
+on that Docker host:
+
+```sh
+docker pull quay.io/frrouting/frr:10.7.1
+```
+
+Add a **Router**, select `quay.io/frrouting/frr:10.7.1` in its image selector, and
+apply. The profile is listed even before pulling; Start gives an actionable error
+if the image is missing. It checks the tested upstream manifest digest
+`sha256:e995beaa50fdc9edb35eadcfefa29b7f062cc06f2b812613789b68fa541554d2`;
+other tags/custom images are not supported by this first profile. Weblab never
+pulls images implicitly. [Upstream image information](https://frrouting.org/release/).
+
+Choose 1–8 interfaces (default 4), named **eth0** through **eth7**. Each interface
+is a separate lab port; none is reserved for management. The default memory limit
+is 512 MB. Start opens the shared **vtysh** routing CLI without a login prompt.
+Use `configure terminal`, `show interface brief`, `show ip route` and
+`show running-config`. Console input locks and floating windows work as usual.
+
+The image's zebra/static routing services and BGP, OSPFv2, OSPFv3, RIP, RIPng,
+IS-IS and BFD daemons are enabled. Configure protocols through vtysh; enabled
+services alone do not establish neighbors. FRR is an L3 routing suite, not an
+STP/RSTP/MSTP switch. This profile does not provide Linux bridge/VLAN management,
+a general Linux shell console, or arbitrary guest package/filesystem persistence.
+
+Use **write memory** before Stop. The last saved `/etc/frr/frr.conf` is copied
+into the node's lab storage before its container is removed. Unsaved running
+changes are excluded. Existing saved configuration wins over `startup_config`
+snippets on every subsequent start, including after ZIP import. If copying fails,
+Stop retains the container and reports an error so the saved state can be recovered.
+Do not manually remove managed containers: that bypasses configuration collection.
+After an interrupted Weblab server, journal recovery collects the retained
+container's saved config and removes its owned resources.
+
+Saved lab ZIP includes FRR configuration and the required container image digest;
+the destination must have the matching image pulled. **JSON + saved configs**
+works while stopped (16 KiB snippet limit). **JSON + live configs** is not yet
+implemented for FRR. ZIP preserves configurations up to 1 MiB per FRR node.
+Daemon launch settings are generated by Weblab, not restored shell scripts.
+Kernel changes made outside FRR, installed packages and other container files
+are not backed up; keep interface addresses and routes in the FRR configuration.
+
+FRR-to-FRR and mixed-node links use Weblab's existing Ethernet fabric. Directional
+loss preserves carrier. **Unplug** lowers carrier on the selected port’s parent TAP so
+the router sees carrier loss; peer carrier is controlled separately. Faults remain
+runtime-only. Interfaces and routing tables are inside separate container network
+namespaces; the profile does not enable routing on the Docker host.
+
+Use the same local Docker socket and host-network Weblab setup as Alpine PCs;
+remote Docker Engines are unsupported. The FRR container uses NET_ADMIN, NET_RAW
+and SYS_ADMIN capabilities in its own namespaces, without privileged mode or host
+PID/network sharing. See the [FRR OSPF exercise](../examples/frr-ospf.md) and
+[its topology](../examples/frr-ospf.json) for a vendor-image-free starting point.
+
+
+## Juniper vJunos (experimental)
+
+Copy `vJunos-switch-26.2R1.7.qcow2` or
+`vJunosEvolved-26.2R1.7-EVO.qcow2` into the image directory. These images exceed
+Weblab's 1 GiB browser-upload limit; use a filesystem copy. Preserve their vendor
+filenames. They are user-supplied and are not bundled with Weblab.
+
+Use a **Switch** for vJunos-switch and a **Router** for vJunosEvolved. The palette
+shape is an editor classification, not a guarantee of every L2/L3 feature.
+Both profiles use four vCPUs and virtio disks/NICs. The switch defaults to
+5120 MB RAM; Evolved requires 8192 MB. Each defaults to five interfaces:
+management plus four data ports. Select 2–16 total interfaces.
+
+| Profile | Management | Data ports |
+| --- | --- | --- |
+| vJunos-switch | `fxp0` | `ge-0/0/0`–`ge-0/0/14` |
+| vJunosEvolved | `re0:mgmt-0` | `et-0/0/0`–`et-0/0/14` |
+
+Management is isolated from the host network unless connected explicitly in the
+lab. Use data ports for ordinary topology cables. Evolved uses non-channelized
+ports and requires OVMF UEFI firmware (`apt install ovmf` for native installs;
+included when rebuilding the Weblab Docker image). Evolved also receives a
+stable VM UUID derived from the topology node ID, retained across restarts and
+ZIP restores. Keep node IDs distinct when creating independent devices.
+
+vJunos-switch itself starts a nested control-plane VM. Juniper specifies Intel
+VT-x and does not support deploying it inside another VM. Evolved has a different
+architecture and does not have that same nesting requirement. See Juniper's
+[switch requirements](https://www.juniper.net/documentation/us/en/software/vjunos/vjunos-switch-kvm/topics/vjunos-switch-kvm-hw-requirements.html)
+and [Evolved deployment guide](https://www.juniper.net/documentation/us/en/software/vJunosEvolved/vjunos-evolved-kvm/topics/vjunos-evolved-deploy-on-kvm.html).
+
+Initial snippets and saved/live configuration-text export are not implemented
+for Junos. Configure through the console. The uploaded base image remains
+unchanged; each node has its own writable disk. Stopped-lab ZIP includes that disk
+and requires the same base image on restore. Directional traffic blocking uses
+the existing link fabric; Junos carrier/unplug control is not enabled.
+
+
+Validation of 26.2R1.7: a bare-metal deployment booted vJunos-switch in under two
+minutes and passed VLAN 10/20/30 access switching, an 802.1Q trunk to FRR, and
+inter-VLAN traffic between three Alpine PCs. This was a user-run integration
+test. A nested-VM test reached Junos but failed to initialize the forwarding
+plane; a working CLI alone is insufficient. Evolved boot/console and the UUID
+correction have been tested, but full forwarding and real-guest ZIP restore
+coverage remain incomplete. These profiles retain the experimental label.
+
+On a fresh image, log in as `root` with an empty password, then enter `cli`.
+Set a root password before committing configuration. Use `show chassis fpc`
+and `show interfaces terse` to check forwarding-plane readiness. Save changes
+with `commit`. Before Weblab Stop, use `request system power-off` and wait for
+guest shutdown. Weblab Stop terminates QEMU; it does not currently perform a
+Junos-aware graceful shutdown. Juniper warns that abrupt termination can damage
+the switch's disk; see its [deployment guide](https://www.juniper.net/documentation/us/en/software/vjunos/vjunos-switch-kvm/topics/deploy-and-manage-vjunos-switch-onkvm.html).

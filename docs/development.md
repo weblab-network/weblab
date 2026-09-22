@@ -7,6 +7,8 @@
 | Path | Purpose |
 | --- | --- |
 | `lab_server.py` | HTTP API, validation, topology persistence, process/resource lifecycle |
+| `disk_delta.py` | Lossless vEOS backup block references to checksum-verified base images |
+| `frr.py`, `tap_net.py` | Pinned FRR container lifecycle, saved configuration and multiport TAP fabric adapter |
 | `lab_backup.py` | ZIP validation, export, staged restore and recovery |
 | `vios.py`, `qemu_net.py`, `qmp.py` | QEMU profiles, Ethernet transport and carrier control |
 | `link_fabric.py`, `iol_l1.py` | Directional frame loss and supported IOL carrier signaling |
@@ -49,6 +51,8 @@ npx playwright install chromium
 cd ..
 node tests/console_open_mode.cjs
 node tests/topology_windows.cjs
+node tests/topology_multiselect.cjs
+node tests/junos_ui.cjs
 node tests/console_clipboard.cjs
 node tests/instructions.cjs
 node tests/workspace_features.cjs
@@ -198,3 +202,32 @@ pointing to the main repository. It also generates the sidebar and footer. It
 does not commit or push. After adding a help chapter, add it to the exporter's
 page map. GitHub requires an initial wiki page to exist before cloning its Git
 repository.
+
+
+## FRR integration tests
+
+The default backend suite tests FRR validation, archive integrity and partial
+startup rollback without Docker or root. `node tests/frr_ui.cjs` tests the image
+selector, ports and export options without starting routers.
+
+Opt-in native test (root, local Docker, TAP permissions; no KVM):
+
+```sh
+docker pull quay.io/frrouting/frr:10.7.1
+docker pull alpine:latest
+python3 tests/frr_native.py
+```
+
+Run it sequentially with other native tests. It uses disposable FRR/Alpine nodes
+to check OSPFv2/OSPFv3/BGP, IPv4/IPv6 routing, PC forwarding, console input locks,
+traffic/carrier faults, write-memory persistence, ZIP restore and crash recovery. It never replaces the active lab.
+
+For a separate FRR–IOSv OSPF interoperability test with a user-supplied image and
+KVM, run (sequentially):
+
+```sh
+python3 tests/frr_mixed_native.py --image-dir images --iosv-image cisco_vios-159-3.M12.qcow2
+```
+
+This boots a fresh disposable IOSv router, waits for OSPF, checks a learned
+loopback route and pings it from FRR. It does not alter existing lab storage.

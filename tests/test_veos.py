@@ -2,6 +2,7 @@
 import copy
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import tempfile
@@ -118,3 +119,66 @@ class VeosTests(unittest.TestCase):
         boot.unlink()
         with self.assertRaisesRegex(ValueError,'Aboot'): lab_backup.restore(self.lab,io.BytesIO(content),lab_server.run)
         with self.assertRaisesRegex(ValueError,'Aboot'): lab_backup.create(self.lab)
+
+    @unittest.skipUnless(shutil.which('qemu-img') and shutil.which('qemu-io'), 'Requires qemu-utils')
+    def test_compact_backup_exact_restore_and_legacy_option(self):
+        import disk_delta
+        image = self.lab.image_dir/self.name
+        raw = self.root/'base.raw'
+        payload = self.root/'payload'
+        payload.write_bytes(os.urandom(2 * 1024**2))
+        with raw.open('wb') as f:
+            f.write(payload.read_bytes())
+            f.truncate(16 * 1024**2)
+        image.unlink()
+        lab_server.run('qemu-img', 'convert', '-f', 'raw', '-O', 'qcow2', str(raw), str(image))
+        (self.lab.image_dir/vios.ABOOT_IMAGE).write_bytes(iso_bytes())
+        node = self.lab.node('a')
+        disk = vios.disk_for(node, self.lab.node_dir('a'), self.lab.image_dir, lab_server.run, ValueError)
+        lab_server.run('qemu-io', '-f', 'qcow2', '-c', f'write -s {payload} 4M 2M', str(disk))
+        original = disk.read_bytes()
+        original_base = image.read_bytes()
+
+        def export(compact):
+            result = lab_backup.create(self.lab, compact_veos=compact)
+            stream, _ = lab_backup.take(self.lab, result['url'].rsplit('/', 1)[1])
+            with stream:
+                return stream.read()
+
+        compact, legacy = export(True), export(False)
+        self.assertLess(len(compact), len(legacy) // 10)
+        self.assertEqual(disk.read_bytes(), original)
+        self.assertEqual(image.read_bytes(), original_base)
+        with zipfile.ZipFile(io.BytesIO(compact)) as z:
+            manifest = json.loads(z.read('manifest.json'))
+            self.assertEqual(manifest['version'], 2)
+            self.assertEqual(manifest['files'][0]['encoding'], disk_delta.ENCODING)
+            self.assertTrue(manifest['files'][0]['path'].endswith('.wl-delta'))
+        with zipfile.ZipFile(io.BytesIO(legacy)) as z:
+            self.assertEqual(json.loads(z.read('manifest.json'))['version'], 1)
+        for archive in (compact, legacy):
+            disk.write_bytes(b'old state')
+            lab_backup.restore(self.lab, io.BytesIO(archive), lab_server.run)
+            self.assertEqual(disk.read_bytes(), original)
+
+        def broken(change):
+            out = io.BytesIO()
+            with zipfile.ZipFile(io.BytesIO(compact)) as src, zipfile.ZipFile(out, 'w') as dst:
+                meta = json.loads(src.read('manifest.json'))
+                change(meta)
+                for name in src.namelist():
+                    dst.writestr(name, json.dumps(meta) if name == 'manifest.json' else src.read(name))
+            return out.getvalue()
+
+        cases = [lambda m: m.update(version=1),
+                 lambda m: m['files'][0].update(encoding='unknown'),
+                 lambda m: m['files'][0].update(restored_size=lab_backup.MAX_BYTES + 1),
+                 lambda m: m['files'][0].update(restored_sha256='0'*64),
+                 lambda m: m['files'][0].update(sha256='0'*64)]
+        for change in cases:
+            with self.assertRaises(ValueError):
+                lab_backup.restore(self.lab, io.BytesIO(broken(change)), lab_server.run)
+            self.assertEqual(disk.read_bytes(), original)
+            self.assertFalse(list(self.lab.directory.glob('.restore-*')))
+        with self.assertRaisesRegex(ValueError, 'compact_veos'):
+            lab_backup.create(self.lab, compact_veos='yes')

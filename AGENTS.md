@@ -9,13 +9,14 @@ Weblab is a self-hosted network lab manager. Read the [help index](docs/README.m
 Follow [Creating practice labs and topology JSON](docs/practice-labs.md). Deliver
 an importable JSON file and companion Markdown exercise under `examples/` or the
 requested directory. YAML is not supported. Use exact locally available image
-filenames, unique exercise node IDs, and distinct interfaces for each cable.
+filenames or the supported FRR container tag, unique exercise node IDs, and distinct interfaces for each cable.
 Create original exercises; do not use exam dumps or claim current blueprint
 coverage without checking the vendor's official blueprint.
 
-Use `startup_config` only for the intended baseline on fresh Cisco devices.
-Existing NVRAM/disks take precedence, including after ZIP import. EXOS/Arista do
-not support initial snippets or configuration-text exports. PC addressing belongs
+Use `startup_config` only for the intended baseline on fresh Cisco or FRR devices,
+using each platform’s configuration syntax. Existing NVRAM/disks/FRR saved
+configuration take precedence, including after ZIP import. EXOS/Arista/Junos do not
+support initial snippets or configuration-text exports. PC addressing belongs
 in `ipv4`/`gateway`; arbitrary shell snippets are not supported.
 
 Validate without starting devices:

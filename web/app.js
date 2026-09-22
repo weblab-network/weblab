@@ -9,6 +9,8 @@ const icons = {
 document.querySelectorAll("[data-icon]").forEach(el => el.innerHTML = icons[el.dataset.icon]);
 let topology = {version: 1, name: "Untitled lab", nodes: [], links: []};
 let statuses = {}, images = [], selected = null, busy = false, loaded = false, dragging = false;
+const selectedNodes = new Set();
+let multiSelect = false;
 let mode = "select", linkSource = null, pendingLink = null, toastTimer;
 let pendingDelete = null;
 const MAP_WIDTH = 2400, MAP_HEIGHT = 1600, MIN_ZOOM = .2, MAX_ZOOM = 2;
@@ -26,8 +28,12 @@ const hasRunning = () => Object.values(statuses).some(s => s.state === "running"
 const isQemu = n => n.type !== "pc" && n.image?.endsWith(".qcow2");
 const isExos = n => isQemu(n) && /^exos-vm[_-]/i.test(n.image);
 const isVeos = n => isQemu(n) && /^veos(?:64)?-lab-/i.test(n.image);
-const noConfigExport = n => isExos(n) || isVeos(n);
-const nodePorts = n => n.type === "pc" ? ["eth0"] : isVeos(n) ? ["Management1", ...Array.from({length:n.ethernet - 1}, (_, i) => `Ethernet${i + 1}`)] : isExos(n) ? ["Mgmt", ...Array.from({length:n.ethernet - 1}, (_, i) => String(i + 1))] : isQemu(n)
+const isFrr = n => n.image?.startsWith("quay.io/frrouting/frr:");
+const isJunosSwitch = n => isQemu(n) && /^vjunos-switch-/i.test(n.image);
+const isJunosEvolved = n => isQemu(n) && /^vjunosevolved-/i.test(n.image);
+const isJunos = n => isJunosSwitch(n) || isJunosEvolved(n);
+const noConfigExport = n => isExos(n) || isVeos(n) || isJunos(n);
+const nodePorts = n => n.type === "pc" ? ["eth0"] : isFrr(n) ? Array.from({length:n.ethernet}, (_, i) => `eth${i}`) : isJunos(n) ? [isJunosEvolved(n) ? "re0:mgmt-0" : "fxp0", ...Array.from({length:n.ethernet-1}, (_, i) => `${isJunosEvolved(n) ? "et" : "ge"}-0/0/${i}`)] : isVeos(n) ? ["Management1", ...Array.from({length:n.ethernet - 1}, (_, i) => `Ethernet${i + 1}`)] : isExos(n) ? ["Mgmt", ...Array.from({length:n.ethernet - 1}, (_, i) => String(i + 1))] : isQemu(n)
   ? Array.from({length: n.ethernet}, (_, i) => n.type === "switch" ? `Gi${Math.floor(i / 4)}/${i % 4}` : `Gi0/${i}`)
   : Array.from({length: n.ethernet * 4}, (_, i) => `${Math.floor(i / 4)}/${i % 4}`);
 const portLink = (id, port) => topology.links.find(l => [l.a, l.b].some(e => e.node === id && e.port === port));
@@ -134,7 +140,8 @@ async function api(path, method = "GET", body) {
 function accept(result, updateForm = true) {
   topology = result.topology; statuses = result.status; images = result.images; loaded = true;
   linkStates = result.link_state || {}; linkError = result.link_error || "";
-  if (selected && !nodeById(selected)) selected = null;
+  for (const id of selectedNodes) if (!nodeById(id)) selectedNodes.delete(id);
+  if (selected && !nodeById(selected)) selected = selectedNodes.values().next().value || null;
   syncConsoles();
   if (document.activeElement !== $("lab-name")) $("lab-name").value = topology.name;
   render();
@@ -177,20 +184,20 @@ function newNode(type, x, y) {
   while (topology.nodes.some(n => n.name === prefix + number)) number++;
   const image = type === "pc" ? "alpine:latest" : (images.find(i => i.type === type)?.name || "");
   return {id: uid(), type, name: prefix + number, image,
-          memory: isVeos({type,image}) ? 6144 : 1024, ethernet: isVeos({type,image}) ? 5 : isExos({type,image}) ? 13 : image.endsWith(".qcow2") ? 4 : 2, x: Math.round(Math.max(70, Math.min(2330, x))), y: Math.round(Math.max(60, Math.min(1540, y))), ipv4: "", gateway: ""};
+          memory: isJunosEvolved({type,image}) ? 8192 : isJunosSwitch({type,image}) ? 5120 : isFrr({image}) ? 512 : isVeos({type,image}) ? 6144 : 1024, ethernet: isJunos({type,image}) ? 5 : isFrr({image}) ? 4 : isVeos({type,image}) ? 5 : isExos({type,image}) ? 13 : image.endsWith(".qcow2") ? 4 : 2, x: Math.round(Math.max(70, Math.min(2330, x))), y: Math.round(Math.max(60, Math.min(1540, y))), ipv4: "", gateway: ""};
 }
 
 function addNode(type, x, y) {
   if (type !== "pc" && !images.some(i => i.type === type)) return toast(`No ${type} image was found in the image directory.`, true);
-  structuralEdit(() => { const n = newNode(type, x, y); topology.nodes.push(n); selected = n.id; })?.then(() => {
+  structuralEdit(() => { const n = newNode(type, x, y); topology.nodes.push(n); setSelection(n.id); })?.then(() => {
     if (panelMedia.matches && selected) setPanel("inspector", true);
   });
 }
 
 function render() {
   $("empty-state").hidden = topology.nodes.length > 0;
-  $("nodes").innerHTML = topology.nodes.map(n => `<button class="map-node ${selected === n.id ? "selected" : ""} ${linkSource === n.id ? "linking" : ""}" data-id="${esc(n.id)}" style="left:${n.x}px;top:${n.y}px" aria-label="${esc(n.name)}, ${n.type}, ${state(n.id)}"><span class="little-dot ${state(n.id)}"></span><span class="device-icon ${n.type}">${icons[n.type]}</span><span class="node-label">${esc(n.name)}</span><span class="node-type">${n.type === "pc" ? "ALPINE PC" : `${isVeos(n) ? "vEOS" : isExos(n) ? "EXOS" : isQemu(n) ? "IOSv" : "IOL"} ${n.type.toUpperCase()}`}</span></button>`).join("");
-  $("node-list").innerHTML = topology.nodes.map(n => `<button data-id="${esc(n.id)}" class="${selected === n.id ? "selected" : ""}"><span class="mini-type">${{switch:"L2",router:"L3",pc:"PC"}[n.type]}</span>${esc(n.name)}<span class="little-dot ${state(n.id)}"></span></button>`).join("");
+  $("nodes").innerHTML = topology.nodes.map(n => `<button class="map-node ${selectedNodes.has(n.id) ? "selected" : ""} ${linkSource === n.id ? "linking" : ""}" data-id="${esc(n.id)}" style="left:${n.x}px;top:${n.y}px" aria-label="${esc(n.name)}, ${n.type}, ${state(n.id)}"><span class="little-dot ${state(n.id)}"></span><span class="device-icon ${n.type}">${icons[n.type]}</span><span class="node-label">${esc(n.name)}</span><span class="node-type">${n.type === "pc" ? "ALPINE PC" : `${isJunosEvolved(n) ? "JUNOS EVO" : isJunosSwitch(n) ? "JUNOS" : isFrr(n) ? "FRR" : isVeos(n) ? "vEOS" : isExos(n) ? "EXOS" : isQemu(n) ? "IOSv" : "IOL"} ${n.type.toUpperCase()}`}</span></button>`).join("");
+  $("node-list").innerHTML = topology.nodes.map(n => `<button data-id="${esc(n.id)}" class="${selectedNodes.has(n.id) ? "selected" : ""}"><span class="mini-type">${{switch:"L2",router:"L3",pc:"PC"}[n.type]}</span>${esc(n.name)}<span class="little-dot ${state(n.id)}"></span></button>`).join("");
   renderLinks();
   $("node-count").textContent = String(topology.nodes.length).padStart(2, "0");
   $("link-count").textContent = `${topology.nodes.length} devices · ${topology.links.length} links${topology.links.some(l => linkFault(l.id)) ? ` · ${topology.links.filter(l => linkFault(l.id)).length} interrupted` : ""}`;
@@ -321,7 +328,7 @@ function placeLinkLabels(routes) {
 
 function updateControls() {
   $("upload-image").disabled = busy || !loaded;
-  for (const id of ["start-all", "stop-all", "import", "export", "starter", "link-tool", "select-tool", "apply-node", "start-node", "stop-node", "open-console", "delete-node", "logs"]) $(id).disabled = busy || !loaded;
+  for (const id of ["start-all", "stop-all", "import", "export", "starter", "link-tool", "select-tool", "multi-select-tool", "apply-node", "start-node", "stop-node", "open-console", "delete-node", "logs"]) $(id).disabled = busy || !loaded;
   $("start-all").disabled ||= !topology.nodes.length || topology.nodes.every(n => state(n.id) === "running");
   $("stop-all").disabled ||= !hasRunning();
   $("import").disabled ||= hasRunning();
@@ -435,7 +442,7 @@ $("canvas-scroll").addEventListener("pointerdown", event => {
 $("canvas-scroll").addEventListener("click", event => {
   if (suppressMapClick) { event.stopPropagation(); return; }
   if (!event.target.closest(".map-node, .cable-group, button")) {
-    selected = null; render(); renderInspector();
+    setSelection(null); render(); renderInspector();
   }
 }, true);
 
@@ -447,7 +454,7 @@ function renderInspector() {
   $("selected-icon").innerHTML = icons[n.type];
   $("selected-title").textContent = n.name;
   $("node-name").value = n.name;
-  $("node-image").innerHTML = (n.type === "pc" ? [{name: n.image}] : images.filter(i => n.type !== "router" || !noConfigExport({image:i.name}))).map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join("");
+  $("node-image").innerHTML = (n.type === "pc" ? [{name: n.image}] : images.filter(i => n.type === "router" ? (!noConfigExport({image:i.name}) || isJunosEvolved({image:i.name})) : !isFrr({image:i.name}) && !isJunosEvolved({image:i.name}))).map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join("");
   $("node-image").value = n.image;
   $("node-image").dataset.previousImage = n.image;
   $("node-memory").value = n.memory; renderEthernetSettings(n);
@@ -462,11 +469,11 @@ function renderInspector() {
 }
 
 function renderEthernetSettings(n) {
-  const qcow = isQemu(n), exos = isExos(n), veos = isVeos(n);
-  $("ethernet-label").textContent = qcow ? "Ethernet interfaces" : "Ethernet slots";
-  $("node-ethernet").innerHTML = Array.from({length: exos ? 12 : veos ? 15 : qcow ? 16 : 8}, (_, i) => `<option>${i + (exos || veos ? 2 : 1)}</option>`).join("");
+  const qcow = isQemu(n), exos = isExos(n), veos = isVeos(n), frr = isFrr(n), junos = isJunos(n);
+  $("ethernet-label").textContent = qcow || frr ? "Ethernet interfaces" : "Ethernet slots";
+  $("node-ethernet").innerHTML = Array.from({length: exos ? 12 : veos || junos ? 15 : qcow ? 16 : 8}, (_, i) => `<option>${i + (exos || veos || junos ? 2 : 1)}</option>`).join("");
   $("node-ethernet").value = n.ethernet;
-  $("ethernet-help").textContent = veos ? "Includes Management1 plus Ethernet data ports. Uses 2 vCPUs; tested with 6144 MB RAM. Requires Aboot-veos-serial-8.0.2.iso. On first boot, log in as admin and run zerotouch disable (reboots)." : exos ? "Includes Mgmt plus numbered data ports (1–12). Allow a few minutes for EXOS to boot." : qcow
+  $("ethernet-help").textContent = junos ? "Junos: 4 vCPUs, management plus ge-/et-0/0/x data ports. Switch needs nested Intel KVM and at least 5120 MB; Evolved needs UEFI and 8192 MB. Configure via console; commit before stopping. Initial snippets and config-text export are not supported." : frr ? "FRR container: eth0–eth7, no KVM. Pull quay.io/frrouting/frr:10.7.1 on the Docker host first. Configure in vtysh; write memory before stopping. Memory is the container limit." : veos ? "Includes Management1 plus Ethernet data ports. Uses 2 vCPUs; tested with 6144 MB RAM. Requires Aboot-veos-serial-8.0.2.iso. On first boot, log in as admin and run zerotouch disable (reboots)." : exos ? "Includes Mgmt plus numbered data ports (1–12). Allow a few minutes for EXOS to boot." : qcow
     ? "Up to 16 GigabitEthernet interfaces. Allow a few minutes for IOSv to boot."
     : "Four Ethernet ports per slot. Interfaces are shown as slot/port.";
 }
@@ -475,8 +482,8 @@ $("node-image").addEventListener("change", () => {
   if (!n) return;
   const previous = {...n, image: $("node-image").dataset.previousImage || n.image};
   const changed = {...n, image: $("node-image").value, ethernet: Number($("node-ethernet").value)};
-  if (isQemu(previous) !== isQemu(changed) || isExos(previous) !== isExos(changed) || isVeos(previous) !== isVeos(changed)) changed.ethernet = isVeos(changed) ? 5 : isExos(changed) ? 13 : isQemu(changed) ? 4 : 2;
-  if (isVeos(previous) !== isVeos(changed)) $("node-memory").value = isVeos(changed) ? 6144 : 1024;
+  if (isJunosSwitch(previous) !== isJunosSwitch(changed) || isJunosEvolved(previous) !== isJunosEvolved(changed) || isFrr(previous) !== isFrr(changed) || isQemu(previous) !== isQemu(changed) || isExos(previous) !== isExos(changed) || isVeos(previous) !== isVeos(changed)) changed.ethernet = isJunos(changed) ? 5 : isFrr(changed) ? 4 : isVeos(changed) ? 5 : isExos(changed) ? 13 : isQemu(changed) ? 4 : 2;
+  if (isJunosSwitch(previous) !== isJunosSwitch(changed) || isJunosEvolved(previous) !== isJunosEvolved(changed) || isFrr(previous) !== isFrr(changed) || isVeos(previous) !== isVeos(changed)) $("node-memory").value = isJunosEvolved(changed) ? 8192 : isJunosSwitch(changed) ? 5120 : isFrr(changed) ? 512 : isVeos(changed) ? 6144 : 1024;
   $("node-image").dataset.previousImage = changed.image;
   renderEthernetSettings(changed);
 });
@@ -488,8 +495,25 @@ function updateInspectorStatus() {
   $("node-error").hidden = !statuses[selected]?.error;
 }
 
+function setSelection(id) {
+  selectedNodes.clear();
+  if (id) selectedNodes.add(id);
+  selected = id;
+}
+
+function toggleSelection(id) {
+  if (selectedNodes.has(id)) selectedNodes.delete(id);
+  else selectedNodes.add(id);
+  selected = selectedNodes.has(id) ? id : [...selectedNodes].at(-1) || null;
+  render(); renderInspector();
+}
+
+function selectionGesture(event) {
+  return multiSelect || event.shiftKey || event.ctrlKey || event.metaKey;
+}
+
 function selectNode(id, open = true) {
-  selected = id; render(); renderInspector();
+  setSelection(id); render(); renderInspector();
   if (panelMedia.matches && state(id) !== "running") setPanel("inspector", true);
   if (open && (state(id) === "running" || consoleSessions.has(id))) openConsole(id);
 }
@@ -498,6 +522,12 @@ function setMode(next) {
   if (busy) return;
   if (next === "link" && hasRunning()) return toast("Stop the lab before adding connections.", true);
   mode = next; linkSource = null;
+  if (mode === "link") {
+    multiSelect = false;
+    setSelection(selected);
+  }
+  $("multi-select-tool").classList.toggle("active", multiSelect);
+  $("multi-select-tool").setAttribute("aria-pressed", String(multiSelect));
   $("select-tool").classList.toggle("active", mode === "select");
   $("link-tool").classList.toggle("active", mode === "link");
   $("canvas").classList.toggle("link-mode", mode === "link");
@@ -525,33 +555,76 @@ $("canvas-scroll").addEventListener("dragover", e => { if (!hasRunning() && !bus
 $("canvas-scroll").addEventListener("drop", e => { e.preventDefault(); const type = e.dataTransfer.getData("application/x-iol-device"); if (!icons[type]) return; const point = mapPoint(e.clientX, e.clientY); addNode(type, point.x, point.y); });
 $("nodes").addEventListener("pointerdown", e => {
   const target = e.target.closest(".map-node");
-  if (!target || e.button !== 0 || busy) return;
+  if (!target || e.button !== 0 || busy || dragging) return;
   e.preventDefault();
   const id = target.dataset.id;
   if (mode === "link") { connectNode(id); return; }
-  const n = nodeById(id), original = {x: n.x, y: n.y}, start = {x: e.clientX, y: e.clientY};
+  const additive = selectionGesture(e);
+  const ids = selectedNodes.has(id) ? [...selectedNodes] : additive ? [...selectedNodes, id] : [id];
+  const originals = ids.map(id => {
+    const n = nodeById(id);
+    return {n, x:n.x, y:n.y, element:[...$("nodes").children].find(el => el.dataset.id === id)};
+  });
+  const start = {x:e.clientX, y:e.clientY};
+  const minX = Math.min(...originals.map(o => o.x)), maxX = Math.max(...originals.map(o => o.x));
+  const minY = Math.min(...originals.map(o => o.y)), maxY = Math.max(...originals.map(o => o.y));
   let moved = false;
   dragging = true; target.setPointerCapture(e.pointerId);
   updateViewControls();
   const move = event => {
+    if (event.pointerId !== e.pointerId) return;
     const dx = event.clientX - start.x, dy = event.clientY - start.y;
     if (Math.hypot(dx, dy) > 4) moved = true;
     if (!moved) return;
-    n.x = Math.round(Math.max(70, Math.min(2330, original.x + dx / mapZoom)));
-    n.y = Math.round(Math.max(60, Math.min(1540, original.y + dy / mapZoom)));
-    target.style.left = n.x + "px"; target.style.top = n.y + "px"; renderLinks();
+    const x = Math.round(Math.max(70-minX, Math.min(2330-maxX, dx/mapZoom)));
+    const y = Math.round(Math.max(60-minY, Math.min(1540-maxY, dy/mapZoom)));
+    for (const o of originals) {
+      o.n.x = o.x+x; o.n.y = o.y+y;
+      o.element.style.left = o.n.x+"px"; o.element.style.top = o.n.y+"px";
+      o.element.classList.add("selected");
+    }
+    renderLinks();
   };
-  const up = event => {
-    target.removeEventListener("pointermove", move); target.removeEventListener("pointerup", up); target.removeEventListener("pointercancel", cancel);
-    dragging = false;
-    updateViewControls();
-    if (moved) { selected = id; edit(() => {}); } else selectNode(id);
+  const finish = event => {
+    if (event.pointerId !== e.pointerId) return;
+    target.removeEventListener("pointermove", move);
+    for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) target.removeEventListener(type, finish);
+    if (target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId);
+    dragging = false; updateViewControls();
+    if (event.type !== "pointerup") {
+      for (const o of originals) { o.n.x = o.x; o.n.y = o.y; }
+      render(); renderInspector();
+    } else if (moved) {
+      selectedNodes.clear(); ids.forEach(id => selectedNodes.add(id)); selected = id;
+      edit(() => {});
+    } else if (additive) toggleSelection(id);
+    else selectNode(id);
   };
-  const cancel = () => { n.x = original.x; n.y = original.y; moved = false; up(); };
-  target.addEventListener("pointermove", move); target.addEventListener("pointerup", up); target.addEventListener("pointercancel", cancel);
+  target.addEventListener("pointermove", move);
+  for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) target.addEventListener(type, finish);
 });
-$("nodes").addEventListener("keydown", e => { const target = e.target.closest(".map-node"); if (target && ["Enter", " "].includes(e.key)) { e.preventDefault(); mode === "link" ? connectNode(target.dataset.id) : selectNode(target.dataset.id); } });
-$("node-list").addEventListener("click", e => { const target = e.target.closest("[data-id]"); if (target) selectNode(target.dataset.id); });
+$("nodes").addEventListener("keydown", e => {
+  const target = e.target.closest(".map-node");
+  if (target && ["Enter", " "].includes(e.key)) {
+    e.preventDefault();
+    if (mode === "link") connectNode(target.dataset.id);
+    else if (selectionGesture(e)) toggleSelection(target.dataset.id);
+    else selectNode(target.dataset.id);
+  }
+});
+$("node-list").addEventListener("click", e => {
+  const target = e.target.closest("[data-id]");
+  if (target) {
+    if (mode !== "link" && selectionGesture(e)) toggleSelection(target.dataset.id);
+    else selectNode(target.dataset.id);
+  }
+});
+$("multi-select-tool").onclick = () => {
+  if (busy || dragging) return;
+  multiSelect = !multiSelect;
+  setMode("select");
+};
+
 function requestDelete(kind, id) {
   if (busy || !loaded) return;
   if (hasRunning()) return toast("Stop the lab before deleting devices or cables.", true);
@@ -577,7 +650,7 @@ $("delete-form").addEventListener("submit", event => {
     if (kind === "node") {
       topology.links = topology.links.filter(link => link.a.node !== id && link.b.node !== id);
       topology.nodes = topology.nodes.filter(node => node.id !== id);
-      if (selected === id) selected = null;
+      selectedNodes.delete(id); if (selected === id) selected = selectedNodes.values().next().value || null;
     } else topology.links = topology.links.filter(link => link.id !== id);
   });
 });
@@ -709,17 +782,18 @@ $("starter").onclick = () => structuralEdit(() => {
   p.ipv4 = "10.0.10.10/24"; p.gateway = "10.0.10.1";
   topology.name = "My first network"; topology.nodes.push(r, s, p);
   topology.links.push({id: uid(), a: {node:r.id, port:nodePorts(r)[0]}, b:{node:s.id, port:nodePorts(s)[noConfigExport(s) ? 1 : 0]}}, {id:uid(), a:{node:s.id,port:nodePorts(s)[noConfigExport(s) ? 2 : 1]}, b:{node:p.id,port:"eth0"}});
-  selected = r.id;
+  setSelection(r.id);
 });
 function updateExportControls() {
-  $("export-initial").disabled = busy || topology.nodes.some(n => noConfigExport(n) || n.type !== "pc" && state(n.id) !== "running");
+  $("export-initial").disabled = busy || topology.nodes.some(n => noConfigExport(n) || isFrr(n) || n.type !== "pc" && state(n.id) !== "running");
   $("export-saved").disabled = busy || topology.nodes.some(n => noConfigExport(n) || n.type !== "pc" && state(n.id) === "running");
   $("export-zip").disabled = busy || hasRunning();
-  $("export-json").disabled = $("cancel-export").disabled = $("export-logs").disabled = busy;
+  $("export-json").disabled = $("cancel-export").disabled = $("export-logs").disabled = $("export-compact").disabled = busy;
+  $("export-compact-option").hidden = !topology.nodes.some(isVeos);
 }
 $("export").onclick = () => {
   updateExportControls();
-  $("export-message").textContent = topology.nodes.some(noConfigExport) ? "EXOS and Arista config snippets and extraction are not supported yet. Use Topology JSON or, with all devices stopped, Saved lab ZIP." : hasRunning() ? "Saved configs require stopped Cisco devices; saved lab ZIP requires all devices stopped. Live configs require running Cisco devices with ready consoles." : "";
+  $("export-message").textContent = topology.nodes.some(noConfigExport) ? "EXOS, Arista and Junos config snippets and extraction are not supported yet. Use Topology JSON or, with all devices stopped, Saved lab ZIP." : topology.nodes.some(isFrr) ? "FRR supports startup snippets, JSON + saved configs and Saved lab ZIP. Save with write memory and stop first. FRR live capture is not supported yet." : hasRunning() ? "Saved configs require stopped Cisco devices; saved lab ZIP requires all devices stopped. Live configs require running Cisco devices with ready consoles." : "";
   $("export-dialog").showModal();
 };
 $("cancel-export").onclick = () => $("export-dialog").close();
@@ -750,7 +824,7 @@ $("export-zip").onclick = async () => {
   updateExportControls();
   $("export-message").textContent = "Preparing saved lab… Large disks can take a few minutes.";
   try {
-    const result = await api("/api/export", "POST", {include_logs:$("export-logs").checked});
+    const result = await api("/api/export", "POST", {include_logs:$("export-logs").checked, compact_veos:$("export-compact").checked});
     const a = document.createElement("a"); a.href = result.url; a.download = result.filename;
     document.body.append(a); a.click(); a.remove();
     $("export-dialog").close(); toast("Backup ready. Your browser will download the ZIP.");
@@ -775,7 +849,7 @@ $("import-file").onchange = async () => {
     } else {
       if (file.size > 1000000) throw new Error("Topology file is too large");
       const data = JSON.parse(await file.text());
-      await structuralEdit(() => { topology = data; selected = null; });
+      await structuralEdit(() => { topology = data; setSelection(null); });
     }
   } catch (error) { toast(error.message, true); }
   $("import-file").value = "";
@@ -805,7 +879,7 @@ $("confirm-import").onclick = async () => {
     });
     // Restored nodes may reuse IDs; their old console histories belong to the previous lab.
     for (const id of [...consoleSessions.keys()]) closeConsole(id);
-    selected = null; accept(result);
+    setSelection(null); accept(result);
     $("import-dialog").close(); toast("Saved lab restored. Devices are stopped and ready to start.");
   } catch (error) { $("import-message").textContent = error.message; }
   finally {
@@ -1729,7 +1803,7 @@ document.addEventListener("keydown", e => {
   if (e.target.closest("input,textarea,select,.xterm,.instructions-panel") || document.querySelector("dialog[open]") || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key.toLowerCase() === "v") setMode("select");
   if (e.key.toLowerCase() === "l") setMode("link");
-  if (e.key === "Escape") { setMode("select"); selected = null; renderInspector(); render(); }
+  if (e.key === "Escape") { multiSelect = false; setMode("select"); setSelection(null); renderInspector(); render(); }
 });
 async function refresh() {
   if (busy || dragging) return;
