@@ -3,6 +3,9 @@ import struct
 import tempfile
 import time
 import threading
+import copy
+import json
+import io
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -10,6 +13,7 @@ from unittest.mock import patch
 import iol_l1
 import link_fabric
 import test_lab
+import lab_backup
 
 
 class L1Tests(unittest.TestCase):
@@ -86,10 +90,75 @@ class L1LifecycleTests(unittest.TestCase):
     node = staticmethod(test_lab.LabTests.node)
 
     def prepare(self):
+        for topology in (self.topology, self.lab.topology):
+            for node in topology['nodes']:
+                node['iol_l1'] = True
         self.lab.netl1 = self.root / 'l1'
         image = self.root / 'fake.bin'
-        code = image.read_text().replace("os.write(1, b'BOOT READY", "l1=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM)\nPath('"+str(self.lab.netl1)+"').mkdir(exist_ok=True)\nl1.bind('"+str(self.lab.netl1)+"/L1'+sys.argv[-1])\nos.write(1, b'BOOT READY")
+        setup = ("if '-l' in sys.argv:\n"
+                 "    l1=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM)\n"
+                 f"    Path({str(self.lab.netl1)!r}).mkdir(exist_ok=True)\n"
+                 f"    l1.bind({str(self.lab.netl1 / 'L1')!r}+sys.argv[-1])\n")
+        code = image.read_text().replace("os.write(1, b'BOOT READY", setup + "os.write(1, b'BOOT READY")
         image.write_text(code)
+
+    def test_default_off_skips_l1_socket_and_keeps_frame_loss(self):
+        self.lab.netl1 = self.root / 'l1'
+        self.lab.netl1.mkdir()
+        # A foreign L1 socket/file is irrelevant when -l was not requested.
+        foreign = self.lab.netl1 / f"L1{self.lab.node('r1')['iol_id']}"
+        foreign.write_text('not ours')
+        with patch('iol_l1.supported', return_value=True), patch.object(self.lab, 'spawn', wraps=self.lab.spawn) as spawn:
+            self.lab.start_all()
+            for call in spawn.call_args_list:
+                if call.args[1] == 'console':
+                    self.assertNotIn('-l', call.args[2])
+            self.assertNotIn('iol_l1', self.lab.runtime['r1'])
+            state = self.lab.link_states()['cable']
+            self.assertTrue(state['carrier_capable_a'])
+            self.assertFalse(state['carrier_supported_a'])
+            self.lab.set_link_traffic('cable', {'blocked_a_to_b': True, 'blocked_b_to_a': False})
+            self.assertTrue(self.lab.link_states()['cable']['blocked_a_to_b'])
+            with self.assertRaisesRegex(test_lab.lab_server.LabError, 'Enable cable unplug control'):
+                self.lab.set_link_carrier('cable', {'side':'a', 'up':False})
+            self.lab.stop_all()
+            self.assertTrue(foreign.exists())
+
+    def test_opt_in_validation_persistence_and_zip(self):
+        image = self.root / 'cisco_iol-17.18.02.bin'
+        image.write_bytes((self.root / 'fake.bin').read_bytes()); image.chmod(0o755)
+        data = copy.deepcopy(self.topology)
+        data['nodes'][0]['image'] = image.name
+        self.lab.save(data)
+        self.assertFalse(self.lab.node('r1')['iol_l1'], 'Old topology without a setting defaults off')
+        for invalid in (1, 'true', None):
+            data['nodes'][0]['iol_l1'] = invalid
+            with self.assertRaisesRegex(test_lab.lab_server.LabError, 'boolean'):
+                self.lab.save(data)
+        data['nodes'][0]['iol_l1'] = True
+        self.lab.save(data)
+        self.assertTrue(json.loads(self.lab.topology_path.read_text())['nodes'][0]['iol_l1'])
+        result = lab_backup.create(self.lab)
+        stream, _ = lab_backup.take(self.lab, result['url'].rsplit('/', 1)[1])
+        with stream:
+            archive = stream.read()
+        data['nodes'][0]['iol_l1'] = False
+        self.lab.save(data)
+        lab_backup.restore(self.lab, io.BytesIO(archive), test_lab.lab_server.run)
+        self.assertTrue(self.lab.node('r1')['iol_l1'])
+        data['nodes'][0].update(image='fake.bin', iol_l1=True)
+        with self.assertRaisesRegex(test_lab.lab_server.LabError, 'tested IOL L1'):
+            self.lab.save(data)
+
+    def test_running_node_cannot_change_launch_mode(self):
+        with patch('iol_l1.supported', return_value=True):
+            self.lab.save(self.topology)
+            self.lab.start('r1')
+            data = copy.deepcopy(self.lab.topology)
+            data['nodes'][0]['iol_l1'] = True
+            with self.assertRaisesRegex(test_lab.lab_server.LabError, 'Stop all nodes'):
+                self.lab.save(data)
+            self.assertNotIn('iol_l1', self.lab.runtime['r1'])
 
     def test_capability_is_opt_in_and_sender_failure_rolls_back(self):
         self.assertFalse(iol_l1.supported(self.lab.node('r1')))

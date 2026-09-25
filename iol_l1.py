@@ -20,6 +20,10 @@ def supported(node):
     return node['type'] in ('router', 'switch') and node['image'] in PROFILES
 
 
+def enabled(node):
+    return supported(node) and node.get('iol_l1', False) is True
+
+
 def recover(directory, path):
     journal = directory / 'l1-senders.json'
     if journal.exists():

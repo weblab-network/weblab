@@ -23,6 +23,7 @@ services:
     environment:
       WL_BIND: ${WL_BIND:-127.0.0.1}
       WL_PORT: ${WL_PORT:-8080}
+      WL_ALLOW_UNTESTED_FRR: ${WL_ALLOW_UNTESTED_FRR:-0}
     command: ["--bind", "${WL_BIND:-127.0.0.1}", "--port", "${WL_PORT:-8080}", "--image-dir", "/iou", "--data-dir", "/data"]
     stop_grace_period: 2m
     healthcheck:

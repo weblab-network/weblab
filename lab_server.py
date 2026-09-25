@@ -92,9 +92,10 @@ def netmap_port(node, port):
 
 
 class Lab:
-    def __init__(self, directory, image_dir=None):
+    def __init__(self, directory, image_dir=None, *, allow_untested_frr=False):
         self.image_dir = (image_dir if image_dir is not None else ROOT).resolve()
         self.image_dir.mkdir(parents=True, exist_ok=True)
+        self.allow_untested_frr = allow_untested_frr
         self.upload_lock = threading.Lock()
         self.directory = directory.resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -195,9 +196,13 @@ class Lab:
     def snapshot(self):
         with self.lock:
             return {"topology": copy.deepcopy(self.topology),
+                    "iol_l1_profiles": sorted(iol_l1.PROFILES),
+                    "allow_untested_frr": self.allow_untested_frr,
                     "status": {n["id"]: {"state": "running" if n["id"] in self.runtime else
                                          "error" if self.errors.get(n["id"]) else "stopped",
-                                         "error": self.errors.get(n["id"], "")}
+                                         "error": self.errors.get(n["id"], ""),
+                                         "warning": 'Running an untested FRR image. Compatibility is not guaranteed.'
+                                             if self.runtime.get(n['id'], {}).get('frr_untested') else ''}
                                for n in self.topology["nodes"]},
                     "images": self.catalog(),
                     "link_state": self.link_states(),
@@ -268,6 +273,13 @@ class Lab:
             elif not is_frr and image not in {i["name"] for i in self.catalog()}:
                 raise LabError("Select an IOL .bin, supported .qcow2 image, or the supported FRR container")
             node["image"] = image
+            l1 = raw.get('iol_l1', False)
+            if type(l1) is not bool:
+                raise LabError('iol_l1 must be a boolean')
+            if l1 and not iol_l1.supported(node):
+                raise LabError('IOL cable unplug control requires a tested IOL L1 image profile')
+            if iol_l1.supported(node):
+                node['iol_l1'] = l1
             snippet = raw.get("startup_config", "")
             if not isinstance(snippet, str) or len(snippet.encode("utf-8")) > 16_384:
                 raise LabError("startup_config must be a string of at most 16 KiB")
@@ -391,6 +403,10 @@ class Lab:
                 raise LabError('Link does not exist')
             side = data['side']
             if not state['available'] or not state['carrier_supported_' + side]:
+                endpoint = next(link for link in self.topology['links'] if link['id'] == link_id)[side]
+                node = self.node(endpoint['node'])
+                if iol_l1.supported(node) and not iol_l1.enabled(node):
+                    raise LabError('Enable cable unplug control in the node Inspector while all nodes are stopped, then start the node')
                 raise LabError('Cable link-down requires a running supported IOSv, IOL or FRR interface')
             endpoint = next(link for link in self.topology['links'] if link['id'] == link_id)[side]
             node = self.node(endpoint['node'])
@@ -545,7 +561,7 @@ class Lab:
             socket_path = self.netio / str(node["iol_id"])
             if socket_path.exists():
                 raise LabError(f"IOL ID {node['iol_id']} is in use outside this app; recreate this node to allocate another ID")
-            if iol_l1.supported(node) and os.path.lexists(self.netl1 / f"L1{node['iol_id']}"):
+            if iol_l1.enabled(node) and os.path.lexists(self.netl1 / f"L1{node['iol_id']}"):
                 raise LabError('IOL L1 socket is already in use; use an available node ID')
             cwd = self.node_dir(node_id)
             netmap = cwd / "NETMAP"
@@ -564,7 +580,7 @@ class Lab:
                 reservation.bind(("127.0.0.1", 0))
                 port = reservation.getsockname()[1]
             self.runtime[node_id] = {"port": port, "iol_id": node["iol_id"]}
-            if iol_l1.supported(node):
+            if iol_l1.enabled(node):
                 self.runtime[node_id]['iol_l1'] = True
             self.errors.pop(node_id, None)
             self.journal()
@@ -573,7 +589,8 @@ class Lab:
                 self.write_netmap()
                 if node["type"] == "pc":
                     self.start_pc(node)
-                    image, arguments = shutil.which("docker"), ["exec", "-it", self.runtime[node_id]["container"], "/bin/sh"]
+                    image, arguments = sys.executable, [str(ROOT / 'container_console.py'),
+                                                       self.runtime[node_id]['container']]
                 elif frr.is_frr(node):
                     image, arguments = frr.start(self, node, run, LabError, ROOT)
                 elif vios.is_qemu(node):
@@ -590,6 +607,7 @@ class Lab:
                 self.spawn(node_id, "console", ["perl", str(ROOT / "wrapper-ws.pl"), "--bind", "127.0.0.1",
                                                 "--path", "/console", "--exit-output-bytes", "16384",
                                                 "--transcript", str(cwd / "console-output.log"),
+                                                *(["--iol-console"] if node['type'] != 'pc' and not vios.is_qemu(node) and not frr.is_frr(node) else []),
                                                 "-m", image, "-p", str(port), "--", *arguments], cwd,
                            {"IOURC": str(node_license)} if node["type"] != "pc" and not vios.is_qemu(node) and not frr.is_frr(node) and node_license.is_file() else None)
                 self.wait_ready(node_id, None if node["type"] == "pc" else socket_path)
@@ -1029,12 +1047,18 @@ def parse_args(argv=None):
     parser.add_argument("--data-dir", type=Path, default=Path(os.environ.get("WL_DATA_DIR", ROOT / ".lab")))
     parser.add_argument("--image-dir", type=Path, default=Path(os.environ.get("WL_IMAGES_DIR", ROOT)),
                         help="Device .bin / .qcow2 images and optional iourc (default: application directory or WL_IMAGES_DIR)")
-    return parser.parse_args(argv)
+    parser.add_argument('--allow-untested-frr', action='store_true',
+                        default=os.environ.get('WL_ALLOW_UNTESTED_FRR', '0') == '1',
+                        help='Allow a different local image under the FRR profile tag, with a compatibility warning')
+    args = parser.parse_args(argv)
+    if os.environ.get('WL_ALLOW_UNTESTED_FRR', '0') not in ('0', '1'):
+        parser.error('WL_ALLOW_UNTESTED_FRR must be 0 or 1')
+    return args
 
 
 def main():
     args = parse_args()
-    lab = Lab(args.data_dir, args.image_dir)
+    lab = Lab(args.data_dir, args.image_dir, allow_untested_frr=args.allow_untested_frr)
     server = ThreadingHTTPServer((args.bind, args.port), Handler)
     server.daemon_threads = True
     server.lab, server.stopping = lab, threading.Event()

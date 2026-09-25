@@ -42,6 +42,13 @@ A node's `ethernet` value is the number of four-port slots. Link ports use `0/0`
 through `0/3`, then `1/0`, etc.; IOS configuration usually calls them
 `Ethernet0/0`, `Ethernet0/1`, and so on. Switchport commands require an L2 image.
 
+For cable-unplug exercises, the two tested 17.18.02 profiles expose an
+**Enable cable unplug control (IOL L1)** checkbox in the Inspector. It defaults
+to off because L1 mode may use a full CPU core per node. Stop all nodes, change
+the checkbox and apply settings before starting. Frame-loss controls do not need
+L1 mode. See [link failures](link-actions.md) for the saved preference and behavior
+of older topology files.
+
 If licensing is required, provide `iourc` beside the images or in the node's
 working directory. For native execution an explicit `IOURC` environment variable
 can point to a supplied file. Weblab does not generate licenses. Save configuration
@@ -163,6 +170,12 @@ without an initial address. The gateway must belong to its configured subnet.
 The PC starts after its peer. Its shell provides ordinary Linux tools such as
 `ip address`, `ip route` and `ping`.
 
+Ctrl+D or `exit` closes the PC's console shell. Weblab reopens it after one
+second in the same running container, preserving addresses and networking.
+Ctrl+C still interrupts foreground commands. Recovery stops on a Docker error or
+three logouts within ten seconds so repeated failures remain visible. This is
+console recovery, not a node/container restart or a restricted-shell boundary.
+
 PC containers are disposable. Files, installed packages and shell-made network
 changes are lost on stop/start. Topology address/gateway settings are reapplied.
 PC resource fields do not enforce a Docker memory limit or add interfaces.
@@ -182,8 +195,9 @@ Add a **Router**, select `quay.io/frrouting/frr:10.7.1` in its image selector, a
 apply. The profile is listed even before pulling; Start gives an actionable error
 if the image is missing. It checks the tested upstream manifest digest
 `sha256:e995beaa50fdc9edb35eadcfefa29b7f062cc06f2b812613789b68fa541554d2`;
-other tags/custom images are not supported by this first profile. Weblab never
-pulls images implicitly. [Upstream image information](https://frrouting.org/release/).
+the tested image is required by default. Modified images can be explicitly allowed
+as described below. The profile still uses this exact tag; arbitrary alternate
+tags/names are not listed. Weblab never pulls images implicitly. [Upstream image information](https://frrouting.org/release/).
 
 Choose 1–8 interfaces (default 4), named **eth0** through **eth7**. Each interface
 is a separate lab port; none is reserved for management. The default memory limit
@@ -192,10 +206,12 @@ Use `configure terminal`, `show interface brief`, `show ip route` and
 `show running-config`. Console input locks and floating windows work as usual.
 
 The image's zebra/static routing services and BGP, OSPFv2, OSPFv3, RIP, RIPng,
-IS-IS and BFD daemons are enabled. Configure protocols through vtysh; enabled
+IS-IS, BFD and VRRP (`vrrpd`) daemons are enabled. Configure protocols through vtysh; enabled
 services alone do not establish neighbors. FRR is an L3 routing suite, not an
 STP/RSTP/MSTP switch. This profile does not provide Linux bridge/VLAN management,
-a general Linux shell console, or arbitrary guest package/filesystem persistence.
+automatic provisioning/persistence of shell-created interfaces, or arbitrary
+guest package/filesystem persistence. Linux shell access is available as described
+below.
 
 Use **write memory** before Stop. The last saved `/etc/frr/frr.conf` is copied
 into the node's lab storage before its container is removed. Unsaved running
@@ -206,7 +222,7 @@ Do not manually remove managed containers: that bypasses configuration collectio
 After an interrupted Weblab server, journal recovery collects the retained
 container's saved config and removes its owned resources.
 
-Saved lab ZIP includes FRR configuration and the required container image digest;
+Saved lab ZIP includes FRR configuration and the required container image identity;
 the destination must have the matching image pulled. **JSON + saved configs**
 works while stopped (16 KiB snippet limit). **JSON + live configs** is not yet
 implemented for FRR. ZIP preserves configurations up to 1 MiB per FRR node.
@@ -225,6 +241,92 @@ remote Docker Engines are unsupported. The FRR container uses NET_ADMIN, NET_RAW
 and SYS_ADMIN capabilities in its own namespaces, without privileged mode or host
 PID/network sharing. See the [FRR OSPF exercise](../examples/frr-ospf.md) and
 [its topology](../examples/frr-ospf.json) for a vendor-image-free starting point.
+
+
+### FRR Linux shell
+
+The console starts in `vtysh`. Use `end` if currently configuring, then `exit`
+from the top-level prompt to enter the container's Linux shell. Run `vtysh` to
+return to the routing CLI. This uses the same shared console and input locks;
+it does not open a separate browser terminal or restart the router. Exiting the
+outer shell with `exit` or Ctrl+D reopens the console in `vtysh`. Repeated rapid
+logouts and Docker errors stop recovery visibly, as for Alpine PCs.
+
+The shell is administrative: `ip` commands can change interfaces and networking.
+
+### VRRP on FRR
+
+Weblab enables **`vrrpd=yes`** at startup in the standard FRR image. A custom
+image is not necessary to turn on this daemon; `vrrp=yes` is not its daemon key.
+`show vrrp` is available in `vtysh` once the node is ready.
+
+FRR requires Linux macvlan interfaces for VRRP. Create these in the shell, using
+bridge mode and the VRID-specific MAC. The virtual address belongs on the macvlan,
+not on its parent. Linux 5.1+ is required. See the
+[FRR VRRP guide](https://docs.frrouting.org/en/latest/vrrp.html).
+
+For example, with VLAN 10 carried by `eth1`, VRID 10, real address `10.10.10.2`
+and virtual gateway `10.10.10.1`:
+
+```sh
+ip link set eth1 up
+ip link add link eth1 name eth1.10 type vlan id 10
+ip link set eth1.10 up
+ip addr add 10.10.10.2/24 dev eth1.10
+ip link add vrrp10 link eth1.10 type macvlan mode bridge
+ip link set dev vrrp10 address 00:00:5e:00:01:0a
+ip addr add 10.10.10.1/24 dev vrrp10
+ip link set dev vrrp10 up
+vtysh
+```
+
+Then configure the protocol in `vtysh`:
+
+```text
+configure terminal
+interface eth1.10
+ vrrp 10 version 3
+ vrrp 10 priority 200
+ vrrp 10 ip 10.10.10.1
+end
+show vrrp
+write memory
+```
+
+The peer uses a different real address and lower priority, with matching VLAN,
+VRID, version and virtual IP. This example assumes those Linux interfaces do not
+already exist. Inspect with `ip -d link show` before repeating creation commands.
+
+**Persistence:** `write memory` and lab ZIP save `frr.conf`, not Linux VLAN/macvlan
+objects or shell-made addressing. Recreate those after node Stop/Start or ZIP
+restore. `docker commit` also does not capture live network interfaces. Store your
+setup commands alongside the exercise; Weblab does not yet apply them automatically.
+The FRR protocol configuration survives only if you save it with `write memory`.
+
+### Allow a modified FRR image
+
+The default digest check catches a changed or locally committed image even when
+it still has the supported `quay.io/frrouting/frr:10.7.1` tag. To opt in:
+
+- Native server: add `--allow-untested-frr`, or set `WL_ALLOW_UNTESTED_FRR=1`.
+- Compose: set `WL_ALLOW_UNTESTED_FRR=1` in `.env` (or your selected env file), then
+  recreate the Weblab container with a build that includes this option.
+- `docker run`: add `-e WL_ALLOW_UNTESTED_FRR=1` to the Weblab container command.
+
+The setting defaults to `0`. The inspector shows a compatibility warning; when
+an untested image actually starts, its immutable image ID is logged and its node
+shows an untested-image warning. The option is a server setting, not an imported
+topology field. A modified image must retain FRR's filesystem layout, startup
+scripts, daemons and required utilities; permission to start is not a compatibility
+guarantee. Other image profiles and QCOW2/archive integrity checks are unchanged.
+
+The selected tag is resolved once and the container starts by its immutable ID.
+ZIPs from untested images record that image ID rather than pretending to use the
+tested digest. Restore needs the **same image** under the profile tag and the
+opt-in on the destination. Keep the image with `docker save` / `docker load` when
+moving a local build; Weblab's ZIP does not include it. The opt-in does not allow
+restoring a ZIP against a different image. Do not retag images during a lab run
+or between stopping and exporting it.
 
 
 ## Juniper vJunos

@@ -145,7 +145,7 @@ try:
         routed = ' no switchport\n' if name == 'S' else ''
         config = f'hostname {name}\nno service config\nno ip domain lookup\nno logging console\ninterface Ethernet0/0\n{routed} ip address 198.18.1.{addr} 255.255.255.0\n no shutdown\ninterface Ethernet{port}\n{routed} ip address 198.18.2.{addr} 255.255.255.0\n no shutdown\nline con 0\n privilege level 15\n exec-timeout 0 0\nend\n'
         topology['nodes'].append({'id': name, 'name': name, 'type': 'switch' if name == 'S' else 'router',
-                                  'image': image, 'memory': 1024, 'ethernet': 2, 'startup_config': config})
+                                  'image': image, 'memory': 1024, 'ethernet': 2, 'iol_l1': True, 'startup_config': config})
     lab.save(topology)
     api('lab/start', {})
     connect()

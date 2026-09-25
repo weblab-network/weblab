@@ -44,7 +44,7 @@ sub usage {
     print STDERR "wrapper-ws.pl: $message\n" if defined $message;
     print STDERR <<'USAGE';
 Usage: wrapper-ws.pl [-v] -m IMAGE -p PORT [--bind ADDRESS]
-                     [--path /PATH] [--backlog-bytes N]
+                     [--path /PATH] [--backlog-bytes N] [--iol-console]
                      [--max-frame-bytes N] [--exit-output-bytes N]
                      [--transcript FILE] [--transcript-bytes N] -- [IOL OPTIONS] ID
 USAGE
@@ -71,6 +71,7 @@ sub parse_arguments {
     }
 
     my ($image, $port, $show_version);
+    my $iol_console = 0;
     my $bind = '127.0.0.1';
     my $path = '/';
     my $backlog_bytes = 262_144;
@@ -84,6 +85,7 @@ sub parse_arguments {
         \@ours,
         'm|image=s'        => \$image,
         'p|port=i'         => \$port,
+        'iol-console'      => \$iol_console,
         'bind=s'           => \$bind,
         'path=s'           => \$path,
         'backlog-bytes=i'  => \$backlog_bytes,
@@ -113,7 +115,7 @@ sub parse_arguments {
         unless $transcript_bytes >= 1024 && $transcript_bytes <= 64 * 1024 * 1024;
 
     return ($image, $port, $bind, $path, $backlog_bytes,
-            $max_frame_bytes, $exit_output_bytes, $transcript, $transcript_bytes, @iou_args);
+            $max_frame_bytes, $exit_output_bytes, $transcript, $transcript_bytes, $iol_console, @iou_args);
 }
 
 # Retain current and previous segments across restarts. Log only PTY output:
@@ -346,7 +348,7 @@ sub parse_websocket_frames {
 
 sub main {
     my ($image, $port, $bind, $path, $backlog_limit,
-        $max_frame_bytes, $exit_output_limit, $transcript, $transcript_limit, @iou_args) = parse_arguments(@ARGV);
+        $max_frame_bytes, $exit_output_limit, $transcript, $transcript_limit, $iol_console, @iou_args) = parse_arguments(@ARGV);
     $image = File::Spec->rel2abs($image) if $image =~ m{/};
     my @command = ($image, @iou_args);
 
@@ -626,6 +628,9 @@ sub main {
                             $close_after_output->($state);
                             last;
                         }
+                        # Native IOL can treat ETX as an emulator termination.
+                        # Translate only after input locks, for all client protocols.
+                        $payload =~ tr/\x03/\x1e/ if $iol_console;
                         $pty_input .= $payload;
                         $writable->add($master) if $pty_input ne '';
                     }

@@ -7,6 +7,7 @@
 | Path | Purpose |
 | --- | --- |
 | `lab_server.py` | HTTP API, validation, topology persistence, process/resource lifecycle |
+| `container_console.py` | Alpine/FRR console recovery and vtysh-to-shell access without container restart |
 | `disk_delta.py` | Lossless vEOS backup block references to checksum-verified base images |
 | `frr.py`, `tap_net.py` | Pinned FRR container lifecycle, saved configuration and multiport TAP fabric adapter |
 | `lab_backup.py` | ZIP validation, export, staged restore and recovery |
@@ -53,6 +54,7 @@ node tests/console_open_mode.cjs
 node tests/topology_windows.cjs
 node tests/topology_multiselect.cjs
 node tests/junos_ui.cjs
+node tests/iol_l1_ui.cjs
 node tests/console_clipboard.cjs
 node tests/instructions.cjs
 node tests/workspace_features.cjs
@@ -231,3 +233,23 @@ python3 tests/frr_mixed_native.py --image-dir images --iosv-image cisco_vios-159
 
 This boots a fresh disposable IOSv router, waits for OSPF, checks a learned
 loopback route and pings it from FRR. It does not alter existing lab storage.
+
+
+For VRRP, interactive FRR shell access and untested-image policy, run separately:
+
+```sh
+python3 tests/frr_vrrp_native.py
+```
+
+This isolated test checks VRRPv3 election, failover and virtual-IP reachability
+across VLAN 10; vtysh/shell transitions and logout recovery; and a temporary
+committed image with default denial, explicit opt-in, warning and ZIP identity.
+It creates and removes its own tag without replacing the installed FRR tag.
+Linux interfaces are configured by the test, not automatically restored by Weblab.
+
+`test_qemu_console.py` checks the serial settings of every QEMU profile, then
+uses a disposable real QEMU process (TCG, paused CPUs) and its virtual UART to
+verify Ctrl+C, Ctrl+Z and Ctrl+backslash through the PTY/WebSocket wrapper across
+raw/v1/v2 protocols. It also checks that host termination still stops QEMU.
+No vendor image, guest boot, KVM or active lab is used; the UART test is skipped
+when QEMU is unavailable.

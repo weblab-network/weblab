@@ -63,6 +63,7 @@ Each node uses:
 | `x`, `y` | Integer canvas center coordinates; x 70–2330, y 60–1540 |
 | `memory` | Integer MB, 256–8192; normally 1024 for Cisco devices |
 | `ethernet` | IOL: 1–8 slots, four ports per slot; IOSv: 1–16 individual interfaces |
+| `iol_l1` | Optional boolean, default `false`; `true` enables cable-unplug control only for the two tested IOL 17.18.02 filenames. May use a full CPU core per node; omit for ordinary forwarding/frame-loss exercises. |
 | `ipv4` | PC startup address and prefix, e.g. `192.0.2.10/24`; otherwise empty |
 | `gateway` | PC gateway in its configured IPv4 subnet, or empty |
 | `startup_config` | Optional Cisco or FRR configuration-file text, up to 16 KiB UTF-8; see precedence below |

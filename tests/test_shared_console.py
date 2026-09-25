@@ -69,6 +69,20 @@ class SharedConsoleTests(unittest.TestCase):
         legacy.send(b'legacy-input')
         self.until(first, b'legacy-input')
 
+    def test_native_iol_ctrl_c_becomes_cli_interrupt_for_all_protocols(self):
+        for protocol in (None, 'netlab.console.v1', 'netlab.console.v2'):
+            with self.subTest(protocol=protocol):
+                client = test_lab.WebSocket(self.fixture.port, 'r1', protocol)
+                self.clients.append(client)
+                client.until(b'BOOT READY')
+                client.send(b'begin\x03', opcode=2, fin=False)
+                client.send(b'end', opcode=0)
+                result = client.until(b'end')
+                self.assertIn(b'begin\x1eend', result.replace(b'RX:', b''))
+                self.assertNotIn(b'\x03', result)
+                client.send(b'\x1a\x1eOK', opcode=2)
+                self.assertIn(b'\x1a\x1eOK', client.until(b'OK').replace(b'RX:', b''))
+
     def test_resume_only_missing_output_and_invalid_client_isolation(self):
         first = self.connect()
         self.until(first, b'BOOT READY')

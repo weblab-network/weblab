@@ -147,3 +147,27 @@ Each wrapper accepts up to 32 connections, with bounded output queues and heartb
 See [topology and arrangement](topology.md#arrange-windows) for tiling the map,
 consoles and instructions together, and [troubleshooting](troubleshooting.md)
 for connection or keyboard problems.
+
+
+## Native IOL interrupt key
+
+For managed native IOL consoles, Weblab translates Ctrl+C to the IOS interrupt
+byte Ctrl+Shift+6, avoiding the emulator termination observed with literal Ctrl+C.
+This translation runs on the server for keyboard, paste, special-key buttons and
+all supported console protocols. Other node types keep literal Ctrl+C. Ctrl+Z
+is unchanged. This is not automatic node restart or a general CLI restriction.
+
+## QEMU console interrupt keys
+
+IOSv, EXOS, vEOS and Junos consoles pass Ctrl+C and other terminal control bytes
+to the guest using a stdio character device with `signal=off`. They do not turn
+those keystrokes into host signals that terminate or suspend QEMU. Guest CLI
+behavior still determines whether a key cancels a line or interrupts a command.
+The QEMU monitor remains separate from the serial console. Normal Stop lab/node
+and host process shutdown continue to work.
+
+Older EXOS/IOSv/vEOS launches used plain `-serial stdio`, which could terminate
+QEMU on Ctrl+C. Updating the source alone does not change a running process:
+rebuild/recreate a container deployment, or restart an affected stopped node
+with the updated native server. Follow the usual graceful guest shutdown steps
+before a planned deployment, especially for Junos.

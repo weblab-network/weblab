@@ -1,4 +1,4 @@
-"""Pinned FRRouting container profile and saved configuration lifecycle."""
+"""FRRouting container profile, tested-image policy and saved configuration."""
 import hashlib
 import json
 import os
@@ -6,13 +6,14 @@ from pathlib import Path
 import re
 import shutil
 import stat
+import sys
 import tempfile
 import time
 
 IMAGE = 'quay.io/frrouting/frr:10.7.1'
 DIGEST = 'quay.io/frrouting/frr@sha256:e995beaa50fdc9edb35eadcfefa29b7f062cc06f2b812613789b68fa541554d2'
 MAX_CONFIG = 1024 * 1024
-DAEMONS = ('bgpd', 'ospfd', 'ospf6d', 'ripd', 'ripngd', 'isisd', 'bfdd')
+DAEMONS = ('bgpd', 'ospfd', 'ospf6d', 'ripd', 'ripngd', 'isisd', 'bfdd', 'vrrpd')
 
 
 def is_frr(node):
@@ -23,14 +24,31 @@ def config_path(node, directory):
     return directory / ('frr-' + hashlib.sha256(node['image'].encode()).hexdigest()[:20]) / 'frr.conf'
 
 
-def check_image(run, error):
+def inspect_image(run, error, allow_untested=False):
     try:
         image = json.loads(run('docker', 'image', 'inspect', IMAGE))[0]
     except (ValueError, IndexError, error) as exc:
         raise error(f'Pull the FRR image on the Docker host first: docker pull {IMAGE}') from exc
-    if DIGEST not in image.get('RepoDigests', []):
-        raise error(f'FRR image does not match the tested digest; pull {DIGEST} and tag it {IMAGE}')
+    if not isinstance(image, dict) or not re.fullmatch(r'sha256:[a-f0-9]{64}', str(image.get('Id', ''))):
+        raise error('Docker returned an invalid FRR image ID')
+    image['tested'] = DIGEST in (image.get('RepoDigests') or [])
+    if not image['tested'] and not allow_untested:
+        raise error(f'FRR image does not match the tested digest; pull {DIGEST} and tag it {IMAGE}. '
+                    'To explicitly allow a modified image, start Weblab with WL_ALLOW_UNTESTED_FRR=1 '
+                    '(or --allow-untested-frr). Compatibility is not guaranteed.')
+    return image
+
+
+def check_image(run, error, allow_untested=False):
+    image = inspect_image(run, error, allow_untested)
     return image['Id']
+
+
+def archive_image(run, error, allow_untested=False):
+    image = inspect_image(run, error, allow_untested)
+    # Locally committed images often have no registry digest. Record their
+    # immutable image/config ID instead, never falsely label them as tested.
+    return {'name': IMAGE, 'digest': DIGEST if image['tested'] else image['Id']}
 
 
 def read_config(path):
@@ -47,7 +65,8 @@ def read_config(path):
 
 
 def start(lab, node, run, error, root):
-    image_id = check_image(run, error)
+    image = inspect_image(run, error, lab.allow_untested_frr)
+    image_id = image['Id']
     node_id = node['id']
     runtime = lab.runtime[node_id]
     stem = f"wf-{lab.owner}-{node['iol_id']}"
@@ -59,7 +78,11 @@ def start(lab, node, run, error, root):
         config.write_text(node.get('startup_config') or f'frr defaults traditional\nhostname {hostname}\nservice integrated-vtysh-config\n!\n')
     read_config(config)
     hostname = re.sub(r'[^a-zA-Z0-9-]', '-', node['name']).strip('-') or 'router'
-    runtime.update({'frr': True, 'container': stem, 'frr_ports': []})
+    runtime.update({'frr': True, 'container': stem, 'frr_ports': [],
+                    'frr_image_id': image_id, 'frr_untested': not image['tested']})
+    if not image['tested']:
+        print(f'WARNING: node {node_id} is using untested FRR image {image_id}; '
+              'compatibility is not guaranteed', file=sys.stderr, flush=True)
     lab.journal()
     # Every port has an isolated Docker macvlan over a TAP in Weblab's namespace.
     # No host PID namespace, host-path bind mounts, or Docker-managed uplink.
@@ -137,7 +160,7 @@ def start(lab, node, run, error, root):
         if time.monotonic() >= deadline:
             raise error('FRR daemons did not become ready: ' + run('docker', 'logs', '--tail', '30', stem))
         time.sleep(.25)
-    return shutil.which('docker'), ['exec', '-it', '-e', 'VTYSH_PAGER=cat', stem, 'vtysh']
+    return sys.executable, [str(root / 'container_console.py'), '--frr', stem]
 
 
 def save(lab, node_id, run):

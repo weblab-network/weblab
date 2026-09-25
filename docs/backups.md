@@ -180,8 +180,13 @@ retained and Stop reports the error; retry after resolving it.
 Stopped **JSON + saved configs** includes this file as a fresh-device snippet,
 subject to the 16 KiB limit. FRR live console capture is not implemented. Saved
 lab ZIP preserves the configuration up to 1 MiB and records the pinned container
-image digest. FRR ZIPs use backup format version 2 and require an FRR-capable
-Weblab importer with the matching Docker image installed. No container image,
+image identity. Tested images retain their pinned registry digest; explicitly
+allowed untested images record their immutable local Docker image ID. FRR ZIPs
+use backup format version 2 and require an FRR-capable Weblab importer with the
+matching Docker image installed. Custom-image ZIPs also require
+`WL_ALLOW_UNTESTED_FRR=1`; it never bypasses archive image matching. Older Weblab
+versions reject those custom-image ZIPs. Use `docker save` / `docker load` to
+transport a local image separately. No container image,
 daemon shell settings or arbitrary guest filesystem data is included. Existing
 FRR configuration overrides snippets, including after ZIP restore.
 

@@ -31,13 +31,25 @@ only. No guest console commands, IOS `shutdown` or saved configuration changes
 are involved. Unplug/reconnect both supported endpoints if both guests should
 report cable loss; each endpoint's carrier is controlled separately.
 
+For the tested IOL profiles, **Enable cable unplug control (IOL L1)** in the
+node Inspector is **off by default**. With all nodes stopped, select the node,
+check the option and click **Apply settings**, then start it. Enabling IOL's L1
+mode may consume a full CPU core per node; enable it only where carrier-loss
+exercises need it. Ordinary forwarding and directional frame blocking still work
+with the option off. Disabled carrier buttons show **L1 off**.
+
+The preference is saved per node as `iol_l1` in topology JSON and lab ZIPs.
+Existing labs/archives without this field default to off on their next start;
+running processes are not changed. The setting cannot change while any node runs.
+This saved launch preference is separate from the temporary unplug/block faults.
+
 FRR changes carrier on the port’s parent TAP; the container sees carrier loss
 while its interface remains administratively enabled. It does not issue a
 shutdown command inside FRR.
 
 IOSv uses QEMU's local QMP `set_link` on a named e1000 NIC. See
 [QEMU set_link](https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html#command-set_link)
-for notification limitations. The tested IOL profiles launch with `-l` and use a
+for notification limitations. IOL nodes with the option enabled launch with `-l` and use a
 separate local L1 datagram socket. The controller sends periodic L1 messages
 independently of Ethernet forwarding. Unplug stops those messages to the selected
 port; the guest normally detects loss after **about ten seconds**. Reconnect

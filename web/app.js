@@ -9,6 +9,9 @@ const icons = {
 document.querySelectorAll("[data-icon]").forEach(el => el.innerHTML = icons[el.dataset.icon]);
 let topology = {version: 1, name: "Untitled lab", nodes: [], links: []};
 let statuses = {}, images = [], selected = null, busy = false, loaded = false, dragging = false;
+let allowUntestedFrr = false;
+let iolL1Profiles = [];
+const hasIolL1Profile = n => n && n.type !== 'pc' && iolL1Profiles.includes(n.image);
 const selectedNodes = new Set();
 let multiSelect = false;
 let mode = "select", linkSource = null, pendingLink = null, toastTimer;
@@ -138,6 +141,8 @@ async function api(path, method = "GET", body) {
 }
 
 function accept(result, updateForm = true) {
+  iolL1Profiles = result.iol_l1_profiles || [];
+  allowUntestedFrr = result.allow_untested_frr === true;
   topology = result.topology; statuses = result.status; images = result.images; loaded = true;
   linkStates = result.link_state || {}; linkError = result.link_error || "";
   for (const id of selectedNodes) if (!nodeById(id)) selectedNodes.delete(id);
@@ -341,7 +346,7 @@ function updateControls() {
     $("stop-node").disabled ||= state(selected) !== "running";
     $("open-console").disabled ||= state(selected) !== "running" && !consoleSessions.has(selected);
   }
-  for (const id of ["node-image", "node-memory", "node-ethernet"]) $(id).disabled = busy || hasRunning();
+  for (const id of ["node-image", "node-memory", "node-ethernet", "node-iol-l1"]) $(id).disabled = busy || hasRunning();
   const pc = nodeById(selected);
   for (const id of ["node-ipv4", "node-gateway"]) $(id).disabled = busy || !loaded || !pc || pc.type !== "pc" || state(pc.id) === "running";
   updateViewControls();
@@ -469,11 +474,13 @@ function renderInspector() {
 }
 
 function renderEthernetSettings(n) {
+  $('iol-l1-settings').hidden = !hasIolL1Profile(n);
+  $('node-iol-l1').checked = hasIolL1Profile(n) && n.iol_l1 === true;
   const qcow = isQemu(n), exos = isExos(n), veos = isVeos(n), frr = isFrr(n), junos = isJunos(n);
   $("ethernet-label").textContent = qcow || frr ? "Ethernet interfaces" : "Ethernet slots";
   $("node-ethernet").innerHTML = Array.from({length: exos ? 12 : veos || junos ? 15 : qcow ? 16 : 8}, (_, i) => `<option>${i + (exos || veos || junos ? 2 : 1)}</option>`).join("");
   $("node-ethernet").value = n.ethernet;
-  $("ethernet-help").textContent = junos ? "Junos: 4 vCPUs, management plus ge-/et-0/0/x data ports. Switch needs bare-metal Intel KVM and at least 5120 MB; Evolved needs UEFI and 8192 MB. Before Stop: commit, then request system power-off and wait for shutdown. Initial snippets and config-text export are not supported." : frr ? "FRR container: eth0–eth7, no KVM. Pull quay.io/frrouting/frr:10.7.1 on the Docker host first. Configure in vtysh; write memory before stopping. Memory is the container limit." : veos ? "Includes Management1 plus Ethernet data ports. Uses 2 vCPUs; tested with 6144 MB RAM. Requires Aboot-veos-serial-8.0.2.iso. On first boot, log in as admin and run zerotouch disable (reboots)." : exos ? "Includes Mgmt plus numbered data ports (1–12). Allow a few minutes for EXOS to boot." : qcow
+  $("ethernet-help").textContent = junos ? "Junos: 4 vCPUs, management plus ge-/et-0/0/x data ports. Switch needs bare-metal Intel KVM and at least 5120 MB; Evolved needs UEFI and 8192 MB. Before Stop: commit, then request system power-off and wait for shutdown. Initial snippets and config-text export are not supported." : frr ? "FRR container: eth0–eth7, no KVM. Pull quay.io/frrouting/frr:10.7.1 on the Docker host first. Configure in vtysh. Top-level exit opens the Linux shell; type vtysh to return. Write memory before stopping. Memory is the container limit." : veos ? "Includes Management1 plus Ethernet data ports. Uses 2 vCPUs; tested with 6144 MB RAM. Requires Aboot-veos-serial-8.0.2.iso. On first boot, log in as admin and run zerotouch disable (reboots)." : exos ? "Includes Mgmt plus numbered data ports (1–12). Allow a few minutes for EXOS to boot." : qcow
     ? "Up to 16 GigabitEthernet interfaces. Allow a few minutes for IOSv to boot."
     : "Four Ethernet ports per slot. Interfaces are shown as slot/port.";
 }
@@ -493,6 +500,10 @@ function updateInspectorStatus() {
   $("selected-status").textContent = state(selected);
   $("node-error").textContent = statuses[selected]?.error || "";
   $("node-error").hidden = !statuses[selected]?.error;
+  const warning = statuses[selected]?.warning || (isFrr(nodeById(selected) || {}) && allowUntestedFrr
+    ? 'Untested FRR images are allowed on this server. Compatibility is not guaranteed.' : '');
+  $('node-warning').textContent = warning;
+  $('node-warning').hidden = !warning;
 }
 
 function setSelection(id) {
@@ -679,12 +690,18 @@ function updateLinkActions() {
     if (mode === 'b') button.textContent = `Block ${label('b')} → ${label('a')}`;
   });
   $('link-carrier-actions').hidden = !['a','b'].some(side => value['carrier_capable_'+side] || value['carrier_supported_'+side]);
+  $('link-iol-l1-help').hidden = !['a','b'].some(side => {
+    const node = nodeById(link[side].node);
+    return hasIolL1Profile(node) && !node.iol_l1;
+  });
   document.querySelectorAll('[data-link-carrier]').forEach(button => {
     const side = button.dataset.linkCarrier, down = value['carrier_'+side] !== 'up';
     button.hidden = !value['carrier_capable_'+side] && !value['carrier_supported_'+side];
     button.disabled = busy || !value.available || !value['carrier_supported_'+side];
-    button.textContent = `${down ? 'Reconnect' : 'Unplug'} ${label(side)}${!value['carrier_supported_'+side] ? ' (unavailable)' : ''}`;
-    button.title = value['carrier_supported_'+side] ? '' : `Start ${nodeById(link[side].node).name} to enable carrier controls`;
+    const node = nodeById(link[side].node);
+    const l1Off = hasIolL1Profile(node) && !node.iol_l1;
+    button.textContent = `${down ? 'Reconnect' : 'Unplug'} ${label(side)}${l1Off ? ' (L1 off)' : !value['carrier_supported_'+side] ? ' (unavailable)' : ''}`;
+    button.title = l1Off ? 'Enable cable unplug control in the Inspector while all nodes are stopped, then start the node' : value['carrier_supported_'+side] ? '' : `Start ${node.name} to enable carrier controls`;
     button.classList.toggle('carrier-fault', down);
     button.setAttribute('aria-label', `${button.textContent}${down ? ' (currently interrupted)' : ''}`);
   });
@@ -768,7 +785,7 @@ $("image-form").addEventListener("submit", async event => {
 
 $("node-form").addEventListener("submit", e => {
   e.preventDefault();
-  edit(() => { const n = nodeById(selected); n.name = $("node-name").value.trim(); n.image = $("node-image").value; n.memory = Number($("node-memory").value); n.ethernet = Number($("node-ethernet").value); n.ipv4 = $("node-ipv4").value.trim(); n.gateway = $("node-gateway").value.trim(); });
+  edit(() => { const n = nodeById(selected); n.name = $("node-name").value.trim(); n.image = $("node-image").value; n.memory = Number($("node-memory").value); n.ethernet = Number($("node-ethernet").value); n.ipv4 = $("node-ipv4").value.trim(); n.gateway = $("node-gateway").value.trim(); if (hasIolL1Profile(n)) n.iol_l1 = $('node-iol-l1').checked; else delete n.iol_l1; });
 });
 $("lab-name").addEventListener("change", () => edit(() => topology.name = $("lab-name").value.trim()));
 $("delete-node").onclick = () => requestDelete("node", selected);

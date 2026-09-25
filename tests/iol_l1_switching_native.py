@@ -145,7 +145,7 @@ try:
     for name, addr in [('S', 1), ('R', 2)]:
         config = f'hostname {name}\nno service config\nno ip domain lookup\nspanning-tree mode rapid-pvst\nspanning-tree loopguard default\nspanning-tree vlan 10 priority {0 if name == "S" else 4096}\nvlan 10\nname TEST\ninterface Ethernet0/1\n switchport trunk encapsulation dot1q\n switchport mode trunk\n spanning-tree cost 10\n no shutdown\ninterface Ethernet0/2\n switchport trunk encapsulation dot1q\n switchport mode trunk\n spanning-tree cost 20\n no shutdown\ninterface Vlan10\n ip address 198.18.1.{addr} 255.255.255.0\n no shutdown\nline con 0\n privilege level 15\n exec-timeout 0 0\nend\n'
         topology['nodes'].append({'id': name, 'name': name, 'type': 'switch',
-                                  'image': 'cisco_iol-l2-17.18.02.bin', 'memory': 1024, 'ethernet': 2, 'startup_config': config})
+                                  'image': 'cisco_iol-l2-17.18.02.bin', 'memory': 1024, 'ethernet': 2, 'iol_l1': True, 'startup_config': config})
     lab.save(topology)
     for cycle in range(3):
         print('CYCLE', cycle+1, 'start', flush=True)

@@ -132,8 +132,8 @@ def create(lab, include_logs=False, compact_veos=True):
             if any(frr.is_frr(n) for n in lab.topology['nodes']):
                 # Pin container content as well as the topology's human-readable tag.
                 from lab_server import run, LabError
-                frr.check_image(run, LabError)
-                manifest.update(version=2, containers=[{'name': frr.IMAGE, 'digest': frr.DIGEST}])
+                identity = frr.archive_image(run, LabError, lab.allow_untested_frr)
+                manifest.update(version=2, containers=[identity])
             for node in lab.topology['nodes']:
                 vios.boot_image(node, lab.image_dir, ValueError)
             for name in sorted(vios.required_images(lab.topology['nodes'])):
@@ -331,11 +331,20 @@ def restore(lab, stream, run):
                 log_records = manifest.get('logs', [])
                 if not isinstance(image_records, list) or not isinstance(file_records, list) or not isinstance(log_records, list):
                     raise ValueError('Invalid backup manifest')
-                containers = [{'name': frr.IMAGE, 'digest': frr.DIGEST}] if any(frr.is_frr(n) for n in topology['nodes']) else []
-                if manifest.get('containers', []) != containers or (containers and manifest['version'] != 2):
+                has_frr = any(frr.is_frr(n) for n in topology['nodes'])
+                containers = manifest.get('containers', [])
+                valid = (isinstance(containers, list) and len(containers) == 1 and
+                         isinstance(containers[0], dict) and set(containers[0]) == {'name', 'digest'} and
+                         containers[0]['name'] == frr.IMAGE and
+                         (containers[0]['digest'] == frr.DIGEST or
+                          re.fullmatch(r'sha256:[a-f0-9]{64}', str(containers[0]['digest'])))) if has_frr else containers == []
+                if not valid or (has_frr and manifest['version'] != 2):
                     raise ValueError('Missing or mismatched FRR container image metadata')
-                if containers:
-                    frr.check_image(run, ValueError)
+                if has_frr:
+                    local = frr.archive_image(run, ValueError, lab.allow_untested_frr)
+                    if containers != [local]:
+                        raise ValueError('FRR archive requires a different container image; install the exact saved image. '
+                                         'Allowing untested images does not bypass archive identity checks.')
                 required = vios.required_images(topology['nodes'])
                 for node in topology['nodes']:
                     vios.boot_image(node, lab.image_dir, ValueError)

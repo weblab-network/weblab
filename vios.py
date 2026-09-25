@@ -194,13 +194,16 @@ def command(node, disk, socket_dir, config=None, boot=None):
     # so boot and userspace see consistent features across Intel/AMD hosts.
     # Its entropy service executes RDTSCP unconditionally during startup.
     cpu = "Nehalem-v1,rdtscp=on" if exos else "host"
+    # Console control bytes belong to the guest, not QEMU's host terminal.
+    # Keep the monitor separate so no monitor escape sequence can stop the VM.
     args = ["-name", node["id"], "-machine", "pc,accel=kvm", "-cpu", cpu,
             "-smp", "4,sockets=1,cores=4,threads=1" if junos else "2" if veos else "1", "-m", str(node["memory"]), "-display", "none",
-            "-monitor", "none", "-qmp", f"unix:{socket_dir / 'qmp'},server=on,wait=off", "-serial", "chardev:console" if junos else "stdio", "-boot", "order=dc" if veos else "c",
+            "-monitor", "none", "-qmp", f"unix:{socket_dir / 'qmp'},server=on,wait=off", "-serial", "chardev:console",
+            "-chardev", "stdio,id=console,signal=off", "-boot", "order=dc" if veos else "c",
             "-drive", f"file={str(disk).replace(',', ',,')},format=qcow2,if={interface},cache=writeback"]
     if junos:
         # Fixed PCI slots match Juniper's management/data port enumeration.
-        args += ["-nodefaults", "-chardev", "stdio,id=console,signal=off"]
+        args += ["-nodefaults"]
         if evolved:
             # Evolved chassis services need a nonzero system UUID. Derive it
             # from the persistent node ID, not temporary socket/storage paths,

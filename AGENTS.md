@@ -48,7 +48,8 @@ active lab. Do not delete saved storage to force snippets without a reset reques
   for new vendors rather than applying Cisco parsers/commands to them. Keep device
   handlers independently implemented and preserve third-party license notices.
 - IOL carrier control is enabled only for the exact tested 17.18.02 profiles.
-  Preserve socket identity checks and runtime-only link faults; validate native
+  Nodes must opt in with `iol_l1: true`; the default is off to avoid unnecessary
+  CPU load. Preserve socket identity checks and runtime-only link faults; validate native
   behavior before enabling other profiles. Unplug is a requested state with a
   detection delay, not an instant guest acknowledgment.
 - Except for the explicitly pinned optional EXOS demo distribution described in

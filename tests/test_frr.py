@@ -51,11 +51,61 @@ class FrrTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'FRR live capture'):console_capture.handler_for(node)
 
     def test_image_is_pinned_and_missing_pull_is_actionable(self):
-        self.assertEqual(frr.check_image(lambda *a:json.dumps([{'Id':'sha256:test','RepoDigests':[frr.DIGEST]}]),ValueError),'sha256:test')
+        self.assertEqual(frr.check_image(lambda *a:json.dumps([{'Id':'sha256:'+'a'*64,'RepoDigests':[frr.DIGEST]}]),ValueError),'sha256:'+'a'*64)
         with self.assertRaisesRegex(ValueError,'tested digest'):
-            frr.check_image(lambda *a:json.dumps([{'Id':'wrong','RepoDigests':[]}]),ValueError)
+            frr.check_image(lambda *a:json.dumps([{'Id':'sha256:'+'b'*64,'RepoDigests':[]}]),ValueError)
         with self.assertRaisesRegex(ValueError,'docker pull'):
             frr.check_image(lambda *a:'',ValueError)
+
+    def test_untested_image_requires_operator_opt_in(self):
+        image_id = 'sha256:' + 'b'*64
+        run = lambda *a: json.dumps([{'Id':image_id, 'RepoDigests':[]}])
+        with self.assertRaisesRegex(ValueError, 'WL_ALLOW_UNTESTED_FRR'):
+            frr.check_image(run, ValueError)
+        self.assertEqual(frr.check_image(run, ValueError, True), image_id)
+        self.assertEqual(frr.archive_image(run, ValueError, True), {'name':frr.IMAGE,'digest':image_id})
+        with self.assertRaisesRegex(ValueError, 'invalid FRR image ID'):
+            frr.check_image(lambda *a:json.dumps([{'Id':'bad'}]), ValueError, True)
+        # Importing topology cannot opt the server into an untested image.
+        topology = copy.deepcopy(self.lab.topology)
+        topology['allow_untested_frr'] = True
+        self.lab.save(topology)
+        self.assertFalse(self.lab.allow_untested_frr)
+
+    def test_custom_image_archive_requires_the_exact_image_and_opt_in(self):
+        path = self.config()
+        self.lab.allow_untested_frr = True
+        image_id = 'sha256:' + 'b'*64
+        inspect = {'Id':image_id,'RepoDigests':[]}
+        with patch('lab_server.run', return_value=json.dumps([inspect])):
+            result = lab_backup.create(self.lab)
+        stream, _ = lab_backup.take(self.lab,result['url'].rsplit('/',1)[1])
+        with stream: content = stream.read()
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['containers'], [{'name':frr.IMAGE,'digest':image_id}])
+        path.write_text('hostname KEEP\n')
+        self.lab.allow_untested_frr = False
+        run = lambda *a: json.dumps([inspect])
+        with self.assertRaisesRegex(ValueError, 'tested digest'):
+            lab_backup.restore(self.lab,io.BytesIO(content),run)
+        self.lab.allow_untested_frr = True
+        inspect['Id'] = 'sha256:'+'c'*64
+        with self.assertRaisesRegex(ValueError, 'exact saved image'):
+            lab_backup.restore(self.lab,io.BytesIO(content),run)
+        self.assertEqual(path.read_text(), 'hostname KEEP\n')
+        inspect['Id'] = image_id
+        lab_backup.restore(self.lab,io.BytesIO(content),run)
+        self.assertEqual(path.read_text(),'hostname SAVED\n')
+
+    def test_image_policy_options(self):
+        with patch.dict(os.environ, {'WL_ALLOW_UNTESTED_FRR':'0'}):
+            self.assertFalse(lab_server.parse_args([]).allow_untested_frr)
+            self.assertTrue(lab_server.parse_args(['--allow-untested-frr']).allow_untested_frr)
+        with patch.dict(os.environ, {'WL_ALLOW_UNTESTED_FRR':'1'}):
+            self.assertTrue(lab_server.parse_args([]).allow_untested_frr)
+        with patch.dict(os.environ, {'WL_ALLOW_UNTESTED_FRR':'typo'}):
+            with self.assertRaises(SystemExit): lab_server.parse_args([])
 
     def config(self, data=b'hostname SAVED\n'):
         path=frr.config_path(self.lab.node('r'),self.lab.node_dir('r'))
@@ -69,7 +119,7 @@ class FrrTests(unittest.TestCase):
         result=saved_config.export(self.lab,lambda *a: self.fail('Cisco disk reader used'))
         self.assertEqual(result['nodes'][0]['startup_config'],'hostname SAVED\n')
         self.assertEqual(self.lab.node('r')['startup_config'],'hostname INITIAL\n')
-        with patch('frr.check_image',return_value='sha256:test'):
+        with patch('frr.inspect_image',return_value={'Id':'sha256:'+'a'*64,'tested':True}):
             result=lab_backup.create(self.lab)
             stream,_=lab_backup.take(self.lab,result['url'].rsplit('/',1)[1])
             with stream: content=stream.read()
@@ -110,7 +160,7 @@ class FrrTests(unittest.TestCase):
             if args[:3]==('docker','network','create') and args[-1].endswith('-1'):
                 raise lab_server.LabError('deliberate network failure')
             return ''
-        with patch('frr.check_image',return_value='sha256:test'), patch('lab_server.run',side_effect=fail_second_network):
+        with patch('frr.inspect_image',return_value={'Id':'sha256:'+'a'*64,'tested':True}), patch('lab_server.run',side_effect=fail_second_network):
             with self.assertRaisesRegex(lab_server.LabError,'deliberate network failure'):self.lab.start('r')
         self.assertEqual(self.lab.runtime,{})
         self.assertEqual(sum(c[:3]==('docker','network','rm') for c in calls),1)
@@ -120,7 +170,7 @@ class FrrTests(unittest.TestCase):
             calls.append(args)
             if args[:3]==('ip','tuntap','add'):raise lab_server.LabError('File exists')
             return ''
-        with patch('frr.check_image',return_value='sha256:test'),patch('lab_server.run',side_effect=conflict):
+        with patch('frr.inspect_image',return_value={'Id':'sha256:'+'a'*64,'tested':True}),patch('lab_server.run',side_effect=conflict):
             with self.assertRaisesRegex(lab_server.LabError,'File exists'):self.lab.start('r')
         self.assertFalse(any(c[:3]==('ip','link','delete') for c in calls))
 

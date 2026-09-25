@@ -36,7 +36,7 @@ class ExosTests(unittest.TestCase):
         self.assertEqual(args[args.index('-cpu')+1], 'Nehalem-v1,rdtscp=on')
         self.assertEqual(sum('rtl8139,netdev=' in a for a in args),13)
         self.assertTrue(any('if=ide' in a for a in args))
-        self.assertIn('stdio',args)
+        self.assertIn('stdio,id=console,signal=off',args)
         self.assertNotIn('e1000',str(args))
         topology=copy.deepcopy(self.lab.topology)
         self.lab.save(topology);self.assertEqual(self.lab.topology,topology)

@@ -10,7 +10,7 @@ RUN apt-get update \
 # Only the client: PC containers are managed by the host's Docker Engine.
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 WORKDIR /app
-COPY frr.py tap_net.py disk_delta.py lab_server.py link_fabric.py iol_l1.py qmp.py lab_backup.py console_capture.py cisco_config.py saved_config.py initial_config.py vios.py qemu_net.py start-lab.sh wrapper.pl wrapper-ws.pl iou2net.pl iol-console.html ./
+COPY container_console.py frr.py tap_net.py disk_delta.py lab_server.py link_fabric.py iol_l1.py qmp.py lab_backup.py console_capture.py cisco_config.py saved_config.py initial_config.py vios.py qemu_net.py start-lab.sh wrapper.pl wrapper-ws.pl iou2net.pl iol-console.html ./
 COPY web/ ./web/
 COPY LICENSE THIRD_PARTY.md ./
 COPY licenses/ ./licenses/

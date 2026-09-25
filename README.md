@@ -13,6 +13,9 @@ labs as topology JSON or saved-state ZIP archives.
 **[Read the wiki](https://github.com/weblab-network/weblab/wiki)** · [Device profiles](https://github.com/weblab-network/weblab/wiki/Device-profiles) ·
 [Starter exercise](examples/starter.md) · [OSPF practice](examples/ospf-practice.md)
 
+Try the **[live demo preview](https://demo.weblab.network/)**: a shared workspace
+with restricted controls for exploring the interface and device consoles.
+
 ## Quick start
 
 Use an **x86-64 Linux host/VM**, rootful Docker Engine with Compose, and
@@ -60,6 +63,10 @@ three-switch/two-PC topology with a companion exercise.
 
 ## Recent additions
 
+- Optional IOL cable unplug control, off by default to reduce CPU usage.
+- FRR VRRP, console shell access and opt-in support for custom FRR images.
+- Console interrupt and logout reliability fixes; see the [v0.3.0 release notes](docs/releases/v0.3.0.md).
+
 - FRR container routers with saved configurations and an [OSPF exercise](examples/frr-ospf.md).
 - vJunos-switch and vJunosEvolved profiles; see [requirements and validation](docs/devices.md#juniper-vjunos).
 - Multi-select and move groups of topology nodes, including on touch screens.
@@ -102,4 +109,5 @@ Bundled third-party components retain their own licenses, including GPLv2 for
 
 For an open-source routing lab without vendor images or KVM, see the
 [FRR profile](docs/devices.md#frrouting) and [OSPF exercise](examples/frr-ospf.md).
-FRR uses a separately pulled, pinned upstream Docker image.
+FRR uses a separately pulled upstream Docker image, with digest checking by
+default and an explicit [opt-in for modified images](docs/devices.md#allow-a-modified-frr-image).

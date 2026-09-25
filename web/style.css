@@ -267,3 +267,8 @@ body{height:var(--app-height,100vh)}
 .header-actions{overflow-x:auto;flex-shrink:1;scrollbar-width:thin}
 .header-actions>button{flex-shrink:0}
 @media(max-width:550px){.instructions-body{padding:14px 16px 30px}#instructions-title{max-width:130px}}
+
+.warning-box { margin-top: 12px; padding: 12px; border: 1px solid #b88b42; border-radius: 6px; background: #b88b4217; color: #e8bd76; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+
+.setting-checkbox{display:flex;align-items:center;gap:8px;line-height:1.5}
+.setting-checkbox input[type=checkbox]{width:auto;margin:0;flex-shrink:0;accent-color:var(--accent)}

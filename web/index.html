@@ -80,11 +80,13 @@
         <label>Device name<input id="node-name" maxlength="40" required></label>
         <label>Image<select id="node-image"></select></label>
         <div id="iol-settings"><div class="field-row"><label>Memory (MB)<input id="node-memory" type="number" min="256" max="8192" step="1"></label><label><span id="ethernet-label">Ethernet slots</span><select id="node-ethernet"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label></div><p class="field-help" id="ethernet-help">Four Ethernet ports per slot. Interfaces are shown as slot/port.</p></div>
+        <div id="iol-l1-settings" hidden><label class="setting-checkbox"><input id="node-iol-l1" type="checkbox" aria-describedby="iol-l1-help">Enable cable unplug control (IOL L1)</label><p class="field-help" id="iol-l1-help">Off by default. Enabling this may use a full CPU core per IOL node. Frame blocking works without it. Stop all nodes before changing this setting.</p></div>
         <div id="pc-settings" hidden><label>IPv4 address / prefix<input id="node-ipv4" placeholder="10.0.10.10/24"></label><label>Default gateway <span class="optional">optional</span><input id="node-gateway" placeholder="10.0.10.1"></label><p class="field-help">Applied to eth0 on startup. Stop this PC to edit, even while other devices run. You can also configure it from its shell.</p></div>
         <button class="wide" type="submit" id="apply-node">Apply settings</button>
         <div class="node-actions"><button type="button" class="primary" id="start-node">▶ Start</button><button type="button" id="stop-node">■ Stop</button></div>
         <button type="button" class="wide" id="open-console">&gt;_ Open console</button>
         <div class="error-box" id="node-error" hidden></div>
+        <div class="warning-box" id="node-warning" role="status" hidden></div>
         <div class="section-label interfaces-heading">INTERFACES <span id="interface-count"></span></div>
         <div id="interfaces"></div>
         <div class="inspector-bottom"><button type="button" id="logs">Launcher logs</button><button type="button" class="danger-text" id="delete-node">Delete device</button></div>
@@ -103,6 +105,7 @@
       <button data-link-traffic="both">Block both directions</button>
     </div>
     <div id="link-carrier-actions"><p class="muted">Unplug stops traffic both ways and requests link-down on the selected interface. IOL detection takes about 10 seconds. Each endpoint is controlled separately; Reconnect keeps any frame-loss setting.</p>
+      <p class="muted" id="link-iol-l1-help" hidden>IOL L1 is off for one or more endpoints. To enable cable unplug control, stop all nodes and enable it in that node's Inspector, then apply settings and restart.</p>
       <button data-link-carrier="a"></button><button data-link-carrier="b"></button>
     </div>
     <p class="muted" id="link-actions-help"></p>

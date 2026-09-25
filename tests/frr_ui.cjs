@@ -11,6 +11,7 @@ from test_lab import LabTests
 test=LabTests();test.setUp()
 try:
     shutil.copy(test.root/'fake.bin', test.root/'fake-l2.bin')
+    test.lab.allow_untested_frr=True
     test.lab.save({'name':'FRR UI','nodes':[],'links':[]})
     print(json.dumps({'url':'http://127.0.0.1:'+str(test.port)}),flush=True)
     sys.stdin.readline()
@@ -38,6 +39,8 @@ let log='';fixture.stderr.on('data', data=>log+=data);
   await page.locator('#node-ethernet').selectOption('8');
   await page.locator('#apply-node').click();await page.waitForFunction(()=>!busy && topology.nodes[0].ethernet===8);
   assert.match(await page.locator('#interfaces').innerText(),/eth7/);
+  assert.match(await page.locator('#node-warning').innerText(),/Untested FRR images/);
+  assert.match(await page.locator('#ethernet-help').innerText(),/Linux shell/);
   assert.equal(await page.locator('.node-type').first().innerText(),'FRR ROUTER');
   await page.locator('#export').click();
   assert.equal(await page.locator('#export-initial').isDisabled(),true);
@@ -48,6 +51,7 @@ let log='';fixture.stderr.on('data', data=>log+=data);
   assert.equal(await page.evaluate(()=>nodePorts(topology.nodes[0]).join(',')),'eth0,eth1,eth2,eth3,eth4,eth5,eth6,eth7');
   await page.locator('.device-template[data-type="switch"]').click();await page.waitForFunction(()=>!busy && topology.nodes.length===2);
   assert.equal(await page.locator('#node-image option').filter({hasText:'quay.io/frrouting'}).count(),0);
+  assert.equal(await page.locator('#node-warning').isVisible(),false);
   assert.deepEqual(errors,[]);
   console.log('FRR UI passed');
  } finally {

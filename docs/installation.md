@@ -119,6 +119,7 @@ Edit `.env` to customize:
 | `WL_HOSTNAME` | `weblab` | Stable container hostname for NETMAP and your licensing setup |
 | `WL_BIND` | `127.0.0.1` | Web listener; set your trusted LAN address for remote access |
 | `WL_PORT` | `8080` | Web and console proxy port |
+| `WL_ALLOW_UNTESTED_FRR` | `0` | Set `1` to allow a modified image under the FRR profile tag, with a compatibility warning; archive image matching remains required |
 
 An optional user-supplied `/iou/iourc` is preserved exactly.
 The app links it into each node's working directory and explicitly sets `IOURC`

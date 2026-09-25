@@ -2,6 +2,7 @@
 **
 !Dockerfile
 !lab_server.py
+!container_console.py
 !link_fabric.py
 !iol_l1.py
 !qmp.py
