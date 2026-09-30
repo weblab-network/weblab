@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Build, run and troubleshoot network labs in one browser workspace. Weblab brings your topology, device consoles and exercise instructions together.">
+  <meta name="description" content="Build, run and troubleshoot network labs in one browser workspace. Weblab.Network brings your topology, device consoles and exercise instructions together.">
   <meta name="theme-color" content="#10171c">
-  <title>Weblab — Your network lab. All in one view.</title>
+  <title>Weblab.Network — Your network lab. All in one view.</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
   <script src="page.js" defer></script>
@@ -29,6 +29,7 @@
         <p class="hero-description">Build a topology. Open your consoles. Follow the exercise.<br class="desktop-break"> Keep your focus in one browser workspace.</p>
         <div class="hero-actions">
           <a class="button primary" href="https://github.com/weblab-network/weblab/wiki/Installation">Build your first lab <span aria-hidden="true">→</span></a>
+          <a class="button secondary" href="#watch">Watch the overview <span aria-hidden="true">▶</span></a>
           <a class="button secondary" href="https://github.com/weblab-network/weblab">Explore the source <span aria-hidden="true">↗</span></a>
         </div>
         <p class="hero-note">Runs on your Linux host. Works from your desktop or tablet.</p>
@@ -41,6 +42,47 @@
         </a>
         <figcaption>A mixed-vendor lab, connected and running. Your map and CLI stay together.</figcaption>
       </figure>
+    </section>
+
+    <section id="watch" class="watch-section container" aria-labelledby="watch-title">
+      <div class="section-heading">
+        <p class="eyebrow">SEE IT IN ACTION</p>
+        <h2 id="watch-title">A working lab. One workspace.</h2>
+        <p>See Weblab.Network go from installation to a running multi-vendor lab, with floating consoles and a link-failure exercise, in under two minutes.</p>
+      </div>
+      <figure class="workspace-shot overview-video">
+        <div class="video-stage">
+        <video controls playsinline preload="none" width="1920" height="1080" poster="assets/overview-poster.png" aria-label="Weblab.Network video overview" aria-describedby="overview-caption">
+          <source src="assets/weblab-overview.mp4" type="video/mp4">
+          <source src="assets/weblab-overview.webm" type="video/webm">
+          <p><a href="assets/weblab-overview.mp4">Download the overview video</a> or read the overview below.</p>
+        </video>
+        <button class="video-play" type="button" hidden aria-label="Play overview, 1 minute 55 seconds">
+          <img src="assets/overview-poster.png" alt="" width="1920" height="1080" loading="lazy">
+          <span class="video-play-label"><span aria-hidden="true">▶</span> Play overview</span>
+        </button>
+        </div>
+        <figcaption id="overview-caption">1:55 · Full HD · Silent video with on-screen captions. Edited excerpts; topology editing and link failure play at 2× speed.</figcaption>
+      </figure>
+      <p id="overview-status" class="watch-note" role="status" hidden></p>
+      <div class="watch-actions">
+        <a class="button primary" href="https://demo.weblab.network/">Try the live preview <span aria-hidden="true">↗</span></a>
+        <a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Installation">Installation guide ↗</a>
+        <a class="text-link" href="assets/weblab-overview.mp4" download>Download the video (MP4)</a>
+      </div>
+      <p class="watch-note">The video shows the full workspace. The hosted preview is shared and has restricted controls.</p>
+      <details class="video-summary">
+        <summary>Read the video overview</summary>
+        <ol>
+          <li><strong>Install with Docker.</strong> Clone the repository, start Weblab.Network and open the workspace in your browser. Follow the installation guide for the full requirements and commands.</li>
+          <li><strong>Upload device images.</strong> Add an image through the browser and see it become available for a lab.</li>
+          <li><strong>Build a topology.</strong> Add devices, choose their interfaces, connect nodes and remove a link.</li>
+          <li><strong>Arrange the workspace.</strong> Float device consoles and arrange them beside the topology.</li>
+          <li><strong>Inspect the network.</strong> View Junos, FRR, EXOS and Linux consoles together, including routing, switching and connectivity output.</li>
+          <li><strong>Inject a link fault.</strong> Change a running link's behavior and observe traffic from the PC consoles.</li>
+          <li><strong>Export a lab.</strong> Choose topology JSON or a saved-state ZIP. Vendor base images are supplied separately.</li>
+        </ol>
+      </details>
     </section>
 
     <section class="platforms container" aria-labelledby="platforms-title">
@@ -81,6 +123,26 @@
       <ol class="steps"><li><span>01</span><h3>Set up Weblab</h3><p>Follow the installation guide for Docker, host permissions and remote access.</p><a href="https://github.com/weblab-network/weblab/wiki/Installation">Installation guide ↗</a></li><li><span>02</span><h3>Add your devices</h3><p>Supply your images, then build a topology or import the starter example.</p><a href="https://github.com/weblab-network/weblab/blob/main/examples/starter.md">Try the starter lab ↗</a></li><li><span>03</span><h3>Make it your own</h3><p>Practice routing, switching and failure scenarios. Save your work and share an exercise.</p><a href="https://github.com/weblab-network/weblab/blob/main/examples/ospf-practice.md">Explore an OSPF exercise ↗</a></li></ol>
       <div class="install-command"><div><span class="eyebrow">GET THE SOURCE</span><code id="clone-command">git clone https://github.com/weblab-network/weblab.git</code></div><button type="button" id="copy-command" hidden>Copy command</button></div><p id="copy-status" role="status" aria-live="polite"></p>
       <p class="deployment-note">Designed for your own host or a trusted group. Weblab currently has no authentication or per-user isolation; keep the lab service on a trusted network or behind an SSH tunnel.</p>
+    </section>
+    <section id="roadmap" class="roadmap-section container" aria-labelledby="roadmap-title">
+      <div class="section-heading">
+        <p class="eyebrow">LOOKING AHEAD</p>
+        <h2 id="roadmap-title">What’s next for Weblab.Network</h2>
+        <p>Two directions we plan to explore. These capabilities are not available in the current release, and no delivery dates are set.</p>
+      </div>
+      <div class="roadmap-grid">
+        <article>
+          <span class="feature-number">PLANNED / AI INTEGRATION</span>
+          <h3>Connect your agent to the lab.</h3>
+          <p>An MCP (Model Context Protocol) interface would let compatible AI agents, including locally hosted models with tool support, create topologies and inspect lab state through controlled tools. Guided exercises and feedback are a longer-term goal.</p>
+        </article>
+        <article>
+          <span class="feature-number">PLANNED / EDUCATION KIT</span>
+          <h3>A shared workspace for teaching.</h3>
+          <p>Instructor-led labs with user accounts and roles: teachers control the lab and decide what students can observe or change. Limited student permissions and shared demonstrations would support practice without giving every participant full control.</p>
+        </article>
+      </div>
+      <a class="text-link" href="https://github.com/weblab-network/weblab/issues">Share a teaching or automation use case ↗</a>
     </section>
     <section class="closing container"><div><p class="eyebrow">BUILT TO BE SHARED</p><h2>Your next lab<br>starts here.</h2></div><div><p>Free, open-source tools for hands-on networking.<br>Try a lab, report an issue, or help improve the project.</p><a class="button primary" href="https://github.com/weblab-network/weblab">Find Weblab on GitHub <span aria-hidden="true">↗</span></a></div></section>
   </main>
