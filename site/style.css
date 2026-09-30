@@ -8,7 +8,7 @@
 .watch-section{padding-top:80px}
 .watch-section .section-heading>p:last-child{max-width:700px}
 .overview-video{margin-top:28px}
-.overview-video video{display:block;width:100%;height:auto;aspect-ratio:16/9;background:#0b1115}
+.overview-video video{display:block;width:100%;max-width:100%;height:auto;aspect-ratio:16/9;object-fit:contain;background:#0b1115}
 .overview-video video:focus-visible,.video-summary summary:focus-visible{outline:3px solid var(--mint);outline-offset:-3px}
 .watch-actions{display:flex;align-items:center;flex-wrap:wrap;gap:18px 26px;margin-top:24px}
 .watch-note{font-size:12px;color:var(--muted);margin-top:16px}

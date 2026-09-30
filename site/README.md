@@ -36,3 +36,7 @@ separately and identified as having restricted controls.
 Only the reviewed overview and poster are included here. The public website does
 not include source recordings or editing material. Keep the MP4 and WebM versions
 in sync when updating the video.
+
+When changing `style.css` or `page.js`, update its `?v=` content hash in
+`index.html` (the first 12 characters of SHA-256). This prevents returning
+visitors from combining new page markup with older cached styles or scripts.
