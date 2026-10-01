@@ -34,6 +34,28 @@ Click a thumbnail to open the full-size image. Ctrl/Cmd-click opens it in a new 
   <a href="https://weblab.network/assets/showcase-arranged-consoles.png"><img src="https://weblab.network/assets/showcase-arranged-consoles.png" alt="Arranged topology and Junos, FRR and EXOS consoles showing OSPF, VRRP and VLANs" title="Arranged multi-vendor consoles — view full size" width="260"></a>
 </p>
 
+### Tablets and phones
+
+Keep the topology and console visible while using the onscreen keyboard.
+[Explore the smaller-screen workspace](https://weblab.network/#mobile).
+
+<p>
+  <a href="https://weblab.network/assets/mobile-tablet-fullscreen.png"><img src="https://weblab.network/assets/mobile-tablet-fullscreen.png" alt="Fullscreen tablet with arranged topology, tabbed consoles and onscreen keyboard" title="Fullscreen tablet — view full size" width="210"></a>
+  <a href="https://weblab.network/assets/mobile-phone-fullscreen.png"><img src="https://weblab.network/assets/mobile-phone-fullscreen.png" alt="Phone with manually arranged topology and console above the onscreen keyboard" title="Phone workspace — view full size" width="150"></a>
+</p>
+
+<details>
+<summary>More tablet views: browser and device inspector</summary>
+
+<p>
+  <a href="https://weblab.network/assets/mobile-tablet-browser.png"><img src="https://weblab.network/assets/mobile-tablet-browser.png" alt="Tablet browser showing the topology, FRR console and onscreen keyboard" title="Tablet browser — view full size" width="210"></a>
+  <a href="https://weblab.network/assets/mobile-tablet-inspector.png"><img src="https://weblab.network/assets/mobile-tablet-inspector.png" alt="Tablet with the device inspector open beside the topology and FRR console" title="Tablet device inspector — view full size" width="210"></a>
+</p>
+
+</details>
+
+These screenshots show the shared demo preview, where controls are restricted.
+
 ## Quick start
 
 Use an **x86-64 Linux host/VM**, rootful Docker Engine with Compose, and
