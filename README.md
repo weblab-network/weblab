@@ -16,6 +16,24 @@ labs as topology JSON or saved-state ZIP archives.
 Try the **[live demo preview](https://demo.weblab.network/)**: a shared workspace
 with restricted controls for exploring the interface and device consoles.
 
+## See Weblab.Network in action
+
+<a href="https://weblab.network/#watch"><img src="https://weblab.network/assets/overview-poster.png" alt="Watch the 1:55 Weblab.Network overview: topology editing, floating consoles and link faults" width="640"></a>
+
+**[▶ Watch the 1:55 overview](https://weblab.network/#watch)** ·
+[Full installation and lab walkthrough](https://weblab.network/#walkthrough) ·
+[Watch on YouTube](https://youtu.be/fv2eDcvB_s0)
+
+### Screenshots
+
+Click a thumbnail to open the full-size image. Ctrl/Cmd-click opens it in a new tab.
+
+<p>
+  <a href="https://weblab.network/assets/showcase-topology.png"><img src="https://weblab.network/assets/showcase-topology.png" alt="Multi-vendor topology with the Junos switch inspector and tabbed console" title="Topology and device inspector — view full size" width="260"></a>
+  <a href="https://weblab.network/assets/showcase-tabbed-consoles.png"><img src="https://weblab.network/assets/showcase-tabbed-consoles.png" alt="Floating topology beside tabbed consoles showing EXOS VLANs and spanning tree" title="Floating topology and tabbed consoles — view full size" width="260"></a>
+  <a href="https://weblab.network/assets/showcase-arranged-consoles.png"><img src="https://weblab.network/assets/showcase-arranged-consoles.png" alt="Arranged topology and Junos, FRR and EXOS consoles showing OSPF, VRRP and VLANs" title="Arranged multi-vendor consoles — view full size" width="260"></a>
+</p>
+
 ## Quick start
 
 Use an **x86-64 Linux host/VM**, rootful Docker Engine with Compose, and
