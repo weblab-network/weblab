@@ -46,3 +46,9 @@
 .mobile-gallery figcaption{line-height:1.7}
 .mobile-section>.text-link{display:inline-block;margin-top:12px}
 @media(max-width:680px){.mobile-section{padding-block:40px}.mobile-gallery{grid-template-columns:minmax(0,1fr);gap:28px}.mobile-gallery .workspace-shot{width:100%;max-width:440px;justify-self:center}.mobile-gallery .workspace-shot:last-child{max-width:280px}}
+
+.email-contact{scroll-margin-top:120px}
+.email-contact button{border:1px solid var(--line);border-radius:5px;background:transparent;color:var(--text);padding:7px 12px;cursor:pointer;white-space:nowrap}
+.email-contact button:hover{color:var(--mint);border-color:var(--mint)}
+.email-contact a{overflow-wrap:anywhere}
+footer{flex-wrap:wrap}

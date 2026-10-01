@@ -63,3 +63,11 @@ The README also includes browser and inspector tablet views in a collapsible gal
 The four `assets/mobile-*.png` screenshots keep the approved captures intact apart
 from removing the desktop title bars. Preserve their aspect ratios and keyboards;
 use CSS or HTML widths for previews and keep the public asset URLs stable.
+
+## Contact
+
+`/#contact` points to the footer's Show email button. It assembles the project
+address only after activation, then displays a selectable mail link. This reduces
+basic plaintext scraping, but cannot prevent determined collection. Without
+JavaScript, the footer offers GitHub issues as an alternative. Keep the README
+linked to this section rather than duplicating the address in Markdown.

@@ -51,3 +51,20 @@ if (walkthrough) {
     if (!walkthrough.open) walkthrough.querySelector('video').pause();
   });
 }
+
+// Reveal on request to reduce simple address harvesting; this is not bot protection.
+const showEmail = document.querySelector('#show-email');
+const contactEmail = document.querySelector('#contact-email');
+if (showEmail && contactEmail) {
+  showEmail.hidden = false;
+  showEmail.addEventListener('click', () => {
+    const decode = part => [...part].reverse().join('');
+    const address = decode('ved') + String.fromCharCode(64) +
+      [decode('balbew'), decode('krowten')].join('.');
+    contactEmail.textContent = address;
+    contactEmail.href = 'mailto:' + address;
+    contactEmail.hidden = false;
+    showEmail.hidden = true;
+    contactEmail.focus();
+  }, { once: true });
+}
