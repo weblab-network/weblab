@@ -13,20 +13,41 @@ if (navigator.clipboard && window.isSecureContext) {
   });
 }
 
-const overviewVideo = document.querySelector('.overview-video video');
-const overviewPlay = document.querySelector('.video-play');
-const overviewStatus = document.querySelector('#overview-status');
-if (overviewVideo && overviewPlay) {
-  overviewPlay.hidden = false;
-  overviewVideo.addEventListener('playing', () => { overviewPlay.hidden = true; });
-  overviewPlay.addEventListener('click', async () => {
-    overviewPlay.hidden = true;
-    overviewStatus.hidden = true;
+document.querySelectorAll('.video-stage').forEach(stage => {
+  const video = stage.querySelector('video');
+  const playButton = stage.querySelector('.video-play');
+  const status = document.getElementById(video.dataset.status);
+  const showError = () => {
+    playButton.hidden = true;
+    status.textContent = 'Playback could not start. Use the player controls or the video links below.';
+    status.hidden = false;
+  };
+  playButton.hidden = false;
+  video.addEventListener('playing', () => {
+    playButton.hidden = true;
+    status.hidden = true;
+  });
+  video.addEventListener('error', showError);
+  video.querySelector('source:last-of-type').addEventListener('error', showError);
+  playButton.addEventListener('click', async () => {
+    playButton.hidden = true;
+    status.hidden = true;
     try {
-      await overviewVideo.play();
+      await video.play();
     } catch {
-      overviewStatus.textContent = 'Playback could not start. Try the player controls or download the MP4 below.';
-      overviewStatus.hidden = false;
+      showError();
     }
+  });
+});
+
+const walkthrough = document.querySelector('#walkthrough');
+if (walkthrough) {
+  const openLinkedWalkthrough = () => {
+    if (location.hash === '#walkthrough') walkthrough.open = true;
+  };
+  openLinkedWalkthrough();
+  window.addEventListener('hashchange', openLinkedWalkthrough);
+  walkthrough.addEventListener('toggle', () => {
+    if (!walkthrough.open) walkthrough.querySelector('video').pause();
   });
 }

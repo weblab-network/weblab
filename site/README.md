@@ -33,10 +33,18 @@ remain available without JavaScript. MP4 is offered first, with a WebM fallback.
 available alongside the silent, captioned video. The hosted preview is linked
 separately and identified as having restricted controls.
 
-Only the reviewed overview and poster are included here. The public website does
-not include source recordings or editing material. Keep the MP4 and WebM versions
-in sync when updating the video.
+The website includes the reviewed overview, its poster and the approved full
+walkthrough. Editing material is kept separately. Keep the overview’s MP4 and
+WebM versions in sync when updating that video.
 
 When changing `style.css` or `page.js`, update its `?v=` content hash in
 `index.html` (the first 12 characters of SHA-256). This prevents returning
 visitors from combining new page markup with older cached styles or scripts.
+
+## Full walkthrough
+
+`/#walkthrough` opens the optional full-length recording beneath the short
+overview. The original 9:08 MP4 is available through a native player, a download
+link and a YouTube alternative. It uses `preload="none"` and no autoplay;
+collapsing the section pauses playback. No YouTube embed or external player
+is loaded on page visit. The recording shows the full workspace at normal speed.

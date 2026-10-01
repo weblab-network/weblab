@@ -8,7 +8,7 @@
   <title>Weblab.Network — Your network lab. All in one view.</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css?v=d905b5e85f16">
-  <script src="page.js?v=ed332dffdbe6" defer></script>
+  <script src="page.js?v=e38056acad81" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -52,7 +52,7 @@
       </div>
       <figure class="workspace-shot overview-video">
         <div class="video-stage">
-        <video controls playsinline preload="none" width="1920" height="1080" poster="assets/overview-poster.png" aria-label="Weblab.Network video overview" aria-describedby="overview-caption">
+        <video controls playsinline preload="none" width="1920" height="1080" poster="assets/overview-poster.png" data-status="overview-status" aria-label="Weblab.Network video overview" aria-describedby="overview-caption">
           <source src="assets/weblab-overview.mp4" type="video/mp4">
           <source src="assets/weblab-overview.webm" type="video/webm">
           <p><a href="assets/weblab-overview.mp4">Download the overview video</a> or read the overview below.</p>
@@ -82,6 +82,28 @@
           <li><strong>Inject a link fault.</strong> Change a running link's behavior and observe traffic from the PC consoles.</li>
           <li><strong>Export a lab.</strong> Choose topology JSON or a saved-state ZIP. Vendor base images are supplied separately.</li>
         </ol>
+      </details>
+      <details id="walkthrough" class="video-summary walkthrough">
+        <summary>Full installation and lab walkthrough · 9:08</summary>
+        <p class="watch-note">Watch the original recording at its original pace: Docker setup, image upload, topology editing, live consoles, link faults and lab export.</p>
+        <figure class="workspace-shot overview-video">
+          <div class="video-stage">
+            <video controls playsinline preload="none" width="1920" height="1080" poster="assets/overview-poster.png" data-status="walkthrough-status" aria-label="Weblab.Network full walkthrough" aria-describedby="walkthrough-caption">
+              <source src="assets/weblab-walkthrough.mp4" type="video/mp4">
+              <p><a href="https://youtu.be/fv2eDcvB_s0">Watch the full walkthrough on YouTube</a> or <a href="assets/weblab-walkthrough.mp4">download the MP4</a>.</p>
+            </video>
+            <button class="video-play" type="button" hidden aria-label="Play full walkthrough, 9 minutes 8 seconds">
+              <img src="assets/overview-poster.png" alt="" width="1920" height="1080" loading="lazy">
+              <span class="video-play-label"><span aria-hidden="true">▶</span> Play walkthrough</span>
+            </button>
+          </div>
+          <figcaption id="walkthrough-caption">9:08 · Full HD · Original recording at normal speed · No spoken narration. Follow the installation guide for current setup instructions.</figcaption>
+        </figure>
+        <p id="walkthrough-status" class="watch-note" role="status" hidden></p>
+        <div class="watch-actions">
+          <a class="text-link" href="https://youtu.be/fv2eDcvB_s0">Watch on YouTube ↗</a>
+          <a class="text-link" href="assets/weblab-walkthrough.mp4" download>Download full walkthrough (MP4, 25 MB)</a>
+        </div>
       </details>
     </section>
 
