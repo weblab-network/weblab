@@ -106,6 +106,11 @@ and CSS with vendored terminal/Markdown assets; there is no frontend build step.
 [Development and testing](docs/development.md) explains dependencies and disposable
 regression suites.
 
+## Contact
+
+For questions or feedback, [open a GitHub issue](https://github.com/weblab-network/weblab/issues)
+or [reveal the contact email on our website](https://weblab.network/#contact).
+
 ## Screenshots
 
 Click a thumbnail to open the full-size image. Ctrl/Cmd-click opens it in a new tab.
