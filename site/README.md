@@ -55,3 +55,11 @@ The repository README links to `showcase-topology.png`,
 `showcase-tabbed-consoles.png` and `showcase-arranged-consoles.png` in `assets/`.
 These screenshots retain the supplied image dimensions; HTML widths make their
 README previews compact. Keep these public asset URLs stable.
+
+## Tablet and phone screenshots
+
+`/#mobile` shows fullscreen tablet and phone layouts, with full-size image links.
+The README also includes browser and inspector tablet views in a collapsible gallery.
+The four `assets/mobile-*.png` screenshots keep the approved captures intact apart
+from removing the desktop title bars. Preserve their aspect ratios and keyboards;
+use CSS or HTML widths for previews and keep the public asset URLs stable.

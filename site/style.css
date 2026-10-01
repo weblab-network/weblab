@@ -36,3 +36,13 @@
 .roadmap-grid h3{font-size:25px;line-height:1.25;margin:16px 0}
 .roadmap-grid p{font-size:14px;line-height:1.85;color:var(--muted)}
 @media(max-width:680px){.roadmap-section{padding-block:45px}.roadmap-grid{grid-template-columns:1fr;gap:18px}.roadmap-grid article{padding:22px}}
+
+/* Portrait workspace screenshots retain their full content, including keyboards. */
+.mobile-section{padding-block:55px;border-top:1px solid var(--line)}
+.mobile-section .section-heading>p:last-child{max-width:720px}
+.mobile-gallery{display:grid;grid-template-columns:minmax(0,440px) minmax(0,280px);justify-content:center;align-items:start;gap:32px;margin-top:32px}
+.mobile-gallery .workspace-shot{margin:0;min-width:0}
+.mobile-gallery img{width:100%;height:auto}
+.mobile-gallery figcaption{line-height:1.7}
+.mobile-section>.text-link{display:inline-block;margin-top:12px}
+@media(max-width:680px){.mobile-section{padding-block:40px}.mobile-gallery{grid-template-columns:minmax(0,1fr);gap:28px}.mobile-gallery .workspace-shot{width:100%;max-width:440px;justify-self:center}.mobile-gallery .workspace-shot:last-child{max-width:280px}}
