@@ -48,3 +48,10 @@ overview. The original 9:08 MP4 is available through a native player, a download
 link and a YouTube alternative. It uses `preload="none"` and no autoplay;
 collapsing the section pauses playback. No YouTube embed or external player
 is loaded on page visit. The recording shows the full workspace at normal speed.
+
+## README screenshot gallery
+
+The repository README links to `showcase-topology.png`,
+`showcase-tabbed-consoles.png` and `showcase-arranged-consoles.png` in `assets/`.
+These screenshots retain the supplied image dimensions; HTML widths make their
+README previews compact. Keep these public asset URLs stable.
