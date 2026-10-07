@@ -1,0 +1,2 @@
+# Optional external agent adapter only; the core server does not import this SDK.
+mcp==2.2.0

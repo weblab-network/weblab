@@ -16,7 +16,8 @@ available RAM for the three 1 GiB EXOS guests and overhead; a host with 8 GiB or
 more is recommended. Allow several GB of disk space for images and saved disks.
 
 These are application containers that launch virtual devices; pulling one does
-not remove the KVM requirement. Docker Desktop, rootless Docker and ARM hosts
+not remove the KVM requirement for QEMU guests. FRR/LL2S/Alpine-only labs
+[run without KVM](installation.md#container-only-switching-and-routing). Docker Desktop, rootless Docker and ARM hosts
 are not supported by this deployment. See [installation](installation.md) for
 permissions, trusted-network access and the standard edition.
 

@@ -1,7 +1,7 @@
 # Weblab
 
 A browser workspace for building and running network labs with Cisco IOL,
-IOSv/IOSvL2, Virtual EXOS, Arista vEOS-lab, FRRouting and Alpine PCs,
+IOSv/IOSvL2, Virtual EXOS, Arista vEOS-lab, FRRouting, LL2S switches and Alpine PCs,
 plus Juniper vJunos profiles.
 
 Keep the topology, multiple device consoles and lab instructions together in one
@@ -69,16 +69,36 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
-## Recent additions
+## New in v0.4.0
 
-- Optional IOL cable unplug control, off by default to reduce CPU usage.
-- FRR VRRP, console shell access and opt-in support for custom FRR images.
-- Console interrupt and logout reliability fixes; see the [v0.3.0 release notes](docs/releases/v0.3.0.md).
+- [LL2S switches](https://github.com/weblab-network/ll2s): prebuilt Open vSwitch
+  containers with STP/RSTP, VLANs, LLDP and optional SNMPv2c management. Combine
+  with FRR and Alpine for switching/routing labs without KVM or vendor images.
+- [MCP integration](docs/automation.md): optional external-agent discovery,
+  topology previews, approved starts and shared-console reads/input. Agent
+  proposals can use simple node aliases and omit link IDs.
+- [Storage monitoring](docs/storage.md): filesystem headroom, per-node disk/log
+  usage and preflight checks for starts, uploads, exports and restores.
+- LL2S saved-image checks and recovery when a container is missing after reboot.
 
-- FRR container routers with saved configurations and an [OSPF exercise](examples/frr-ospf.md).
-- vJunos-switch and vJunosEvolved profiles; see [requirements and validation](docs/devices.md#juniper-vjunos).
-- Multi-select and move groups of topology nodes, including on touch screens.
-- Compact vEOS ZIP backups with exact disk reconstruction on restore.
+See [v0.4.0 release notes](docs/releases/v0.4.0.md) for scope and upgrade guidance.
+
+### Open-source switching and routing
+
+On the Docker host used by Weblab:
+
+```sh
+sudo modprobe openvswitch
+docker pull ghcr.io/weblab-network/ll2s:0.2.0
+docker pull quay.io/frrouting/frr:10.7.1
+docker pull alpine:latest
+```
+
+Import the [LL2S/FRR OSPF topology](examples/ll2s-frr-ospf.json) and open its
+[exercise](examples/ll2s-frr-ospf.md), or try the [RSTP/VLAN exercise](examples/ll2s-rstp.md).
+Use Weblab v0.4.0 or newer. No KVM override is needed for these container-only labs.
+See [LL2S setup](docs/devices.md#ll2s-linux-layer-2-switch) for saving and monitoring,
+and the [FRR profile](docs/devices.md#frrouting) for image checks and limitations.
 
 ## Intended use
 
@@ -90,7 +110,7 @@ directly to the public internet.
 
 Save device configurations before stopping. QEMU disks and IOL NVRAM/VLAN files
 persist; Alpine PC filesystems are disposable. Use [saved lab ZIP](docs/backups.md)
-for supported saved storage. JSON snippets initialize fresh Cisco/FRR nodes only.
+for supported saved storage. JSON snippets initialize fresh Cisco/FRR/LL2S nodes only.
 See [limitations](docs/limitations.md) before relying on a particular workflow.
 
 ## Documentation and development
@@ -150,9 +170,3 @@ Copyright © 2026 [weblab.network](https://weblab.network)
 
 Bundled third-party components retain their own licenses, including GPLv2 for
 `iou2net.pl`. See [third-party notices](THIRD_PARTY.md).
-
-
-For an open-source routing lab without vendor images or KVM, see the
-[FRR profile](docs/devices.md#frrouting) and [OSPF exercise](examples/frr-ospf.md).
-FRR uses a separately pulled upstream Docker image, with digest checking by
-default and an explicit [opt-in for modified images](docs/devices.md#allow-a-modified-frr-image).

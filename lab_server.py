@@ -21,13 +21,16 @@ import time
 import uuid
 import vios
 import frr
+import ll2s_device
 import lab_backup
+import storage
 import console_capture
 import saved_config
 import initial_config
 import link_fabric
 import qmp
 import iol_l1
+import lab_automation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
 
@@ -66,7 +69,7 @@ def process_stamp(pid):
 def ports(node):
     if node["type"] == "pc":
         return ["eth0"]
-    if frr.is_frr(node):
+    if frr.is_frr(node) or ll2s_device.is_ll2s(node):
         return [f"eth{i}" for i in range(node["ethernet"])]
     if vios.is_exos(node):
         return ["Mgmt"] + [str(i) for i in range(1, node["ethernet"])]
@@ -85,14 +88,14 @@ def ports(node):
 def netmap_port(node, port):
     if node["type"] == "pc":
         return "0/0"
-    if vios.is_qemu(node) or frr.is_frr(node):
+    if vios.is_qemu(node) or frr.is_frr(node) or ll2s_device.is_ll2s(node):
         index = ports(node).index(port)
         return f"{index // 4}/{index % 4}"
     return port
 
 
 class Lab:
-    def __init__(self, directory, image_dir=None, *, allow_untested_frr=False):
+    def __init__(self, directory, image_dir=None, *, allow_untested_frr=False, automation=False):
         self.image_dir = (image_dir if image_dir is not None else ROOT).resolve()
         self.image_dir.mkdir(parents=True, exist_ok=True)
         self.allow_untested_frr = allow_untested_frr
@@ -108,6 +111,7 @@ class Lab:
         lab_backup.recover(self.directory)
         self.exports = {}
         self.lock = threading.RLock()
+        self.storage = storage.Monitor(self.directory, self.image_dir)
         self.fabric = None
         self.l1 = None
         self.runtime = {}
@@ -131,12 +135,16 @@ class Lab:
         link_fabric.recover(self.directory, self.netio)
         iol_l1.recover(self.directory, self.netl1)
         self.persist()
+        self.automation = lab_automation.Automation(self, LabError, ports, run) if automation else None
 
     def catalog(self):
-        return [{"name": p.name, "type": "switch" if "l2" in p.name.lower() or vios.is_exos({"image":p.name}) or vios.is_veos({"image":p.name}) or vios.is_junos_switch({"image":p.name}) else "router"}
+        entries = [{"name": p.name, "type": "switch" if "l2" in p.name.lower() or vios.is_exos({"image":p.name}) or vios.is_veos({"image":p.name}) or vios.is_junos_switch({"image":p.name}) else "router"}
                 for p in sorted(self.image_dir.iterdir()) if p.is_file() and
                 ((p.suffix == ".bin" and os.access(p, os.X_OK)) or
-                 (p.suffix == ".qcow2" and os.access(p, os.R_OK)))] + [{"name": frr.IMAGE, "type": "router"}]
+                 (p.suffix == ".qcow2" and os.access(p, os.R_OK)))] + [{"name": frr.IMAGE, "type": "router"}, {"name": ll2s_device.IMAGE, "type": "switch"}]
+        if any(n.get("image") == ll2s_device.LEGACY_IMAGE for n in self.topology["nodes"]):
+            entries.append({"name": ll2s_device.LEGACY_IMAGE, "type": "switch"})
+        return entries
 
     def upload_image(self, name, stream, length):
         iso = name == vios.ABOOT_IMAGE
@@ -151,6 +159,7 @@ class Lab:
         if not self.upload_lock.acquire(blocking=False):
             raise LabError("Another image upload is in progress")
         try:
+            storage.require_space(self.image_dir, length, operation='image upload', error=LabError)
             # Stream into the destination filesystem, then publish without overwriting.
             # Neither partial nor failed uploads are visible in the image catalog.
             with tempfile.NamedTemporaryFile(dir=self.image_dir, prefix=".upload-", suffix=".tmp") as temporary:
@@ -198,6 +207,7 @@ class Lab:
             return {"topology": copy.deepcopy(self.topology),
                     "iol_l1_profiles": sorted(iol_l1.PROFILES),
                     "allow_untested_frr": self.allow_untested_frr,
+                    "storage": {"filesystems": storage.filesystems(self.directory, self.image_dir)},
                     "status": {n["id"]: {"state": "running" if n["id"] in self.runtime else
                                          "error" if self.errors.get(n["id"]) else "stopped",
                                          "error": self.errors.get(n["id"], ""),
@@ -233,19 +243,21 @@ class Lab:
         occupied.update(existing[raw["id"]]["iol_id"] for raw in data["nodes"]
                         if isinstance(raw, dict) and isinstance(raw.get("id"), str) and raw["id"] in existing)
         ids = set()
-        for raw in data["nodes"]:
+        for index, raw in enumerate(data["nodes"]):
             if not isinstance(raw, dict):
-                raise LabError("Invalid node")
+                raise LabError(f"nodes[{index}]: expected a node object")
+            def node_error(message):
+                return LabError(f"nodes[{index}] ({raw.get('name', raw.get('id', '?'))!r}): {message}")
             node_id = str(raw.get("id", ""))
             if not re.fullmatch(r"[a-zA-Z0-9_-]{1,40}", node_id) or node_id in ids:
-                raise LabError("Node IDs must be unique letters, digits, underscores or hyphens")
+                raise node_error(f"Invalid or duplicate node ID {node_id!r}; use 1–40 letters, digits, underscores or hyphens")
             ids.add(node_id)
             kind = raw.get("type")
             if kind not in ("switch", "router", "pc"):
-                raise LabError("Unknown device type")
+                raise node_error("Unknown device type")
             label = str(raw.get("name", "")).strip()
             if not 1 <= len(label) <= 40:
-                raise LabError("Node names must contain 1–40 characters")
+                raise node_error("Node names must contain 1–40 characters")
             node = {"id": node_id, "type": kind, "name": label}
             image = str(raw.get("image", "alpine:latest" if kind == "pc" else ""))
             qcow = kind != "pc" and image.endswith(".qcow2")
@@ -254,47 +266,50 @@ class Lab:
             junos = vios.is_junos({"type":kind,"image":image})
             evolved = vios.is_junos_evolved({"type":kind,"image":image})
             if junos and kind != ("router" if evolved else "switch"):
-                raise LabError("vJunosEvolved requires a router; vJunos-switch requires a switch")
+                raise node_error("vJunosEvolved requires a router; vJunos-switch requires a switch")
+            is_ll2s = ll2s_device.is_ll2s({"image": image})
+            if is_ll2s and (kind != "switch" or image not in ll2s_device.IMAGES):
+                raise node_error(f"LL2S requires a switch node and image {ll2s_device.IMAGE}")
             is_frr = frr.is_frr({"image": image})
             if is_frr and (kind != "router" or image != frr.IMAGE):
-                raise LabError(f"FRR requires a router node and image {frr.IMAGE}")
+                raise node_error(f"FRR requires a router node and image {frr.IMAGE}")
             if (exos or veos) and kind != "switch":
-                raise LabError(f"{'Arista vEOS' if veos else 'EXOS'} images require a switch node")
+                raise node_error(f"{'Arista vEOS' if veos else 'EXOS'} images require a switch node")
             for key, default, low, high in [("x", 350, 70, 2330), ("y", 250, 60, 1540),
-                                           ("memory", 8192 if evolved else 5120 if junos else 512 if is_frr else 6144 if veos else 1024, 8192 if evolved else 5120 if junos else 256, 8192),
-                                           ("ethernet", 5 if junos else 4 if is_frr else 5 if veos else 13 if exos else 4 if qcow else 2, 2 if exos or veos or junos else 1, 13 if exos else 16 if qcow else 8)]:
+                                           ("memory", 8192 if evolved else 5120 if junos else 512 if is_frr else 256 if is_ll2s else 6144 if veos else 1024, 8192 if evolved else 5120 if junos else 256, 8192),
+                                           ("ethernet", 5 if junos else 4 if is_frr or is_ll2s else 5 if veos else 13 if exos else 4 if qcow else 2, 2 if exos or veos or junos else 1, 13 if exos else 16 if qcow else 8)]:
                 value = raw.get(key, default)
                 if type(value) not in (int, float) or not low <= value <= high or int(value) != value:
-                    raise LabError(f"{key} must be an integer between {low} and {high}")
+                    raise node_error(f"{key} must be an integer between {low} and {high}")
                 node[key] = int(value)
             if kind == "pc":
                 if not re.fullmatch(r"alpine(?::[a-zA-Z0-9_.-]+)?", image):
-                    raise LabError("PC image must be alpine or alpine:TAG")
-            elif not is_frr and image not in {i["name"] for i in self.catalog()}:
-                raise LabError("Select an IOL .bin, supported .qcow2 image, or the supported FRR container")
+                    raise node_error("PC image must be alpine or alpine:TAG")
+            elif not is_frr and not is_ll2s and image not in {i["name"] for i in self.catalog()}:
+                raise node_error("Select an IOL .bin, supported .qcow2 image, or a supported FRR/LL2S container")
             node["image"] = image
             l1 = raw.get('iol_l1', False)
             if type(l1) is not bool:
-                raise LabError('iol_l1 must be a boolean')
+                raise node_error('iol_l1 must be a boolean')
             if l1 and not iol_l1.supported(node):
-                raise LabError('IOL cable unplug control requires a tested IOL L1 image profile')
+                raise node_error('IOL cable unplug control requires a tested IOL L1 image profile')
             if iol_l1.supported(node):
                 node['iol_l1'] = l1
             snippet = raw.get("startup_config", "")
             if not isinstance(snippet, str) or len(snippet.encode("utf-8")) > 16_384:
-                raise LabError("startup_config must be a string of at most 16 KiB")
+                raise node_error("startup_config must be a string of at most 16 KiB")
             if any(ord(char) < 32 and char not in "\r\n\t" for char in snippet) or "\x7f" in snippet:
-                raise LabError("startup_config must contain configuration text, not control characters")
+                raise node_error("startup_config must contain configuration text, not control characters")
             if snippet.strip():
                 if junos:
-                    raise LabError("Junos startup snippets are not supported yet; configure through its console")
+                    raise node_error("Junos startup snippets are not supported yet; configure through its console")
                 if exos or veos:
-                    raise LabError(f"{'Arista vEOS' if veos else 'EXOS'} startup snippets are not supported yet; configure through its console")
+                    raise node_error(f"{'Arista vEOS' if veos else 'EXOS'} startup snippets are not supported yet; configure through its console")
                 if kind == "pc":
-                    raise LabError("PCs use ipv4 and gateway startup settings; startup_config is for IOL/IOSv devices")
+                    raise node_error("PCs use ipv4 and gateway startup settings; startup_config is for IOL/IOSv devices")
                 snippet = snippet.replace("\r\n", "\n").replace("\r", "\n").strip() + "\n"
                 if len(snippet.encode("utf-8")) > 16_384:
-                    raise LabError("startup_config must fit within 16 KiB including its final newline")
+                    raise node_error("startup_config must fit within 16 KiB including its final newline")
                 node["startup_config"] = snippet
             node["ipv4"] = str(raw.get("ipv4", "")).strip()
             node["gateway"] = str(raw.get("gateway", "")).strip()
@@ -307,7 +322,7 @@ class Lab:
                     if not address or gateway not in address.network:
                         raise ValueError("Gateway must belong to the PC subnet")
             except ValueError as exc:
-                raise LabError(str(exc)) from exc
+                raise node_error(str(exc)) from exc
             if node_id in existing:
                 node["iol_id"] = existing[node_id]["iol_id"]
             else:
@@ -315,34 +330,39 @@ class Lab:
                 available = (requested if type(requested) is int and 100 <= requested <= 1023 and requested not in occupied
                              else next((i for i in range(100, 1024) if i not in occupied), None))
                 if available is None:
-                    raise LabError("No free IOL application IDs")
+                    raise node_error("No free IOL application IDs")
                 node["iol_id"] = available
                 occupied.add(available)
             result["nodes"].append(node)
         by_id = {n["id"]: n for n in result["nodes"]}
-        used, link_ids = set(), set()
-        for raw in data["links"]:
+        used, link_ids = {}, set()
+        for index, raw in enumerate(data["links"]):
             if not isinstance(raw, dict):
-                raise LabError("Invalid link")
+                raise LabError(f"links[{index}]: expected a link object")
             link_id = str(raw.get("id", ""))
             if not re.fullmatch(r"[a-zA-Z0-9_-]{1,40}", link_id) or link_id in link_ids:
-                raise LabError("Link IDs must be unique letters, digits, underscores or hyphens")
+                raise LabError(f"links[{index}]: invalid or duplicate link ID {link_id!r}; use 1–40 letters, digits, underscores or hyphens")
             link_ids.add(link_id)
             link = {"id": link_id}
             for side in ("a", "b"):
                 endpoint = raw.get(side, {})
                 if not isinstance(endpoint, dict):
-                    raise LabError("Invalid link endpoint")
+                    raise LabError(f"links[{index}].{side}: expected an endpoint object with node and port")
                 node_id, port = endpoint.get("node"), endpoint.get("port")
-                if not isinstance(node_id, str) or not isinstance(port, str) or node_id not in by_id or port not in ports(by_id[node_id]):
-                    raise LabError("Link references an unknown node or interface")
+                if not isinstance(node_id, str) or node_id not in by_id:
+                    raise LabError(f"links[{index}].{side}.node: unknown node {node_id!r}; use one of {list(by_id)!r}")
+                available = ports(by_id[node_id])
+                if not isinstance(port, str) or port not in available:
+                    raise LabError(f"links[{index}].{side}.port: unknown interface {port!r} on {by_id[node_id]['name']!r}; "
+                                   f"valid ports for ethernet={by_id[node_id]['ethernet']}: {available!r}")
                 if (node_id, port) in used:
-                    raise LabError("Each interface can have only one cable")
-                used.add((node_id, port))
+                    raise LabError(f"links[{index}].{side}: interface {by_id[node_id]['name']!r} {port!r} is already used by "
+                                   f"{used[node_id, port]}; each interface can have only one cable")
+                used[node_id, port] = f'links[{index}].{side}'
                 link[side] = {"node": node_id, "port": port}
             a, b = by_id[link["a"]["node"]], by_id[link["b"]["node"]]
             if a["id"] == b["id"] or a["type"] == b["type"] == "pc":
-                raise LabError("Connect different nodes; a PC must connect to a router or switch")
+                raise LabError(f"links[{index}]: connect different nodes; a PC must connect to a router or switch")
             result["links"].append(link)
         return result
 
@@ -379,10 +399,10 @@ class Lab:
                                                      'carrier_a': 'up', 'carrier_b': 'up'}),
                             'available': bool(self.fabric and not self.fabric.error and
                                               any(link[side]['node'] in self.runtime for side in ('a', 'b'))),
-                            **{'carrier_capable_' + side: bool(frr.is_frr(self.node(link[side]['node'])) or vios.is_vios(self.node(link[side]['node'])) or
+                            **{'carrier_capable_' + side: bool(frr.is_frr(self.node(link[side]['node'])) or ll2s_device.is_ll2s(self.node(link[side]['node'])) or vios.is_vios(self.node(link[side]['node'])) or
                                                                iol_l1.supported(self.node(link[side]['node'])))
                                for side in ('a', 'b')},
-                            **{'carrier_supported_' + side: bool((frr.is_frr(self.node(link[side]['node'])) or vios.is_vios(self.node(link[side]['node'])) or
+                            **{'carrier_supported_' + side: bool((frr.is_frr(self.node(link[side]['node'])) or ll2s_device.is_ll2s(self.node(link[side]['node'])) or vios.is_vios(self.node(link[side]['node'])) or
                                                                self.runtime.get(link[side]['node'], {}).get('iol_l1_identity')) and
                                                                link[side]['node'] in self.runtime)
                                for side in ('a', 'b')},
@@ -407,7 +427,7 @@ class Lab:
                 node = self.node(endpoint['node'])
                 if iol_l1.supported(node) and not iol_l1.enabled(node):
                     raise LabError('Enable cable unplug control in the node Inspector while all nodes are stopped, then start the node')
-                raise LabError('Cable link-down requires a running supported IOSv, IOL or FRR interface')
+                raise LabError('Cable link-down requires a running supported IOSv, IOL, FRR or LL2S interface')
             endpoint = next(link for link in self.topology['links'] if link['id'] == link_id)[side]
             node = self.node(endpoint['node'])
             runtime = self.runtime[node['id']]
@@ -419,8 +439,8 @@ class Lab:
                 return self.snapshot()
             self.fabric.set_carrier(link_id, side, 'unknown')
             try:
-                if frr.is_frr(node):
-                    tap = runtime['frr_ports'][ports(node).index(endpoint['port'])]['tap']
+                if frr.is_frr(node) or ll2s_device.is_ll2s(node):
+                    tap = runtime['ll2s_ports' if ll2s_device.is_ll2s(node) else 'frr_ports'][ports(node).index(endpoint['port'])]['tap']
                     run('ip', 'link', 'set', 'dev', tap, 'carrier', 'on' if data['up'] else 'off')
                 else:
                     qmp.set_link(Path(runtime['qemu_sockets']) / 'qmp', ports(node).index(endpoint['port']), data['up'])
@@ -554,6 +574,9 @@ class Lab:
             node = self.node(node_id)
             if node_id in self.runtime:
                 return
+            storage.require_space(self.directory, operation='starting a node',
+                                  reserve=storage.START_RESERVE, error=LabError)
+            storage.require_space(Path(tempfile.gettempdir()), operation='node temporary files', error=LabError)
             if node["type"] == "pc":
                 peer = self.pc_peer(node_id)
                 if peer["id"] not in self.runtime:
@@ -591,6 +614,8 @@ class Lab:
                     self.start_pc(node)
                     image, arguments = sys.executable, [str(ROOT / 'container_console.py'),
                                                        self.runtime[node_id]['container']]
+                elif ll2s_device.is_ll2s(node):
+                    image, arguments = ll2s_device.start(self, node, run, LabError, ROOT)
                 elif frr.is_frr(node):
                     image, arguments = frr.start(self, node, run, LabError, ROOT)
                 elif vios.is_qemu(node):
@@ -607,9 +632,9 @@ class Lab:
                 self.spawn(node_id, "console", ["perl", str(ROOT / "wrapper-ws.pl"), "--bind", "127.0.0.1",
                                                 "--path", "/console", "--exit-output-bytes", "16384",
                                                 "--transcript", str(cwd / "console-output.log"),
-                                                *(["--iol-console"] if node['type'] != 'pc' and not vios.is_qemu(node) and not frr.is_frr(node) else []),
+                                                *(["--iol-console"] if node['type'] != 'pc' and not vios.is_qemu(node) and not frr.is_frr(node) and not ll2s_device.is_ll2s(node) else []),
                                                 "-m", image, "-p", str(port), "--", *arguments], cwd,
-                           {"IOURC": str(node_license)} if node["type"] != "pc" and not vios.is_qemu(node) and not frr.is_frr(node) and node_license.is_file() else None)
+                           {"IOURC": str(node_license)} if node["type"] != "pc" and not vios.is_qemu(node) and not frr.is_frr(node) and not ll2s_device.is_ll2s(node) and node_license.is_file() else None)
                 self.wait_ready(node_id, None if node["type"] == "pc" else socket_path)
                 if self.runtime[node_id].get('iol_l1_identity'):
                     self.l1.add_node(node_id, self.runtime[node_id]['iol_l1_identity'])
@@ -729,6 +754,11 @@ class Lab:
                     frr.save(self, node_id, run)
                 except (LabError, ValueError, OSError) as exc:
                     raise LabError(f"FRR saved config could not be preserved; container retained. Retry Stop: {exc}") from exc
+            if runtime.get("ll2s"):
+                try:
+                    ll2s_device.prepare_stop(self, node_id, run, LabError)
+                except (LabError, ValueError, OSError) as exc:
+                    raise LabError(f"LL2S saved config could not be preserved; container retained. Retry Stop: {exc}") from exc
             if self.l1:
                 self.l1.remove_node(node_id)
             for key in ("console", "bridge"):
@@ -738,7 +768,7 @@ class Lab:
                     self.journal()
             errors = []
             for flag, command in [
-                ("container_created", ["docker", "rm", "-f", runtime.get("container", "")]),
+                ("container_created", ["docker", "rm", "-f", runtime.get("ll2s_container_id") or runtime.get("container", "")]),
                 ("network_created", ["docker", "network", "rm", runtime.get("network", "")]),
                 ("tap_created", ["ip", "link", "delete", runtime.get("tap", "")])]:
                 if runtime.get(flag):
@@ -756,6 +786,8 @@ class Lab:
                 raise LabError(self.errors[node_id])
             if runtime.get("frr"):
                 frr.cleanup_ports(self, runtime, run, LabError)
+            if runtime.get("ll2s"):
+                ll2s_device.cleanup_ports(self, runtime, run, LabError)
             if runtime.get("qemu_sockets"):
                 try:
                     shutil.rmtree(runtime["qemu_sockets"])
@@ -820,7 +852,7 @@ class Lab:
         self.node(node_id)
         chunks = []
         for key in ("console", "bridge"):
-            path = self.node_dir(node_id) / f"{key}.log"
+            path = self.directory / "nodes" / node_id / f"{key}.log"
             if path.exists():
                 with path.open("rb") as stream:
                     stream.seek(max(0, path.stat().st_size - 10000))
@@ -873,11 +905,50 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Sec-Fetch-Site") == "cross-site":
             raise LabError("Cross-site requests are not allowed")
 
+    def automation(self):
+        if not self.lab.automation:
+            raise LabError('Automation is disabled. Enable --automation or WL_AUTOMATION=1 on a trusted Weblab instance')
+        return self.lab.automation
+
+    def automation_get(self, path):
+        self.same_origin()
+        service = self.automation()
+        if path == '/api/automation/catalog':
+            self.reply(200, service.catalog())
+        elif path == '/api/automation/state':
+            self.reply(200, service.state())
+        elif path == '/api/automation/guide':
+            self.reply(200, {'markdown': (ROOT / 'docs' / 'practice-labs.md').read_text()})
+        elif match := re.fullmatch(r'/api/automation/proposals/([a-f0-9]{32})(?:/(topology|instructions))?', path):
+            proposal = service.proposal(match[1])
+            if match[2]:
+                is_json = match[2] == 'topology'
+                text = json.dumps(proposal['topology'], indent=2) + '\n' if is_json else proposal['instructions_markdown']
+                body = text.encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json' if is_json else 'text/markdown; charset=utf-8')
+                self.send_header('Content-Disposition', 'attachment; filename="exercise.' + ('json' if is_json else 'md') + '"')
+                self.send_header('Content-Length', str(len(body)))
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self.reply(200, proposal)
+        else:
+            self.reply(404, {'error': 'Unknown automation route'})
+
     def do_GET(self):
         try:
             path = urlsplit(self.path).path
             if path == "/api/state":
                 self.reply(200, self.lab.snapshot())
+            elif path.startswith('/api/automation/'):
+                self.automation_get(path)
+            elif path == "/api/storage":
+                with self.lab.lock:
+                    nodes = copy.deepcopy(self.lab.topology['nodes'])
+                self.reply(200, self.lab.storage.report(nodes))
             elif re.fullmatch(r"/api/exports/[a-f0-9]{32}", path):
                 self.same_origin()
                 stream, filename = lab_backup.take(self.lab, path.rsplit("/", 1)[1])
@@ -922,6 +993,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise LabError("Backup must be between 1 byte and 8 GiB")
                 with self.lab.lock:
                     lab_backup.stopped(self.lab)
+                storage.require_space(self.lab.directory, length, operation='backup upload', error=LabError)
                 self.connection.settimeout(60)
                 with tempfile.TemporaryFile(dir=self.lab.directory) as stream:
                     while length:
@@ -960,7 +1032,19 @@ class Handler(BaseHTTPRequestHandler):
                 remaining -= len(chunk)
             data = json.loads(b"".join(chunks))
             path = urlsplit(self.path).path
-            if self.command == "PUT" and path == "/api/topology":
+            if self.command == 'POST' and path.startswith('/api/automation/'):
+                service = self.automation()
+                operations = {'preview': service.preview, 'apply': service.apply,
+                              'discard': service.discard, 'start-node': service.start_node,
+                              'console-read': service.console_read, 'console-send': service.console_send}
+                operation = operations.get(path.removeprefix('/api/automation/'))
+                if not operation:
+                    self.reply(404, {'error': 'Unknown automation route'})
+                    return
+                if not isinstance(data, dict):
+                    raise LabError('Expected an automation request object')
+                result = operation(**data)
+            elif self.command == "PUT" and path == "/api/topology":
                 result = self.lab.save(data)
             elif self.command == "POST" and re.fullmatch(r"/api/links/[\w-]+/carrier", path):
                 result = self.lab.set_link_carrier(path.split('/')[3], data)
@@ -1050,15 +1134,21 @@ def parse_args(argv=None):
     parser.add_argument('--allow-untested-frr', action='store_true',
                         default=os.environ.get('WL_ALLOW_UNTESTED_FRR', '0') == '1',
                         help='Allow a different local image under the FRR profile tag, with a compatibility warning')
+    parser.add_argument('--automation', action='store_true',
+                        default=os.environ.get('WL_AUTOMATION', '0') == '1',
+                        help='Enable topology automation for a trusted local MCP adapter')
     args = parser.parse_args(argv)
     if os.environ.get('WL_ALLOW_UNTESTED_FRR', '0') not in ('0', '1'):
         parser.error('WL_ALLOW_UNTESTED_FRR must be 0 or 1')
+    if os.environ.get('WL_AUTOMATION', '0') not in ('0', '1'):
+        parser.error('WL_AUTOMATION must be 0 or 1')
     return args
 
 
 def main():
     args = parse_args()
-    lab = Lab(args.data_dir, args.image_dir, allow_untested_frr=args.allow_untested_frr)
+    lab = Lab(args.data_dir, args.image_dir, allow_untested_frr=args.allow_untested_frr,
+              automation=args.automation)
     server = ThreadingHTTPServer((args.bind, args.port), Handler)
     server.daemon_threads = True
     server.lab, server.stopping = lab, threading.Event()

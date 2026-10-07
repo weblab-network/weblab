@@ -1,0 +1,152 @@
+{
+  "version": 1,
+  "name": "LL2S RSTP + FRR OSPF",
+  "nodes": [
+    {
+      "id": "nb8c59a183664391aa6a16348",
+      "type": "switch",
+      "name": "SW1",
+      "x": 580,
+      "y": 240,
+      "memory": 256,
+      "ethernet": 3,
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "startup_config": "hostname SW1\nspanning-tree mode rstp\nspanning-tree priority 4096\nvlan 1,100\ninterface eth0\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth1\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth2\n switchport mode access\n switchport access vlan 100\n spanning-tree portfast\n no shutdown\nexit\n",
+      "ipv4": "",
+      "gateway": ""
+    },
+    {
+      "id": "na85a0ead2e81e00fd13e161e",
+      "type": "router",
+      "name": "R1",
+      "x": 580,
+      "y": 80,
+      "memory": 512,
+      "ethernet": 1,
+      "image": "quay.io/frrouting/frr:10.7.1",
+      "startup_config": "frr defaults traditional\nhostname R1\nservice integrated-vtysh-config\n!\ninterface lo\n ip address 10.255.0.1/32\n ip ospf area 0\n ip ospf passive\n!\ninterface eth0\n description OSPF transit through LL2S VLAN 100\n ip address 10.100.0.1/24\n ip ospf area 0\n ip ospf priority 100\n ip ospf hello-interval 1\n ip ospf dead-interval 4\n!\nrouter ospf\n ospf router-id 10.255.0.1\n passive-interface default\n no passive-interface eth0\n!\n",
+      "ipv4": "",
+      "gateway": ""
+    },
+    {
+      "id": "ne9df0f7aad6b673258172fff",
+      "type": "switch",
+      "name": "SW2",
+      "x": 300,
+      "y": 500,
+      "memory": 256,
+      "ethernet": 3,
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "startup_config": "hostname SW2\nspanning-tree mode rstp\nspanning-tree priority 8192\nvlan 1,100\ninterface eth0\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth1\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth2\n switchport mode access\n switchport access vlan 100\n spanning-tree portfast\n no shutdown\nexit\n",
+      "ipv4": "",
+      "gateway": ""
+    },
+    {
+      "id": "na9f5ee98e5384ba364887b55",
+      "type": "router",
+      "name": "R2",
+      "x": 120,
+      "y": 660,
+      "memory": 512,
+      "ethernet": 1,
+      "image": "quay.io/frrouting/frr:10.7.1",
+      "startup_config": "frr defaults traditional\nhostname R2\nservice integrated-vtysh-config\n!\ninterface lo\n ip address 10.255.0.2/32\n ip ospf area 0\n ip ospf passive\n!\ninterface eth0\n description OSPF transit through LL2S VLAN 100\n ip address 10.100.0.2/24\n ip ospf area 0\n ip ospf priority 50\n ip ospf hello-interval 1\n ip ospf dead-interval 4\n!\nrouter ospf\n ospf router-id 10.255.0.2\n passive-interface default\n no passive-interface eth0\n!\n",
+      "ipv4": "",
+      "gateway": ""
+    },
+    {
+      "id": "n6e7f3047a918e111c8a8ff00",
+      "type": "switch",
+      "name": "SW3",
+      "x": 860,
+      "y": 500,
+      "memory": 256,
+      "ethernet": 3,
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "startup_config": "hostname SW3\nspanning-tree mode rstp\nspanning-tree priority 12288\nvlan 1,100\ninterface eth0\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth1\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth2\n switchport mode access\n switchport access vlan 100\n spanning-tree portfast\n no shutdown\nexit\n",
+      "ipv4": "",
+      "gateway": ""
+    },
+    {
+      "id": "n3c78abb20422ecf9c64c9f88",
+      "type": "router",
+      "name": "R3",
+      "x": 1040,
+      "y": 660,
+      "memory": 512,
+      "ethernet": 1,
+      "image": "quay.io/frrouting/frr:10.7.1",
+      "startup_config": "frr defaults traditional\nhostname R3\nservice integrated-vtysh-config\n!\ninterface lo\n ip address 10.255.0.3/32\n ip ospf area 0\n ip ospf passive\n!\ninterface eth0\n description OSPF transit through LL2S VLAN 100\n ip address 10.100.0.3/24\n ip ospf area 0\n ip ospf priority 0\n ip ospf hello-interval 1\n ip ospf dead-interval 4\n!\nrouter ospf\n ospf router-id 10.255.0.3\n passive-interface default\n no passive-interface eth0\n!\n",
+      "ipv4": "",
+      "gateway": ""
+    }
+  ],
+  "links": [
+    {
+      "id": "ldd1869702ab723e200e24886",
+      "a": {
+        "node": "nb8c59a183664391aa6a16348",
+        "port": "eth0"
+      },
+      "b": {
+        "node": "ne9df0f7aad6b673258172fff",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "l746fd836e41965027314945e",
+      "a": {
+        "node": "ne9df0f7aad6b673258172fff",
+        "port": "eth1"
+      },
+      "b": {
+        "node": "n6e7f3047a918e111c8a8ff00",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "l088a4254474c7de15fd6a30d",
+      "a": {
+        "node": "nb8c59a183664391aa6a16348",
+        "port": "eth1"
+      },
+      "b": {
+        "node": "n6e7f3047a918e111c8a8ff00",
+        "port": "eth1"
+      }
+    },
+    {
+      "id": "lf47126d80b4b92fcc8effbf0",
+      "a": {
+        "node": "nb8c59a183664391aa6a16348",
+        "port": "eth2"
+      },
+      "b": {
+        "node": "na85a0ead2e81e00fd13e161e",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "l809caa71cc3ec2a32ad23b7d",
+      "a": {
+        "node": "ne9df0f7aad6b673258172fff",
+        "port": "eth2"
+      },
+      "b": {
+        "node": "na9f5ee98e5384ba364887b55",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "l29224406b5393ccabc03b8d5",
+      "a": {
+        "node": "n6e7f3047a918e111c8a8ff00",
+        "port": "eth2"
+      },
+      "b": {
+        "node": "n3c78abb20422ecf9c64c9f88",
+        "port": "eth0"
+      }
+    }
+  ]
+}

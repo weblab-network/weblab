@@ -1,4 +1,4 @@
-"""Keep an Alpine/FRR console independent of its running container.
+"""Keep an Alpine/FRR/LL2S console independent of its running container.
 
 Only a successful shell logout is retried. Docker errors and repeated rapid
 exits fail visibly; this never starts, stops or recreates a container.
@@ -12,14 +12,19 @@ import sys
 import time
 
 
-def supervise(container, *, frr=False, run=subprocess.call, clock=time.monotonic, sleep=time.sleep):
+def supervise(container, *, frr=False, ll2s=False, run=subprocess.call, clock=time.monotonic, sleep=time.sleep):
     docker = shutil.which('docker')
     if not docker:
         print('Docker client unavailable', file=sys.stderr, flush=True)
         return 1
     exits = deque()
     command = [docker, 'exec', '-it']
-    if frr:
+    if ll2s:
+        command += [container, '/bin/sh', '-c',
+                    'll2sh; status=$?; [ "$status" -eq 0 ] || exit "$status"; '
+                    'printf "\\nLinux shell. Run ll2sh to return to the switching CLI.\\n"; '
+                    'exec /bin/sh']
+    elif frr:
         command += ['-e', 'VTYSH_PAGER=cat', container]
         command += ['/bin/sh', '-c',
                     'vtysh; status=$?; [ "$status" -eq 0 ] || exit "$status"; '
@@ -45,7 +50,9 @@ def supervise(container, *, frr=False, run=subprocess.call, clock=time.monotonic
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--frr', action='store_true', help='Open vtysh, then a Linux shell on CLI exit')
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument('--ll2s', action='store_true', help='Open ll2sh, then a Linux shell on CLI exit')
+    modes.add_argument('--frr', action='store_true', help='Open vtysh, then a Linux shell on CLI exit')
     parser.add_argument('container')
     args = parser.parse_args()
     # Docker's attached TTY handles Ctrl+C for foreground guest commands.
@@ -65,7 +72,7 @@ def main():
         child = subprocess.Popen(command)
         return child.wait()
 
-    raise SystemExit(supervise(args.container, frr=args.frr, run=run))
+    raise SystemExit(supervise(args.container, frr=args.frr, ll2s=args.ll2s, run=run))
 
 
 if __name__ == '__main__':

@@ -13,8 +13,10 @@ import uuid
 import zipfile
 
 import frr
+import ll2s_device
 import vios
 import disk_delta
+import storage
 
 MAX_BYTES = 8 * 1024**3
 MAX_FILES = 4096
@@ -71,6 +73,9 @@ def saved_path(node, relative):
     """Allow device storage only; never import launcher inputs, logs or symlinks."""
     if not safe_path(relative) or node['type'] == 'pc':
         return False
+    if ll2s_device.is_ll2s(node):
+        config = ll2s_device.config_path(node, Path('.'))
+        return relative in (config.as_posix(), ll2s_device.identity_path(config).as_posix())
     if frr.is_frr(node):
         return relative == frr.config_path(node, Path('.')).as_posix()
     if vios.is_qemu(node):
@@ -126,6 +131,32 @@ def create(lab, include_logs=False, compact_veos=True):
         expire(lab)
         if len(lab.exports) >= 2:
             raise ValueError('Download the pending backup first, or wait 15 minutes for it to expire')
+        # Budget uncompressed source lengths: compression is not guaranteed.
+        # Compact vEOS may also need one full-sized temporary encoding at a time.
+        needed, scratch = 0, 0
+        for node in lab.topology['nodes']:
+            directory = lab.directory / 'nodes' / node['id']
+            if directory.is_symlink():
+                raise ValueError('Device storage cannot be a symlink')
+            for parent, dirs, files in os.walk(directory, followlinks=False):
+                dirs[:] = [d for d in dirs if not (Path(parent) / d).is_symlink()]
+                for name in files:
+                    path = Path(parent) / name
+                    if not saved_path(node, path.relative_to(directory).as_posix()):
+                        continue
+                    info = path.lstat()
+                    if not stat.S_ISREG(info.st_mode):
+                        raise ValueError('Device storage must contain regular files')
+                    needed += info.st_size
+                    if compact_veos and vios.is_veos(node):
+                        scratch = max(scratch, info.st_size)
+            if include_logs:
+                for name in LOG_NAMES:
+                    path = directory / name
+                    if path.is_file() and not path.is_symlink():
+                        needed += min(path.stat().st_size, LOG_BYTES)
+        storage.require_space(lab.directory, (needed + scratch) * 102 // 100,
+                              operation='ZIP export (conservative uncompressed estimate)')
         stream = tempfile.TemporaryFile(dir=lab.directory)
         try:
             manifest = {'format': 'web-netlab-backup', 'version': 1, 'images': [], 'files': []}
@@ -134,6 +165,11 @@ def create(lab, include_logs=False, compact_veos=True):
                 from lab_server import run, LabError
                 identity = frr.archive_image(run, LabError, lab.allow_untested_frr)
                 manifest.update(version=2, containers=[identity])
+            if any(ll2s_device.is_ll2s(n) for n in lab.topology['nodes']):
+                from lab_server import run, LabError
+                manifest['version'] = 2
+                for name in sorted({n['image'] for n in lab.topology['nodes'] if ll2s_device.is_ll2s(n)}):
+                    manifest.setdefault('containers', []).append(ll2s_device.export_image(lab, run, LabError, name))
             for node in lab.topology['nodes']:
                 vios.boot_image(node, lab.image_dir, ValueError)
             for name in sorted(vios.required_images(lab.topology['nodes'])):
@@ -331,19 +367,38 @@ def restore(lab, stream, run):
                 log_records = manifest.get('logs', [])
                 if not isinstance(image_records, list) or not isinstance(file_records, list) or not isinstance(log_records, list):
                     raise ValueError('Invalid backup manifest')
-                has_frr = any(frr.is_frr(n) for n in topology['nodes'])
+                required_space = 0
+                for record in file_records:
+                    if not isinstance(record, dict):
+                        raise ValueError('Invalid saved file record')
+                    size = record.get('restored_size') if record.get('encoding') else record.get('size')
+                    if type(size) is not int or not 0 <= size <= MAX_BYTES:
+                        raise ValueError('Invalid restored device file size')
+                    required_space += size
+                if required_space > MAX_BYTES:
+                    raise ValueError('Restored backup exceeds the 8 GiB limit')
+                # Uploaded ZIP and old storage are still present; free space
+                # must accommodate a complete staged replacement beside them.
+                storage.require_space(lab.directory, required_space, operation='staged ZIP restore')
+                profiles = []
+                if any(frr.is_frr(n) for n in topology['nodes']):
+                    profiles.append((frr.IMAGE, lambda: frr.archive_image(run, ValueError, lab.allow_untested_frr)))
+                for name in sorted({n['image'] for n in topology['nodes'] if ll2s_device.is_ll2s(n)}):
+                    profiles.append((name, lambda name=name: ll2s_device.archive_image(run, ValueError, name)))
                 containers = manifest.get('containers', [])
-                valid = (isinstance(containers, list) and len(containers) == 1 and
-                         isinstance(containers[0], dict) and set(containers[0]) == {'name', 'digest'} and
-                         containers[0]['name'] == frr.IMAGE and
-                         (containers[0]['digest'] == frr.DIGEST or
-                          re.fullmatch(r'sha256:[a-f0-9]{64}', str(containers[0]['digest'])))) if has_frr else containers == []
-                if not valid or (has_frr and manifest['version'] != 2):
-                    raise ValueError('Missing or mismatched FRR container image metadata')
-                if has_frr:
-                    local = frr.archive_image(run, ValueError, lab.allow_untested_frr)
-                    if containers != [local]:
-                        raise ValueError('FRR archive requires a different container image; install the exact saved image. '
+                valid = (isinstance(containers, list) and len(containers) == len(profiles) and
+                         all(isinstance(c, dict) and set(c) == {'name', 'digest'} and
+                             isinstance(c['name'], str) and
+                             (re.fullmatch(r'sha256:[a-f0-9]{64}', str(c['digest'])) or
+                              (c['name'] == frr.IMAGE and c['digest'] == frr.DIGEST))
+                             for c in containers) and
+                         sorted(c['name'] for c in containers) == sorted(p[0] for p in profiles))
+                if not valid or (profiles and manifest['version'] != 2):
+                    raise ValueError('Missing or mismatched container image metadata')
+                for name, inspect in profiles:
+                    local = inspect()
+                    if next(c for c in containers if c['name'] == name) != local:
+                        raise ValueError(f'{name} archive requires a different container image; install the exact saved image. '
                                          'Allowing untested images does not bypass archive identity checks.')
                 required = vios.required_images(topology['nodes'])
                 for node in topology['nodes']:
@@ -435,6 +490,21 @@ def restore(lab, stream, run):
                 if names != expected:
                     raise ValueError('Backup contains unlisted files')
                 for node in topology['nodes']:
+                    if ll2s_device.is_ll2s(node):
+                        config = ll2s_device.config_path(node, stage / 'nodes' / node['id'])
+                        if config.exists():
+                            data = ll2s_device.read_config(config)
+                            identity = next(c for c in containers if c['name'] == node['image'])
+                            if ll2s_device.identity_path(config).exists():
+                                if ll2s_device.saved_image(config, node['image']) != identity:
+                                    raise ValueError('LL2S saved image identity does not match the archive')
+                            else:
+                                # Older ZIPs carry identity only in the validated manifest.
+                                ll2s_device.write_identity(config, data, identity['digest'])
+                            config.chmod(0o600)
+                            ll2s_device.identity_path(config).chmod(0o600)
+                        elif ll2s_device.identity_path(config).exists():
+                            raise ValueError('LL2S image identity exists without its saved configuration')
                     if frr.is_frr(node):
                         config = frr.config_path(node, stage / 'nodes' / node['id'])
                         if config.exists():

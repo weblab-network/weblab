@@ -1,5 +1,9 @@
 # Consoles, shared sessions and floating windows
 
+External agents can observe and optionally type through the same shared console
+using the [MCP console tools](automation.md#shared-console-access). They respect
+input locks and never automatically take over a browser's lock.
+
 [Help index](README.md) · [Project overview](../README.md)
 
 ## Opening and closing consoles

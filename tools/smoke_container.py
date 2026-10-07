@@ -25,6 +25,10 @@ def main():
                 with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/state', timeout=2) as response:
                     state = json.load(response)
                 assert state['topology']['nodes'] == [], state
+                assert len(state['storage']['filesystems']) == 3, state
+                with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/storage', timeout=2) as response:
+                    report = json.load(response)
+                assert report['nodes'] == [] and report['complete'], report
                 print('PASS: packaged server starts and serves an empty lab')
                 break
             except (OSError, ValueError):

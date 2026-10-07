@@ -28,10 +28,13 @@ See [installation](installation.md).
   incomplete. Shut down Junos through its CLI before Weblab Stop.
 - FRR supports routing, initial/saved configuration and ZIPs; live config capture,
   general Linux filesystem persistence and STP/MSTP switching are not implemented.
+- LL2S uses Open vSwitch for VLANs and STP/RSTP. One tree covers all VLANs;
+  BPDU guard and live config capture are unavailable. Save with commit, then
+  write memory; only startup configuration persists, not the general filesystem.
 - Alpine PCs have one interface and ephemeral filesystems. They do not provide
   persistent server/container volumes through this UI.
 - Saved ZIP preserves supported storage, not VM memory or unsaved running config.
-- Startup snippets affect fresh Cisco/FRR storage only. Existing storage wins.
+- Startup snippets affect fresh Cisco/FRR/LL2S storage only. Existing storage wins.
 - Topology import accepts JSON, not YAML. Limits are 64 nodes, 256 links, 1 MB
   topology JSON and 16 KiB per startup snippet; ZIP limits are documented in
   [backups](backups.md).
@@ -50,6 +53,6 @@ Phone keyboard/fullscreen behavior depends on the browser and available viewport
 
 Directional frame loss is available across supported device families. Carrier
 Unplug/Reconnect is limited to IOSv/IOSvL2 and the two exact tested IOL 17.18.02
-profiles, plus the tested FRR container profile. The UI reports requested state, not an instant guest acknowledgment.
+profiles, plus the FRR and LL2S container profiles. The UI reports requested state, not an instant guest acknowledgment.
 Faults are runtime-only and are not included in backups. Stop the lab before
 changing cable endpoints.

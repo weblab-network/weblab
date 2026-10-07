@@ -29,6 +29,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y perl qemu-system-x86 qemu-utils mtools
       - name: Backend regression tests
         run: python3 -m unittest discover -s tests -v
+      - name: MCP adapter integration tests
+        run: |
+          python3 -m venv /tmp/weblab-mcp-tests
+          /tmp/weblab-mcp-tests/bin/pip install -r requirements-mcp.txt
+          /tmp/weblab-mcp-tests/bin/python tests/mcp_smoke.py
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:

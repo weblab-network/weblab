@@ -34,7 +34,7 @@ class TapBridge(Bridge):
             except BaseException:
                 tap.close()
                 raise
-        print('FRR Ethernet bridge ready', flush=True)
+        print('Container Ethernet bridge ready', flush=True)
 
     def from_iou(self):
         data = self.iou.recv(MAX_FRAME + 9)

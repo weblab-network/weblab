@@ -7,6 +7,13 @@ an exercise. The validator checks structure; device boot and protocol verificati
 are separate steps. Importing a file replaces the selected topology, so export
 any current work first.
 
+For agent access to a running Weblab server, see the optional
+[MCP adapter](automation.md). Its `preview_topology` accepts proposal-local node
+aliases (`id`, or `name` if omitted) and optional link IDs. The server returns a
+normalized topology with fresh persistent IDs and rewritten link endpoints. Use
+that returned JSON for file imports; the saved-file contract below still applies
+to ordinary imports and the offline validator.
+
 ## Design an original exercise
 
 Use JSON. YAML is not an accepted import format. Deliver a complete importable
@@ -59,14 +66,14 @@ Each node uses:
 | `id` | Unique string, 1–40 ASCII letters/digits/underscores/hyphens |
 | `name` | Display label, 1–40 characters |
 | `type` | `router`, `switch` or `pc` |
-| `image` | Exact `.bin` or `.qcow2` filename, or supported FRR container tag; PCs use `alpine:latest` or another installed Alpine tag |
+| `image` | Exact `.bin` or `.qcow2` filename, or supported FRR/LL2S container tag; PCs use `alpine:latest` or another installed Alpine tag |
 | `x`, `y` | Integer canvas center coordinates; x 70–2330, y 60–1540 |
 | `memory` | Integer MB, 256–8192; normally 1024 for Cisco devices |
 | `ethernet` | IOL: 1–8 slots, four ports per slot; IOSv: 1–16 individual interfaces |
 | `iol_l1` | Optional boolean, default `false`; `true` enables cable-unplug control only for the two tested IOL 17.18.02 filenames. May use a full CPU core per node; omit for ordinary forwarding/frame-loss exercises. |
 | `ipv4` | PC startup address and prefix, e.g. `192.0.2.10/24`; otherwise empty |
 | `gateway` | PC gateway in its configured IPv4 subnet, or empty |
-| `startup_config` | Optional Cisco or FRR configuration-file text, up to 16 KiB UTF-8; see precedence below |
+| `startup_config` | Optional Cisco, FRR or LL2S configuration-file text, up to 16 KiB UTF-8; see precedence below |
 
 Omit `iol_id` from new lab files; the importer allocates an available application
 ID. Defaults exist for position/memory/interface count, but specify them for a
@@ -189,3 +196,18 @@ Use FRR syntax in `startup_config`, including interface addressing and routing.
 Saved configuration takes precedence. Do not include shell commands or daemon
 startup scripts. See [FRR OSPF JSON](../examples/frr-ospf.json) and
 [exercise](../examples/frr-ospf.md); [profile details](devices.md#frrouting).
+
+## LL2S switches
+
+Use `type: "switch"`, `image: "ghcr.io/weblab-network/ll2s:0.2.0"`, 256 MB or more, and one to eight
+interfaces named `eth0`–`eth7` (default four). Build the OVS-based LL2S image on
+the Docker host and load its `openvswitch` kernel module first. No KVM is needed.
+The MCP catalog reports family `ll2s` and local image availability.
+
+Without a snippet, a fresh switch enables all ports in access VLAN 1 with RSTP.
+An explicit `startup_config` contains LL2S configuration-file commands, e.g.
+`hostname SW1\nspanning-tree mode rstp\nvlan 1,10\ninterface eth0\n switchport mode access\n switchport access vlan 10\nexit\n`.
+Do not include `commit` or `write memory` in a snippet. Saved startup files take
+precedence; in an interactive console use `commit` followed by `write memory`.
+LL2S supports saved JSON/ZIP export but not live configuration capture. See
+[the LL2S exercise](../examples/ll2s-rstp.md) and [device profile](devices.md#ll2s-linux-layer-2-switch).

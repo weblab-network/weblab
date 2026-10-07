@@ -39,7 +39,7 @@ docker compose -f compose.prebuilt.yaml -f compose.kvm.yaml pull
 docker compose -f compose.prebuilt.yaml -f compose.kvm.yaml up -d
 ```
 
-Omit the KVM override for IOL-only installations. Open **http://127.0.0.1:8080/**,
+Omit the KVM override for IOL/FRR/LL2S/Alpine-only installations. Open **http://127.0.0.1:8080/**,
 or use the SSH tunnel above. Public images require no registry login.
 Use `compose.prebuilt.yaml` instead of `compose.yaml`, not as an override of it.
 Keep the same Compose files and directory on subsequent `logs`, `pull`, `up` and
@@ -51,6 +51,30 @@ pin a version or digest when you want deliberate upgrades. `edge` follows main;
 `preview` is used while testing the container publication branch. Neither is a
 stable release. Save configurations, export a ZIP and stop the lab before pulling
 and recreating an existing deployment. Preserve its image/data mounts.
+
+## Container-only switching and routing
+
+Weblab v0.4.0 adds the [LL2S switch profile](devices.md#ll2s-linux-layer-2-switch).
+Use it with FRR routers and Alpine PCs without KVM or vendor images. On the
+Docker host, in a checkout containing `compose.prebuilt.yaml`:
+
+```sh
+sudo modprobe openvswitch
+docker pull ghcr.io/weblab-network/ll2s:0.2.0
+docker pull quay.io/frrouting/frr:10.7.1
+docker pull alpine:latest
+mkdir -p images lab-data
+docker compose -f compose.prebuilt.yaml pull
+docker compose -f compose.prebuilt.yaml up -d
+```
+
+Open http://127.0.0.1:8080/ and import [the LL2S/FRR topology](../examples/ll2s-frr-ospf.json).
+Its [exercise](../examples/ll2s-frr-ospf.md) explains RSTP and OSPF checks. The three
+switches and three routers have a combined memory limit of 2304 MiB, plus overhead.
+Use a separate directory/data volume for a new workspace; import replaces the
+current topology and requires stopped devices. Load the host `openvswitch` module
+after reboot or configure normal module loading. Docker pulls happen on the same
+host Docker Engine that Weblab controls. No retagging or LL2S build is required.
 
 ## Run the prebuilt image without Compose
 
@@ -75,7 +99,7 @@ it only fails to resolve names if no DNS service answers at that address.
 It does not block internet access or change the host Docker daemon’s DNS
 for image pulls. See [Docker DNS services](https://docs.docker.com/engine/network/#dns-services).
 
-Omit `--device /dev/kvm` for IOL-only labs. Use `docker logs -f weblab` to inspect
+Omit `--device /dev/kvm` for IOL/FRR/LL2S/Alpine-only labs. Use `docker logs -f weblab` to inspect
 startup and `docker stop weblab` to stop gracefully. Keep the same named volumes
 when recreating the container to upgrade it. Uploaded images live in `/iou` and
 saved lab state in `/data`; without these mounts, removing a container also

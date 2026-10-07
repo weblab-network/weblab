@@ -14,6 +14,7 @@ network feature works. Supply your own images and any required licenses.
 | Virtual EXOS | `EXOS-VM_33.1.1.31.qcow2` | 1024 MB / 1 | Mgmt + 1–12 | Yes | No / no | Yes |
 | Arista vEOS-lab | `vEOS64-lab-4.36.1F.qcow2` + serial Aboot 8.0.2 | 6144 MB / 2 | Management1 + Ethernet1–15 | Yes | No / no | Yes |
 | FRRouting container | `quay.io/frrouting/frr:10.7.1` | 512 MB container limit | eth0–eth7 | No | Yes / saved only | Saved frr.conf |
+| LL2S container | `ghcr.io/weblab-network/ll2s:0.2.0` (OVS-based 0.2.0) | 256 MB container limit | eth0–eth7; default four | No | Yes / saved only | Saved startup.conf |
 | Juniper vJunos-switch | `vJunos-switch-26.2R1.7.qcow2` | 5120 MB / 4 | fxp0 + ge-0/0/0–14 | Intel KVM, bare metal | No / no | Disk overlay |
 | Juniper vJunosEvolved | `vJunosEvolved-26.2R1.7-EVO.qcow2` | 8192 MB / 4 | re0:mgmt-0 + et-0/0/0–14 | Yes; UEFI | No / no | Disk overlay |
 | Alpine PC | locally installed `alpine:latest` | Host Docker container | eth0 | No | IPv4/gateway fields only | Settings only; no PC filesystem |
@@ -393,3 +394,117 @@ in user testing. The workspace asks for confirmation when stopping running Junos
 nodes; Cancel lets you return to their consoles. The warning does not execute
 shutdown or verify that it completed. Direct API calls and container/host
 shutdowns bypass the browser warning.
+
+## LL2S (Linux Layer 2 Switch)
+
+Select a **Switch**, choose **`ghcr.io/weblab-network/ll2s:0.2.0`** in the Inspector, then Apply and Start.
+The profile defaults to 256 MB and four interfaces, with one to eight supported
+(`eth0`–`eth7`). It runs LL2S's independent `ll2sh` CLI and Open vSwitch; no FRR
+or KVM is required. The image must already exist on the Docker host:
+
+```sh
+docker pull ghcr.io/weblab-network/ll2s:0.2.0
+sudo modprobe openvswitch
+```
+
+Use the OVS-based LL2S 0.2.0 image. The earlier mstpd-based prototype is not
+compatible with this profile. LL2S source and build instructions are available
+at [weblab-network/ll2s](https://github.com/weblab-network/ll2s). Existing labs
+using the local `ll2s:dev` selector remain supported with their original saved
+storage and exact image checks; it appears in the catalog when used by the lab.
+Changing a node’s image selector selects separate saved storage, so retain its
+existing selector when preserving a configured lab. After updating Weblab's source,
+rebuild/recreate the Weblab service to make the profile available; stop and save your lab first.
+
+A fresh switch without `startup_config` starts with RSTP and every selected
+port enabled as an access port in VLAN 1. An explicit snippet replaces this
+baseline, so declare its VLANs and configure each desired port. Snippets use
+LL2S configuration-file syntax, without prompts or operational commands such
+as `configure terminal`, `commit` or `write memory`. Saved startup configuration
+always takes precedence over the snippet on subsequent starts.
+
+In the interactive console, apply edits with **`commit`**, then use **`write
+memory`** to preserve them across Stop/Start. Interactive `end` also commits
+pending edits before returning to exec mode; it does not save startup state.
+Each commit briefly interrupts managed ports. Top-level `exit` opens an Alpine
+shell; run `ll2sh` to return. Shell logout reopens the console without restarting
+the switch. Multiple browser windows share one CLI and the normal input lock.
+
+LL2S ports use one passthru macvlan per isolated TAP, so downstream MAC addresses,
+802.1Q frames and BPDUs reach the switch. Docker documents the available modes
+in its [macvlan driver reference](https://docs.docker.com/engine/network/drivers/macvlan/).
+Weblab attaches, renames and clears provisioning addresses from all ports before
+starting LL2S. The node requires only `NET_ADMIN` and `NET_RAW` beyond Docker's
+default capabilities. Cable unplug/reconnect and directional traffic loss are
+available in the cable controls.
+
+One spanning tree covers all VLANs. LL2S currently supports access/trunk VLANs,
+STP/RSTP and portfast; BPDU guard and per-VLAN spanning trees are not supported.
+See [the RSTP/VLAN example](../examples/ll2s-rstp.md) for a three-switch exercise.
+
+When increasing an existing switch's interface count, ports keep their Linux
+names (`eth0`, `eth1`, etc.). The saved configuration is preserved: newly added
+ports exist in the container but are not automatically added to the saved bridge.
+Configure each new port in `ll2sh`, then `commit` and `write memory`.
+If the UI shows `0/0`, `0/1`, or Ethernet slots for LL2S after a Weblab upgrade,
+reload the page; an already-open tab may still be running the old device mapping.
+
+### LL2S discovery and monitoring
+
+The released LL2S image includes LLDP and management/SNMP support. Configure
+these features inside the switch. After updating an image under the same selector,
+save (`wr`), Stop, then Start the switches to use it.
+A running container keeps its original image until recreated.
+
+LLDP is off by default, including for older snippets. Enable it with:
+
+```text
+configure terminal
+lldp run
+end
+wr
+show lldp neighbors
+show lldp neighbors detail
+```
+
+Managed ports default to transmit and receive once globally enabled. Interface
+commands `no lldp transmit` / `no lldp receive` disable either direction.
+A blocked RSTP port can still discover its direct neighbor. Allow time for
+advertisements after boot or commits; FRR needs its own LLDP agent to advertise.
+
+For monitoring, configure one management IPv4 endpoint on a declared VLAN:
+
+```text
+configure terminal
+vlan 100 name MANAGEMENT
+management vlan 100
+management ip address 10.100.0.11/24
+ip default-gateway 10.100.0.1
+snmp-server community labpublic ro
+snmp-server source 10.100.0.0/24
+end
+wr
+show management
+show snmp
+```
+
+Use a unique address per switch and carry VLAN 100 through the appropriate
+access/trunk ports to your monitoring host. Omit the gateway for same-subnet
+polling. This is one management interface (`ll2s-mgmt`), not general inter-VLAN
+routing or an extra cable port. Leave Weblab's PC-only `ipv4`/`gateway` fields
+empty on switch nodes. No host UDP port publishing or additional capabilities
+are required; polling travels over the lab's links.
+
+Net-SNMP listens on the management address, UDP 161. The implementation supports
+read-only SNMPv2c system/interface counters and LLDP tables when discovery is
+active. For example, from a lab monitoring host with Net-SNMP tools:
+
+```sh
+snmpget -v2c -c labpublic 10.100.0.11 .1.3.6.1.2.1.1.5.0
+```
+
+SNMPv3, SET, traps and OVS VLAN/STP MIBs are not implemented. Interface indices
+can change after recreation; rediscover them by interface name. Communities
+are plaintext in configuration text and exports. `show snmp` omits the community.
+LLDP, management and SNMPv2c settings use the existing saved startup file; no
+OVS database or runtime SNMP state is restored by Weblab.

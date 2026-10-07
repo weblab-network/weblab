@@ -25,7 +25,7 @@ of optical power levels or every physical fiber/transceiver failure mode.
 
 Unplug/Reconnect is available for running **IOSv/IOSvL2** and the tested IOL
 profiles **`cisco_iol-17.18.02.bin` / `cisco_iol-l2-17.18.02.bin`**, plus the
-[FRR container profile](devices.md#frrouting). Other IOL
+[FRR](devices.md#frrouting) and [LL2S](devices.md#ll2s-linux-layer-2-switch) container profiles. Other IOL
 filenames/releases, EXOS, Arista and Alpine retain directional frame-loss controls
 only. No guest console commands, IOS `shutdown` or saved configuration changes
 are involved. Unplug/reconnect both supported endpoints if both guests should
@@ -43,9 +43,9 @@ Existing labs/archives without this field default to off on their next start;
 running processes are not changed. The setting cannot change while any node runs.
 This saved launch preference is separate from the temporary unplug/block faults.
 
-FRR changes carrier on the port’s parent TAP; the container sees carrier loss
+FRR and LL2S change carrier on the port’s parent TAP; the container sees carrier loss
 while its interface remains administratively enabled. It does not issue a
-shutdown command inside FRR.
+shutdown command inside the device.
 
 IOSv uses QEMU's local QMP `set_link` on a named e1000 NIC. See
 [QEMU set_link](https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html#command-set_link)

@@ -272,3 +272,9 @@ body{height:var(--app-height,100vh)}
 
 .setting-checkbox{display:flex;align-items:center;gap:8px;line-height:1.5}
 .setting-checkbox input[type=checkbox]{width:auto;margin:0;flex-shrink:0;accent-color:var(--accent)}
+
+/* Storage remains accessible from docked and floating topology workspaces. */
+[data-storage][data-level="low"],[data-storage][data-level="unknown"]{color:var(--orange);border-color:var(--orange)}
+[data-storage][data-level="critical"]{color:#ffaaaa;border-color:#ffaaaa}
+#storage-dialog{width:min(760px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto}
+.storage-table{overflow-x:auto}.storage-table table{width:100%;border-collapse:collapse;text-align:left}.storage-table td,.storage-table th{padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap}.storage-table td:first-child{white-space:pre-line;overflow-wrap:anywhere;min-width:140px}.storage-table th{color:var(--muted);font-size:12px}

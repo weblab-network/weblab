@@ -16,8 +16,10 @@ workspace and its supported profiles.
 6. [Link failures](link-actions.md) — directional frame loss and supported carrier controls.
 7. [Saving and restoring labs](backups.md) — JSON, configuration snippets, ZIP, logs and state precedence.
 8. [Creating practice labs](practice-labs.md) — topology JSON contract and authoring guidance.
-9. [Troubleshooting](troubleshooting.md) — common setup, console, storage and networking issues.
-10. [Supported scope and limitations](limitations.md) — deployment boundaries and known gaps.
+9. [Storage monitoring](storage.md) — filesystem warnings, per-node usage and growth measurements.
+10. [AI assistants and MCP](automation.md) — optional agent discovery, topology previews and approved starts.
+11. [Troubleshooting](troubleshooting.md) — common setup, console, storage and networking issues.
+12. [Supported scope and limitations](limitations.md) — deployment boundaries and known gaps.
 
 [Prebuilt container images and EXOS demo](containers.md) provide an alternative
 to building locally, including a wired introductory topology and bundled EXOS image.
@@ -25,6 +27,7 @@ to building locally, including a wired introductory topology and bundled EXOS im
 ## Examples and contributors
 
 - [Starter lab](../examples/starter.md) and [JSON](../examples/starter.json).
+- [LL2S RSTP/VLAN practice](../examples/ll2s-rstp.md) and [JSON](../examples/ll2s-rstp.json).
 - [FRR OSPF practice](../examples/frr-ospf.md) and [JSON](../examples/frr-ospf.json), without KVM/vendor images.
 - [OSPF practice](../examples/ospf-practice.md) and [JSON](../examples/ospf-practice.json).
 - [Development and testing](development.md).

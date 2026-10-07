@@ -1,0 +1,127 @@
+{
+  "name": "LL2S RSTP and VLANs",
+  "nodes": [
+    {
+      "id": "s1",
+      "name": "SW1",
+      "type": "switch",
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "ethernet": 3,
+      "startup_config": "hostname SW1\nspanning-tree mode rstp\nspanning-tree priority 4096\nvlan 1,10,20\ninterface eth0\n switchport mode trunk\n switchport trunk allowed vlan 10,20\nexit\ninterface eth1\n switchport mode trunk\n switchport trunk allowed vlan 10,20\nexit\ninterface eth2\n switchport mode access\n switchport access vlan 10\n spanning-tree portfast\nexit\n",
+      "x": 300,
+      "y": 250
+    },
+    {
+      "id": "p1",
+      "name": "PC1",
+      "type": "pc",
+      "ipv4": "10.0.10.1/24",
+      "x": 300,
+      "y": 550
+    },
+    {
+      "id": "s2",
+      "name": "SW2",
+      "type": "switch",
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "ethernet": 3,
+      "startup_config": "hostname SW2\nspanning-tree mode rstp\nspanning-tree priority 8192\nvlan 1,10,20\ninterface eth0\n switchport mode trunk\n switchport trunk allowed vlan 10,20\nexit\ninterface eth1\n switchport mode trunk\n switchport trunk allowed vlan 10,20\nexit\ninterface eth2\n switchport mode access\n switchport access vlan 20\n spanning-tree portfast\nexit\n",
+      "x": 700,
+      "y": 250
+    },
+    {
+      "id": "p2",
+      "name": "PC2",
+      "type": "pc",
+      "ipv4": "10.0.10.2/24",
+      "x": 700,
+      "y": 550
+    },
+    {
+      "id": "s3",
+      "name": "SW3",
+      "type": "switch",
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "ethernet": 3,
+      "startup_config": "hostname SW3\nspanning-tree mode rstp\nspanning-tree priority 12288\nvlan 1,10,20\ninterface eth0\n switchport mode trunk\n switchport trunk allowed vlan 10,20\nexit\ninterface eth1\n switchport mode trunk\n switchport trunk allowed vlan 10,20\nexit\ninterface eth2\n switchport mode access\n switchport access vlan 10\n spanning-tree portfast\nexit\n",
+      "x": 1100,
+      "y": 250
+    },
+    {
+      "id": "p3",
+      "name": "PC3",
+      "type": "pc",
+      "ipv4": "10.0.10.3/24",
+      "x": 1100,
+      "y": 550
+    }
+  ],
+  "links": [
+    {
+      "id": "s12",
+      "a": {
+        "node": "s1",
+        "port": "eth0"
+      },
+      "b": {
+        "node": "s2",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "s23",
+      "a": {
+        "node": "s2",
+        "port": "eth1"
+      },
+      "b": {
+        "node": "s3",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "s13",
+      "a": {
+        "node": "s1",
+        "port": "eth1"
+      },
+      "b": {
+        "node": "s3",
+        "port": "eth1"
+      }
+    },
+    {
+      "id": "access1",
+      "a": {
+        "node": "s1",
+        "port": "eth2"
+      },
+      "b": {
+        "node": "p1",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "access2",
+      "a": {
+        "node": "s2",
+        "port": "eth2"
+      },
+      "b": {
+        "node": "p2",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "access3",
+      "a": {
+        "node": "s3",
+        "port": "eth2"
+      },
+      "b": {
+        "node": "p3",
+        "port": "eth0"
+      }
+    }
+  ]
+}

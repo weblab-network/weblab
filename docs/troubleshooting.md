@@ -125,6 +125,18 @@ supported. Neither source silently falls back to another source.
 If live export reports that console logging could not be restored, follow its
 manual recovery commands and verify the result before saving device state.
 
+## LL2S shows Cisco-style interface numbers after an upgrade
+
+LL2S uses `eth0`–`eth7`, not `N/M` slot/port names. A browser tab opened before
+LL2S support was deployed can continue running the previous JavaScript after
+the server is rebuilt. Reload the page (or use a hard refresh) to load the new
+profile. This reconnects the browser consoles without restarting devices.
+An old frontend's four-slot display can incorrectly suggest 16 ports; the
+current profile's interface count of four means `eth0`–`eth3`.
+
+Increasing the interface count does not modify an existing saved LL2S config.
+Add the new `ethN` port to the desired VLAN through `ll2sh`, commit and save.
+
 ## Reporting a bug
 
 Include the revision (`git rev-parse --short HEAD`), host OS, Docker/Compose and

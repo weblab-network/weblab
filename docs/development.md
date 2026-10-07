@@ -7,10 +7,12 @@
 | Path | Purpose |
 | --- | --- |
 | `lab_server.py` | HTTP API, validation, topology persistence, process/resource lifecycle |
-| `container_console.py` | Alpine/FRR console recovery and vtysh-to-shell access without container restart |
+| `container_console.py` | Alpine/FRR/LL2S console recovery and vtysh-to-shell access without container restart |
 | `disk_delta.py` | Lossless vEOS backup block references to checksum-verified base images |
+| `ll2s_device.py` | Independent LL2S/OVS switch container, passthru ports and saved startup configuration |
 | `frr.py`, `tap_net.py` | Pinned FRR container lifecycle, saved configuration and multiport TAP fabric adapter |
 | `lab_backup.py` | ZIP validation, export, staged restore and recovery |
+| `storage.py`, `web/storage.js` | Metadata-only usage reports, capacity preflights and storage dialog |
 | `vios.py`, `qemu_net.py`, `qmp.py` | QEMU profiles, Ethernet transport and carrier control |
 | `link_fabric.py`, `iol_l1.py` | Directional frame loss and supported IOL carrier signaling |
 | `initial_config.py`, `saved_config.py` | Fresh-device seeds and saved Cisco config extraction |
@@ -22,7 +24,8 @@
 | `examples/` | Original starter and OSPF exercises |
 | `tests/` | Backend, browser and opt-in image integration checks |
 
-There is no frontend build step and no third-party Python package dependency.
+There is no frontend build step and the core server has no third-party Python package dependency.
+The optional external MCP adapter has a separate SDK environment.
 Docker copies source into the image; rebuild/recreate to deploy changes. Never
 use an active lab's data directory as a test fixture. Do not read active guest
 storage or bypass QEMU disk locks. Run node-launching suites sequentially.
@@ -53,11 +56,13 @@ cd ..
 node tests/console_open_mode.cjs
 node tests/topology_windows.cjs
 node tests/topology_multiselect.cjs
+node tests/ll2s_ui.cjs
 node tests/junos_ui.cjs
 node tests/iol_l1_ui.cjs
 node tests/console_clipboard.cjs
 node tests/instructions.cjs
 node tests/workspace_features.cjs
+node tests/storage_ui.cjs
 ```
 
 Linux browsers also need system libraries; Playwright's `install --with-deps
@@ -98,6 +103,7 @@ free Docker provisioning subnets/application IDs.
 
 | Script | Additional requirements / coverage |
 | --- | --- |
+| `tests/ll2s_native.py` | Root, Docker/TAP, local LL2S 0.2.0 and Alpine, host OVS module; RSTP triangle, VLAN isolation, carrier, shared CLI and saved ZIP restore (reserves IDs 900–905) |
 | `tests/iol_l1_native.py` | Root, private mount namespace, exact IOL router/L2 profiles and local iourc; launcher/API carrier and ping |
 | `tests/iol_l1_switching_native.py` | Same, two switches; repeated stop/export/start and STP (not archive restoration) |
 | `tests/iol_vlan_backup_native.py` | Root, IOL L2 image and supplied license; delete source storage, restore ZIP under different IDs, verify VLANs/STP/ping |
@@ -253,3 +259,56 @@ verify Ctrl+C, Ctrl+Z and Ctrl+backslash through the PTY/WebSocket wrapper acros
 raw/v1/v2 protocols. It also checks that host termination still stops QEMU.
 No vendor image, guest boot, KVM or active lab is used; the UART test is skipped
 when QEMU is unavailable.
+
+## LL2S discovery and monitoring checks
+
+With `ghcr.io/weblab-network/ll2s:0.2.0` pulled on the Docker host,
+run this separately from other node-launching suites:
+
+```sh
+sudo modprobe openvswitch
+python3 tests/ll2s_native.py --monitoring
+```
+
+This adds exact LLDP neighbor/port checks and real SNMPv2c polling across the
+management VLAN to the existing RSTP/VLAN/console test. It also verifies discovery,
+management addressing and the community after a stopped ZIP restore, including
+the saved hostname instead of an unsaved change. All nodes use disposable data.
+Without `--monitoring`, the original switching/persistence test remains available
+for older LL2S builds. Neither test changes an active lab.
+
+For missing-container startup recovery, run separately:
+
+```sh
+python3 tests/ll2s_native.py --recovery-only
+```
+
+This uses a disposable switch and emulates lost containers/TAPs with surviving
+Docker networks, for both current and older journals. It verifies unchanged host
+saved files and a successful restart reusing the same subnets. It does not reboot
+the host. Unit regressions also cover foreign resources, attached endpoints,
+Docker failures, configuration copy failures and repeated partial cleanup.
+
+## Optional MCP adapter checks
+
+Enable/install the adapter as described in [AI assistants and MCP](automation.md).
+The ordinary backend suite covers opt-in, validation, stale proposals, retained
+storage, HTTP downloads and echo-device starts. `test_console_automation.py`
+checks console reads/input, cursor replay and truncation, lock ownership, stale
+history/restarts, bounded captures, disconnections and HTTP opt-in using real
+disposable PTYs. For actual STDIO MCP transport:
+
+```sh
+.venv-mcp/bin/python tests/mcp_smoke.py
+```
+
+This uses a disposable server and PTY echo fixture, with no real guest images or
+live lab changes. It checks all combinations of topology-write and console-input
+switches, tool annotations and console roundtrips. The SDK must be installed in
+that Python environment. It also checks storage report availability with every
+capability combination, sparse/retained allocation, cache reuse, partial and
+unknown results, and refusal when server automation is disabled. Optionally
+add `--ollama-url http://HOST:11434/v1 --model MODEL` for model-driven discovery
+and preview using synthetic catalog files. It does not boot vendor devices or
+verify protocols. `--output /tmp/mcp-test` retains the generated exercise and
+conversation locally; review it before sharing.

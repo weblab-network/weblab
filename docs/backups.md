@@ -7,9 +7,9 @@
 | Format | What it preserves | When to use it |
 | --- | --- | --- |
 | Topology JSON | Nodes, links, settings and original startup snippets | Share a topology or fresh exercise |
-| JSON + saved configs | Topology with saved Cisco/FRR startup text | Share a saved configuration baseline; stop Cisco/FRR devices first |
+| JSON + saved configs | Topology with saved Cisco/FRR/LL2S startup text | Share a saved configuration baseline; stop Cisco/FRR/LL2S devices first |
 | JSON + live configs | Topology with current Cisco running text | Share unsaved configuration; requires ready, unlocked privileged consoles |
-| Saved lab ZIP | Topology and supported persistent device storage | Resume a saved lab, including IOL VLAN databases, QEMU disks and FRR configuration; stop all nodes first |
+| Saved lab ZIP | Topology and supported persistent device storage | Resume a saved lab, including IOL VLAN databases, QEMU disks and FRR/LL2S configuration; stop all nodes first |
 
 A ZIP is a saved-storage backup, not a VM memory snapshot. Device images and
 licenses are not included. Instructions documents and window positions are not
@@ -17,6 +17,10 @@ part of topology/ZIP exports. EXOS/Arista/Junos support topology JSON and saved 
 but not configuration-text export or initial snippets.
 
 ## Where state is stored
+
+Use [Storage](storage.md) to inspect filesystem capacity and per-node disk/log
+allocation. Upload, ZIP export and staged restore check available space before
+large writes; these checks preserve the old lab and do not delete saved data.
 
 The paths below use the default Compose host directory, `lab-data/`. Native
 execution defaults to `.lab/` unless `--data-dir` is specified.
@@ -196,3 +200,51 @@ real-guest restore/forwarding test remains outstanding. Use `commit` and shut
 down Junos with `request system power-off` and wait for shutdown before
 Stop/export; keep the original base image. The Stop confirmation is a reminder,
 not an automatic guest shutdown.
+
+## LL2S configuration
+
+LL2S supports fresh-node `startup_config` snippets, **JSON + saved configs**
+(up to 16 KiB), and **Saved lab ZIP** (startup file up to 1 MiB). Apply CLI edits
+with `commit` or interactive `end`, then `write memory` before Stop. Stop copies only
+`/etc/ll2s/startup.conf` into the node's image-specific `ll2s-*/startup.conf`;
+unsaved candidate/running changes and the runtime OVS database are excluded.
+A failed copy retains the container and previous saved file, so you can retry
+Stop. Existing/restored saved configuration wins over initial snippets.
+
+Stop records the launch image ID and a checksum of the startup file in
+`ll2s-*/startup-image.json`. Both files enter ZIP backups. Export uses this saved
+identity even if its tag was replaced afterward. Legacy `ll2s:dev` archives keep
+their original selector and storage paths. Restore requires that exact
+image installed under the tag; mixed FRR/LL2S archives verify both identities.
+A single ZIP cannot represent LL2S nodes sharing a selector but saved under
+different image IDs: verify all switches on the intended image and Stop them before exporting together.
+
+Older stopped configurations without an identity can still be exported as
+**JSON + saved configs**. For a ZIP, start with the intended image, verify the
+configuration, then Stop to record its identity. Never-started nodes use the
+currently installed image. Older ZIPs recover identity from their checked
+manifest; Weblab cannot reconstruct an incorrect identity recorded by an older
+exporter. An interrupted config/identity write that leaves mismatched files is
+rejected; retry Stop while the container is retained.
+
+LLDP, management IPv4 and SNMPv2c settings are part of startup text and follow the
+same save/restore rules. Communities appear in these plain-text exports. Host
+startup and identity files are written with owner-only permissions. Runtime OVS,
+LLDP neighbors and SNMP engine files are excluded. Live configuration capture for
+LL2S is not implemented; use saved configuration export instead.
+
+### LL2S recovery after a host restart
+
+If a journaled LL2S container is missing, Weblab retains the last configuration
+and image identity already copied into the lab-data directory. Startup recovery
+removes that lab's journaled, owned, empty networks and any remaining owned TAPs,
+so their provisioning subnets can be reused. It does not prune other networks.
+Changes stored only inside a deleted container cannot be recovered, even if
+`write memory` was used there; a successful Weblab Stop copies that file to the
+host. Keep stopped-lab exports for backups.
+
+If the container exists but its configuration cannot be copied, Stop fails and
+retains it for retry. Docker connection failures, changed resource ownership,
+and networks with attached endpoints also require inspection rather than forced
+cleanup. New launches record immutable Docker IDs and mark TAPs; older journals
+use the recorded creation flags, lab labels, parent interfaces and TAP names/types.

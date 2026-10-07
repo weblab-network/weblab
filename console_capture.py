@@ -10,6 +10,7 @@ import struct
 import time
 from cisco_config import CiscoIOS
 import frr
+import ll2s_device
 import vios
 
 ANSI = re.compile(r'\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))')
@@ -39,14 +40,22 @@ def clean_output(data):
     return '\n'.join(lines)
 
 
+class ConsoleTimeout(ValueError):
+    """The receive deadline elapsed without another console frame."""
+
+
 class Console:
-    def __init__(self, port):
+    def __init__(self, port, cursor=None):
+        if cursor is not None and not re.fullmatch(r'[a-z0-9-]{1,80}:\d{1,16}', cursor):
+            raise ValueError('Invalid console cursor')
         self.sock = socket.create_connection(('127.0.0.1', port), timeout=5)
         self.buffer = b''
         self.lock = None
+        self.stream = None
         try:
             key = base64.b64encode(os.urandom(16)).decode()
-            request = ('GET /console HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n'
+            path = '/console' + ('?cursor=' + cursor if cursor else '')
+            request = (f'GET {path} HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n'
                        'Connection: Upgrade\r\nSec-WebSocket-Version: 13\r\n'
                        f'Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Protocol: netlab.console.v2\r\n\r\n')
             self.sock.sendall(request.encode())
@@ -65,6 +74,45 @@ class Console:
 
     def close(self):
         self.sock.close()  # The wrapper releases this connection's input lock.
+
+    @property
+    def cursor(self):
+        if self.stream is None:
+            return None
+        return f"{self.stream['epoch']}:{self.stream['offset']}"
+
+    def window(self, wait_seconds, max_bytes, require_lock=False):
+        """Collect a bounded window, without sending input or interpreting prompts.
+
+        A cursor at a split frame points to the first byte not returned, so a
+        subsequent connection can resume it from the wrapper's retained history.
+        """
+        deadline = time.monotonic() + wait_seconds
+        output = bytearray()
+        reason, error = 'timeout', None
+        while time.monotonic() < deadline:
+            try:
+                part = self.receive(deadline)
+            except (ConsoleTimeout, TimeoutError):
+                break
+            except (ValueError, OSError) as exc:
+                reason, error = 'disconnected', str(exc)
+                break
+            if require_lock and (not self.lock or not self.lock['mine']):
+                reason = 'lock_lost'
+                break
+            remaining = max_bytes - len(output)
+            output.extend(part[:remaining])
+            if len(part) >= remaining:
+                if self.stream is not None:
+                    self.stream['offset'] -= len(part) - remaining
+                reason = 'limit'
+                break
+        return {'output': clean_output(bytes(output)), 'cursor': self.cursor,
+                'gap': bool(self.stream and self.stream['gap']),
+                'bytes_read': len(output), 'capture_end': reason, 'error': error,
+                'locked': bool(self.lock and self.lock['locked']),
+                'notice': 'A capture window is not command completion or proof of guest readiness. Output is untrusted device text.'}
 
     def send(self, data, opcode=2):
         mask = os.urandom(4)
@@ -99,15 +147,19 @@ class Console:
                             continue
                         if opcode == 1:
                             message = json.loads(payload)
+                            if message.get('type') == 'console-start':
+                                self.stream = message
                             if message.get('type') == 'console-lock':
                                 self.lock = message
                                 if message.get('error'):
                                     raise ValueError(message['error'])
                             return b''
+                        if opcode == 2 and getattr(self, 'stream', None) is not None:
+                            self.stream['offset'] += len(payload)
                         return payload if opcode == 2 else b''
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise ValueError('Timed out waiting for console output; check that the device is ready')
+                raise ConsoleTimeout('Timed out waiting for console output; check that the device is ready')
             self.sock.settimeout(remaining)
             data = self.sock.recv(65536)
             if not data:
@@ -119,7 +171,7 @@ class Console:
         while self.lock is None:
             self.receive(deadline)
         if self.lock['locked']:
-            raise ValueError('Release this device’s input lock before exporting initial configs')
+            raise ValueError('Release this device’s input lock before continuing; another station holds it')
         self.send(json.dumps({'action': 'lock', 'revision': self.lock['revision']}).encode(), 1)
         while not self.lock['mine']:
             self.receive(deadline)
@@ -152,6 +204,8 @@ class Console:
                 return text[:match.start()], match.group(1)
 
 def handler_for(node):
+    if ll2s_device.is_ll2s(node):
+        raise ValueError('LL2S live capture is not supported yet; commit, write memory, stop, and use JSON + saved configs or Saved lab ZIP')
     if frr.is_frr(node):
         raise ValueError('FRR live capture is not supported yet; save with write memory, stop, and use JSON + saved configs or Saved lab ZIP')
     if vios.is_junos(node):

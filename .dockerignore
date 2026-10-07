@@ -2,6 +2,7 @@
 **
 !Dockerfile
 !lab_server.py
+!storage.py
 !container_console.py
 !link_fabric.py
 !iol_l1.py
@@ -9,6 +10,7 @@
 !lab_backup.py
 !disk_delta.py
 !frr.py
+!ll2s_device.py
 !tap_net.py
 !console_capture.py
 !cisco_config.py
@@ -27,3 +29,6 @@
 !licenses/
 !licenses/**
 !LICENSE
+!lab_automation.py
+!docs/
+!docs/practice-labs.md

@@ -44,3 +44,6 @@ playwright-report/
 /packaging/exos/build/
 /exos-images/
 /exos-lab-data/
+
+# Optional local MCP SDK environment.
+/.venv-mcp/
