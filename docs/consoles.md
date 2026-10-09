@@ -16,7 +16,10 @@ up to 10,000 lines of local scrollback. Background consoles keep receiving outpu
 **Hide (−)** keeps the connection alive. A tab's **×** closes that connection and
 discards local history. Stopping a device retains its console history; restarting
 reconnects automatically. Removing a device closes its console. The tab strip
-supports Left/Right, Home/End and Delete when focused.
+supports Left/Right, Home/End and Delete when focused. When tabs overflow, scroll
+the mouse wheel over the tab row to move it horizontally, including in floating
+console groups. Horizontal trackpad gestures and Ctrl/Command+wheel retain their
+native behavior; scrolling does not change the selected console.
 
 ## Controls, text size and window layout
 

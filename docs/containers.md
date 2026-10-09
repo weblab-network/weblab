@@ -8,8 +8,9 @@
 | --- | --- |
 | `ghcr.io/weblab-network/weblab` | Weblab and runtime dependencies; supply device images |
 | `ghcr.io/weblab-network/weblab-exos` | Weblab plus pinned Virtual EXOS 33.1.1.31 and an unconfigured five-node topology |
+| `ghcr.io/weblab-network/weblab-agent` | Optional Codex companion for the Agent window; use alongside Weblab, not as a standalone lab |
 
-Both are **Linux amd64** images. Use an x86-64 Linux host/VM with rootful Docker
+All are **Linux amd64** images. Use an x86-64 Linux host/VM with rootful Docker
 Engine and Compose. The EXOS edition requires working `/dev/kvm`, including
 nested virtualization if applicable, and `/dev/net/tun`. Allow at least 4 GiB
 available RAM for the three 1 GiB EXOS guests and overhead; a host with 8 GiB or
@@ -25,6 +26,14 @@ The `edge` edition has also been independently field-tested on a fresh minimal
 Debian 13 installation with KVM enabled. The documented deployment uses explicit
 device access, NET_ADMIN and persistent storage; a successful privileged test does
 not make `--privileged` a requirement.
+
+## Optional Agent companion
+
+The Agent companion is configured separately with
+[`compose.agent.prebuilt.yaml`](../compose.agent.prebuilt.yaml); see the
+[Agent setup](agent.md#enable-with-prebuilt-images) for matching version tags,
+Ollama/OpenAI settings and persistent conversation volumes. It contains no model
+weights or network-device images and has no Docker socket or lab-data mount.
 
 ## Start the EXOS demo
 
@@ -116,6 +125,11 @@ required. It tests the backend, builds Linux amd64, smoke-tests the packaged
 server, then publishes to GHCR. The EXOS job downloads the pinned binary, verifies
 its checksum, validates the topology JSON, and tests packaged initialization and
 persistence. It does not boot EXOS VMs or require KVM on the build runner.
+The Agent job builds its own image with an allowlisted context, tests fresh-volume
+permissions and session persistence against the tested core image, and exercises
+packaged Codex/MCP with a simulated model endpoint. CI needs no model credentials
+and does not make paid inference calls. Only after these checks does it publish
+the companion with the corresponding version tags.
 Real guest boot, LLDP and forwarding checks are separate, opt-in native tests;
 passing the packaging pipeline alone does not establish protocol behavior.
 
@@ -126,8 +140,9 @@ branch builds do not overwrite `latest`.
 
 For a numbered release, commit its notes at `docs/releases/vVERSION.md` and push
 an annotated `vVERSION` tag on the reviewed public commit (for example `v0.2.0`).
-A normal SemVer tag publishes both editions as `VERSION` and `latest` after their
-respective checks pass. The jobs publish sequentially, so the two `latest` tags
-are not updated atomically. After both succeed, the workflow creates a GitHub
+A normal SemVer tag publishes the standard, EXOS and Agent images as `VERSION`
+and `latest` after their respective checks pass. These tags are not updated
+atomically; pin matching numbered versions for core and Agent upgrades. After
+all three jobs succeed, the workflow creates a GitHub
 Release using the committed notes. Existing release pages are left unchanged
 on reruns. Do not move a published tag; use a new version for corrections.

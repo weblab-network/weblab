@@ -75,6 +75,59 @@ class AutomationTests(unittest.TestCase):
         with self.assertRaisesRegex(lab_server.LabError, 'changed'):
             self.api.start_node('new_r1', proposal['base_revision'])
 
+    def test_execution_revision_only_tolerates_observed_coordinate_changes(self):
+        self.lab.save(self.fixture.topology)
+        original = copy.deepcopy(self.lab.topology)
+        observed = self.api.state()['revision']
+        moved = copy.deepcopy(original)
+        moved['nodes'][0]['x'] += 10
+        moved['nodes'][1]['y'] += 15
+        self.lab.save(moved)
+        with self.lab.lock:
+            self.api.require_execution_revision(observed)
+            with self.assertRaises(lab_server.LabError):
+                self.api.require_execution_revision('unobserved')
+            for key, value in [('memory', 2048), ('name', 'Renamed'),
+                               ('startup_config', 'hostname changed'), ('iol_id', 999)]:
+                self.lab.topology = copy.deepcopy(moved)
+                self.lab.topology['nodes'][0][key] = value
+                with self.subTest(key=key), self.assertRaises(lab_server.LabError):
+                    self.api.require_execution_revision(observed)
+            self.lab.topology = copy.deepcopy(moved)
+            self.lab.topology['links'] = []
+            with self.assertRaises(lab_server.LabError):
+                self.api.require_execution_revision(observed)
+            self.lab.topology = moved
+        # Apply still guards the complete layout to avoid overwriting human edits.
+        proposal = self.api.preview(self.topology, '# Exercise', True)
+        moved['nodes'][0]['x'] += 1
+        self.lab.save(moved)
+        with self.assertRaisesRegex(lab_server.LabError, 'changed'):
+            self.api.apply(proposal['proposal_id'])
+
+    def test_switch_graph_advice_distinguishes_routed_and_layer2_cycles(self):
+        nodes = [{'id': n, 'type': 'switch' if n.startswith('s') else 'router'}
+                 for n in ('s1', 's2', 's3', 'r1', 'r2', 'r3')]
+        def link(a, b): return {'a': {'node': a}, 'b': {'node': b}}
+        links = [link('r1', 'r2'), link('r2', 'r3'), link('r3', 'r1'),
+                 link('r1', 's1'), link('r2', 's2'), link('r3', 's3')]
+        warnings = lab_automation.switching_warnings({'nodes': nodes, 'links': links})
+        self.assertTrue(any('3 separate groups' in w for w in warnings))
+        self.assertTrue(any('No redundant' in w for w in warnings))
+        links += [link('s1', 's2'), link('s2', 's3')]
+        warnings = lab_automation.switching_warnings({'nodes': nodes, 'links': links})
+        self.assertEqual(len(warnings), 1)
+        links.append(link('s3', 's1'))
+        self.assertEqual(lab_automation.switching_warnings({'nodes': nodes, 'links': links}), [])
+
+    def test_shape_errors_point_to_exact_field_and_expected_format(self):
+        for topology, expected in [
+            ({'nodes':[], 'links':[{'endpoints':[]}]}, r'links\[0\]: unexpected fields.*endpoints.*Use a and b'),
+            ({'nodes':[{'iol_id':100}], 'links':[]}, r'nodes\[0\]: unexpected fields.*iol_id.*server assigns'),
+            ({'nodes':[], 'links':[{'a':{}, 'b':None}]}, r'links\[0\].b: expected an object.*node, port')]:
+            with self.subTest(expected=expected), self.assertRaisesRegex(lab_server.LabError,expected):
+                self.api.preview(topology,'test')
+
     def test_reused_aliases_are_remapped_without_touching_saved_storage(self):
         self.lab.save(self.fixture.topology)
         with self.assertRaisesRegex(lab_server.LabError, 'not empty'):

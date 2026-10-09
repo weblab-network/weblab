@@ -5,11 +5,11 @@
 Weblab can expose a small set of tools to an external coding/chat agent through
 an optional local MCP adapter. The agent can discover installed images, draft
 an original exercise, validate and preview its topology, then apply it and start
-individual devices with your approval. Your MCP client chooses the model; Weblab
-does not call a model endpoint or require an OpenAI account.
+individual devices with your approval. Your MCP client chooses the model; the
+external adapter does not call a model endpoint or require an OpenAI account itself.
 
-There is no built-in chat panel. Agents can observe shared consoles and, with a
-separate opt-in, send input through the same transport as the browser. Cisco/FRR/LL2S
+An optional [Agent window](agent.md) also provides browser conversations. External
+agents can observe shared consoles and, with a separate opt-in, send input through the same transport as the browser. Cisco/FRR/LL2S
 initial snippets follow the existing fresh-device rules. Other device families
 need interactive configuration through their own CLI. Validation checks
 structure, not configuration syntax, feature licensing or protocol convergence.
@@ -121,6 +121,11 @@ Try a request such as:
    revision. Start routers/switches before connected PCs. Watch resource use.
    A startup error leaves other nodes running; there is no automatic rollback
    that could abruptly power off Junos. Read status and launcher logs for errors.
+
+Moving nodes on the canvas does not invalidate a recently observed revision for
+start or console input. Device settings, identities and cables still must match;
+console cursors and human input locks remain enforced. Apply checks the complete
+revision, including positions, because replacement would overwrite those edits.
 
 A proposal ID is not proof of human approval: your MCP client's approval policy
 controls whether a model can invoke a write tool. There are no stop, reset,
@@ -290,3 +295,9 @@ an invalid proposal pass.
   pulls, vendor images/licenses, KVM and firmware remain the operator's responsibility.
 - **Lost response while starting:** read state before retrying. Applying the same
   proposal again is idempotent only while its applied topology remains unchanged.
+
+## Embedded Agent window
+
+For an optional browser conversation using discovery, previews and approved
+lab/console tools, see [Agent window](agent.md). It uses a separate network-isolated companion;
+external MCP adapter write permissions do not grant its sessions write access.

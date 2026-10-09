@@ -829,7 +829,7 @@ function updateExportControls() {
   $("export-initial").disabled = busy || topology.nodes.some(n => noConfigExport(n) || isFrr(n) || isLl2s(n) || n.type !== "pc" && state(n.id) !== "running");
   $("export-saved").disabled = busy || topology.nodes.some(n => noConfigExport(n) || n.type !== "pc" && state(n.id) === "running");
   $("export-zip").disabled = busy || hasRunning();
-  $("export-json").disabled = $("cancel-export").disabled = $("export-logs").disabled = $("export-compact").disabled = busy;
+  $("export-json").disabled = $("cancel-export").disabled = $("export-logs").disabled = $("export-compact").disabled = $("export-agent").disabled = busy;
   $("export-compact-option").hidden = !topology.nodes.some(isVeos);
 }
 $("export").onclick = () => {
@@ -839,17 +839,33 @@ $("export").onclick = () => {
 };
 $("cancel-export").onclick = () => $("export-dialog").close();
 function downloadTopology(data) {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2) + "\n"], {type:"application/json"}));
+  const content = JSON.stringify(data, null, 2) + "\n";
+  if (new TextEncoder().encode(content).length > 1_000_000) throw new Error('JSON exceeds the 1 MB import limit. Export without Agent history and download its transcript separately.');
+  const url = URL.createObjectURL(new Blob([content], {type:"application/json"}));
   const a = document.createElement("a"); a.href = url; a.download = (data.name.replace(/[^a-z0-9_-]/gi, "-") || "lab") + ".json"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-$("export-json").onclick = () => { downloadTopology(topology); $("export-dialog").close(); };
+async function exportAgentHistory() {
+  if (!$("export-agent").checked) return {};
+  if (!window.weblabAgentTranscript) throw new Error('Agent history is unavailable.');
+  return {agent_history: await window.weblabAgentTranscript()};
+}
+$("export-json").onclick = async () => {
+  if (busy) return;
+  busy = true; updateControls(); updateExportControls();
+  try {
+    downloadTopology({...topology, ...await exportAgentHistory()});
+    $("export-dialog").close();
+  } catch (error) { $("export-message").textContent = error.message; }
+  finally { busy = false; updateControls(); updateExportControls(); }
+};
 async function exportConfigs(saved) {
   if (busy) return;
   busy = true; updateControls();
   updateExportControls();
   $("export-message").textContent = saved ? "Reading saved configurations from device storage… IOSv disks can take a minute. Unsaved changes are excluded." : "Reading running configurations… Consoles are locked during capture; original console logging settings are restored before export.";
   try {
-    downloadTopology(await api(saved ? "/api/export/saved-configs" : "/api/export/initial-configs", "POST", {}));
+    const history = await exportAgentHistory();
+    downloadTopology({...await api(saved ? "/api/export/saved-configs" : "/api/export/initial-configs", "POST", {}), ...history});
     $("export-dialog").close(); toast("Initial configurations exported. They apply only to fresh devices.");
   } catch (error) { $("export-message").textContent = error.message; }
   finally {
@@ -865,7 +881,8 @@ $("export-zip").onclick = async () => {
   updateExportControls();
   $("export-message").textContent = "Preparing saved lab… Large disks can take a few minutes.";
   try {
-    const result = await api("/api/export", "POST", {include_logs:$("export-logs").checked, compact_veos:$("export-compact").checked});
+    const history = await exportAgentHistory();
+    const result = await api("/api/export", "POST", {include_logs:$("export-logs").checked, compact_veos:$("export-compact").checked, ...history});
     const a = document.createElement("a"); a.href = result.url; a.download = result.filename;
     document.body.append(a); a.click(); a.remove();
     $("export-dialog").close(); toast("Backup ready. Your browser will download the ZIP.");
@@ -1797,9 +1814,10 @@ document.addEventListener('scroll',event => {
 },true);
 document.addEventListener('wheel',event => {
   if (event.ctrlKey || event.metaKey || event.target.closest('.console-menu-list') || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+  const tabStrip = event.target.closest('.console-tabs');
   const toolbar = event.target.closest('.console-toolbar,.canvas-toolbar');
-  if (!toolbar) return;
-  const strip = toolbar.closest('.toolbar-scroll') || toolbar.querySelector('.toolbar-scroll') || toolbar;
+  if (!toolbar && !tabStrip) return;
+  const strip = tabStrip || toolbar.closest('.toolbar-scroll') || toolbar.querySelector('.toolbar-scroll') || toolbar;
   if (strip.scrollWidth <= strip.clientWidth) return;
   const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? strip.clientWidth : 1;
   strip.scrollLeft += event.deltaY * scale;

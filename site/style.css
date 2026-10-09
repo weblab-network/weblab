@@ -52,3 +52,11 @@
 .email-contact button:hover{color:var(--mint);border-color:var(--mint)}
 .email-contact a{overflow-wrap:anywhere}
 footer{flex-wrap:wrap}
+
+/* Optional Agent videos retain the complete frame and load only on request. */
+.agent-media{margin-top:42px;padding-top:30px;border-top:1px solid var(--line)}
+.agent-media h3{font-size:30px;margin-bottom:18px}.agent-media p{color:var(--muted);margin:14px 0;font-size:14px}
+.agent-video-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px;margin:28px 0}
+.agent-video-grid article{min-width:0}.agent-video-grid h4{font-size:19px;margin:0}.agent-video-grid .workspace-shot{margin-top:18px}
+.agent-video-grid .video-stage{aspect-ratio:16/9}.agent-video-grid video{width:100%;height:100%;object-fit:contain}
+@media(max-width:800px){.agent-video-grid{grid-template-columns:1fr}}

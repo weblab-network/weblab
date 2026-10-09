@@ -1,0 +1,16 @@
+**
+!agent_companion.py
+!agent_transport.py
+!agent_auth.py
+!agent_attachments.py
+!tools/
+!tools/weblab_mcp.py
+!requirements-mcp.txt
+!LICENSE
+!THIRD_PARTY.md
+!packaging/
+!packaging/agent/
+!packaging/agent/Dockerfile
+!packaging/agent/Dockerfile.dockerignore
+!packaging/agent/Codex-LICENSE.txt
+!packaging/agent/Codex-NOTICE.txt

@@ -24,6 +24,20 @@ with restricted controls for exploring the interface and device consoles.
 [Full installation and lab walkthrough](https://weblab.network/#walkthrough) ·
 [Watch on YouTube](https://youtu.be/fv2eDcvB_s0)
 
+**Agent window · new in v0.5.0**
+
+<a href="https://youtu.be/7zKUZNZRGXA"><img src="https://weblab.network/assets/weblab-agent-create-exercise-thumb.jpg" alt="Build an OSPF and RSTP practice lab with FRR, LL2S and student tasks" width="280"></a>
+<a href="https://youtu.be/m5IsoAnklPo"><img src="https://weblab.network/assets/weblab-agent-configure-verify-thumb.jpg" alt="Approve Agent console access and inspect switch configuration results" width="280"></a>
+
+[▶ Create a practice lab · 1:13](https://youtu.be/7zKUZNZRGXA) ·
+[▶ Configure and verify · 1:16](https://youtu.be/m5IsoAnklPo) ·
+[Agent setup and permissions](docs/agent.md)
+
+*The Agent issues the console commands; the devices produce the output. The user
+navigates the workspace and grants permissions, without manually typing console
+commands. Silent, captioned edits; waits shortened. The practice lab intentionally
+leaves OSPF and RSTP tasks for the student.*
+
 ## Quick start
 
 Use an **x86-64 Linux host/VM**, rootful Docker Engine with Compose, and
@@ -69,7 +83,21 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
-## New in v0.4.0
+## New in v0.5.0
+
+- [Optional Agent window](docs/agent.md): floating conversations alongside the
+  topology and consoles, using Ollama or OpenAI through ChatGPT sign-in.
+- Review topology proposals, approve node starts and console configuration, or
+  explicitly enable session YOLO for the actions you allow. Read/preview is the default.
+- Conversation history, screenshot/text attachments and optional conversation
+  transcripts in lab ZIP/JSON exports. Separate tabs keep operations and proposals
+  out of the conversation's reading space.
+- [Prebuilt companion](docs/agent.md#enable-with-prebuilt-images), separate from
+  the standard image. No Agent or model account is needed for ordinary lab use.
+
+See [v0.5.0 release notes](docs/releases/v0.5.0.md) for setup, limits and upgrades.
+
+### Already available in v0.4.0
 
 - [LL2S switches](https://github.com/weblab-network/ll2s): prebuilt Open vSwitch
   containers with STP/RSTP, VLANs, LLDP and optional SNMPv2c management. Combine

@@ -29,6 +29,8 @@ def main():
                 with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/storage', timeout=2) as response:
                     report = json.load(response)
                 assert report['nodes'] == [] and report['complete'], report
+                with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/agent/info', timeout=2) as response:
+                    assert json.load(response) == {'enabled': False}, 'Agent must be optional'
                 print('PASS: packaged server starts and serves an empty lab')
                 break
             except (OSError, ValueError):

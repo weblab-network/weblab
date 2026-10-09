@@ -938,10 +938,21 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.reply(404, {'error': 'Unknown automation route'})
 
+    def agent_api(self, action, data=None):
+        self.same_origin()
+        bridge = getattr(self.server, 'agent', None)
+        if not bridge:
+            if action == 'info':
+                return {'enabled': False}
+            raise LabError('Agent is disabled. Start Weblab with the optional agent companion.')
+        return bridge.api(action, self.headers.get('X-Weblab-Agent-Session', ''), data)
+
     def do_GET(self):
         try:
             path = urlsplit(self.path).path
-            if path == "/api/state":
+            if path in ('/api/agent/info', '/api/agent/state'):
+                self.reply(200, self.agent_api(path.rsplit('/', 1)[1]))
+            elif path == "/api/state":
                 self.reply(200, self.lab.snapshot())
             elif path.startswith('/api/automation/'):
                 self.automation_get(path)
@@ -1020,7 +1031,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
                 raise LabError("Use Content-Type: application/json")
             length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= 1_000_000:
+            body_limit = 4 * 1024 * 1024 if self.command == 'POST' and urlsplit(self.path).path == '/api/agent/turn' else 1_000_000
+            if not 0 < length <= body_limit:
                 raise LabError("Invalid request body size")
             chunks, remaining = [], length
             self.connection.settimeout(30)
@@ -1032,7 +1044,15 @@ class Handler(BaseHTTPRequestHandler):
                 remaining -= len(chunk)
             data = json.loads(b"".join(chunks))
             path = urlsplit(self.path).path
-            if self.command == 'POST' and path.startswith('/api/automation/'):
+            if self.command == 'POST' and path.startswith('/api/agent/'):
+                if path.rsplit('/', 1)[1] not in ('session', 'settings', 'check', 'turn', 'stop', 'reset', 'close', 'proposal', 'decision',
+                                                'login', 'login-status', 'login-cancel', 'logout',
+                                                'history-read', 'history-export', 'history-open', 'history-rename', 'history-delete', 'attachment'):
+                    raise LabError('Unknown agent route')
+                if not isinstance(data, dict):
+                    raise LabError('Expected an agent request object')
+                result = self.agent_api(path.rsplit('/', 1)[1], data)
+            elif self.command == 'POST' and path.startswith('/api/automation/'):
                 service = self.automation()
                 operations = {'preview': service.preview, 'apply': service.apply,
                               'discard': service.discard, 'start-node': service.start_node,
@@ -1051,7 +1071,8 @@ class Handler(BaseHTTPRequestHandler):
             elif self.command == "POST" and re.fullmatch(r"/api/links/[\w-]+/traffic", path):
                 result = self.lab.set_link_traffic(path.split('/')[3], data)
             elif self.command == "POST" and path == "/api/export":
-                result = lab_backup.create(self.lab, data.get('include_logs', False), data.get('compact_veos', True))
+                result = lab_backup.create(self.lab, data.get('include_logs', False), data.get('compact_veos', True),
+                                           data.get('agent_history'))
             elif self.command == "POST" and path == "/api/export/initial-configs":
                 result = console_capture.export(self.lab)
             elif self.command == "POST" and path == "/api/export/saved-configs":
@@ -1152,6 +1173,13 @@ def main():
     server = ThreadingHTTPServer((args.bind, args.port), Handler)
     server.daemon_threads = True
     server.lab, server.stopping = lab, threading.Event()
+    server.agent = None
+    if os.environ.get('WL_AGENT_SOCKET_DIR'):
+        import agent_bridge
+        server.agent = agent_bridge.Bridge(
+            lab, os.environ['WL_AGENT_SOCKET_DIR'],
+            os.environ.get('WL_AGENT_STATE_DIR', str(lab.directory / '.agent')),
+            os.environ.get('WL_AGENT_PROVIDERS', 'http://127.0.0.1:11434/v1'))
     def shutdown(signum, frame):
         server.stopping.set()
         threading.Thread(target=server.shutdown, daemon=True).start()
@@ -1163,6 +1191,8 @@ def main():
         server.serve_forever()
     finally:
         server.stopping.set()
+        if server.agent:
+            server.agent.close()
         lab.stop_all()
         with lab.lock:
             lab_backup.expire(lab, all_files=True)

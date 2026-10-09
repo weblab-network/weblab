@@ -37,10 +37,17 @@ licenses or saved device files are needed for an initial exercise.
    distinct physical interface to each cable. Choose readable positions and
    names, and avoid overlapping cards. Use IDs unique to the exercise, e.g.
    `ospf_a_r1`, to avoid reusing another lab's saved node storage.
+   For STP blocking/failover, connect switches in a redundant Layer 2 graph
+   (for example, a triangle) with compatible VLANs on its links. Separate
+   switches behind routed FRR ports do not share an STP domain. Plan OSPF
+   adjacency subnets and PC gateways alongside this switching design.
 4. Put only the intended baseline into `startup_config`. For a routing exercise,
    initialize hostnames, addressing and enabled interfaces; leave the routing
    protocol for the learner unless the exercise is troubleshooting a supplied
-   configuration. If requested, supply a separate solution JSON/file.
+   configuration. If the user asks for an already configured working lab,
+   include the requested protocols in supported startup snippets and supply PC
+   addressing, rather than leaving those tasks to the learner. Otherwise, if
+   requested, supply a separate solution JSON/file.
 5. Include a short companion Markdown exercise with objectives, addressing,
    tasks, constraints, verification commands and expected outcomes. Distinguish
    what should work initially from what should work after solving the exercise.

@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#10171c">
   <title>Weblab.Network — Your network lab. All in one view.</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css?v=f7a1727dd916">
+  <link rel="stylesheet" href="style.css?v=20b9e1703c13">
   <script src="page.js?v=469888494e89" defer></script>
 </head>
 <body>
@@ -105,6 +105,47 @@
           <a class="text-link" href="assets/weblab-walkthrough.mp4" download>Download full walkthrough (MP4, 25 MB)</a>
         </div>
       </details>
+
+      <div id="agent-videos" class="agent-media">
+        <h3>Meet the optional Agent window</h3>
+        <p>Build a practice lab or configure an existing one with Ollama or OpenAI. The Agent issues the console commands; devices produce the output. In these recordings, the user navigates the workspace and grants permissions without manually typing console commands.</p>
+        <div class="agent-video-grid">
+<article>
+          <h4>Build a practice lab</h4>
+          <figure class="workspace-shot overview-video">
+            <div class="video-stage">
+              <video controls playsinline preload="none" width="1920" height="1080" poster="assets/weblab-agent-create-exercise.png" data-status="create-exercise-status" aria-label="Build a practice lab with the Agent" aria-describedby="create-exercise-caption">
+                <source src="assets/weblab-agent-create-exercise.mp4" type="video/mp4">
+                <p><a href="https://youtu.be/7zKUZNZRGXA">Watch on YouTube</a>.</p>
+              </video>
+              <button class="video-play" type="button" hidden aria-label="Play build a practice lab, 1:13"><img src="assets/weblab-agent-create-exercise.png" alt="" width="1920" height="1200" loading="lazy"><span class="video-play-label"><span aria-hidden="true">▶</span> Play · 1:13</span></button>
+            </div>
+            <figcaption id="create-exercise-caption">1:13 · Silent with captions · Edited / waits shortened.</figcaption>
+          </figure>
+          <p id="create-exercise-status" class="watch-note" role="status" hidden></p>
+          <p>FRR routers, an LL2S switch triangle and Linux PCs. Two OSPF/RSTP tasks are intentionally left for the student. Session YOLO is enabled.</p>
+          <div class="watch-actions"><a class="text-link" href="https://youtu.be/7zKUZNZRGXA">YouTube ↗</a><a class="text-link" href="assets/weblab-agent-create-exercise.mp4" download>Download MP4</a><a class="text-link" href="assets/weblab-agent-create-exercise.png" target="_blank" rel="noopener">Full-size screenshot ↗</a></div>
+        </article>
+<article>
+          <h4>Configure and verify</h4>
+          <figure class="workspace-shot overview-video">
+            <div class="video-stage">
+              <video controls playsinline preload="none" width="1920" height="1080" poster="assets/weblab-agent-configure-verify.png" data-status="configure-verify-status" aria-label="Configure and verify with the Agent" aria-describedby="configure-verify-caption">
+                <source src="assets/weblab-agent-configure-verify.mp4" type="video/mp4">
+                <p><a href="https://youtu.be/m5IsoAnklPo">Watch on YouTube</a>.</p>
+              </video>
+              <button class="video-play" type="button" hidden aria-label="Play configure and verify, 1:16"><img src="assets/weblab-agent-configure-verify.png" alt="" width="1920" height="1200" loading="lazy"><span class="video-play-label"><span aria-hidden="true">▶</span> Play · 1:16</span></button>
+            </div>
+            <figcaption id="configure-verify-caption">1:16 · Silent with captions · Edited / waits shortened.</figcaption>
+          </figure>
+          <p id="configure-verify-status" class="watch-note" role="status" hidden></p>
+          <p>Attach an exercise, review console access, then inspect switch configuration and the Agent’s explanation. The approval dialog offers optional session YOLO.</p>
+          <div class="watch-actions"><a class="text-link" href="https://youtu.be/m5IsoAnklPo">YouTube ↗</a><a class="text-link" href="assets/weblab-agent-configure-verify.mp4" download>Download MP4</a><a class="text-link" href="assets/weblab-agent-configure-verify.png" target="_blank" rel="noopener">Full-size screenshot ↗</a></div>
+        </article>
+</div>
+        <p class="watch-note">The Agent is an optional companion for your self-hosted workspace; it is not enabled in the restricted hosted preview. Individual approvals are the default. Agent output needs verification.</p>
+        <a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Agent-window">Agent installation, permissions and history ↗</a>
+      </div>
     </section>
 
     <section class="platforms container" aria-labelledby="platforms-title">
@@ -175,14 +216,14 @@
     <section id="roadmap" class="roadmap-section container" aria-labelledby="roadmap-title">
       <div class="section-heading">
         <p class="eyebrow">LOOKING AHEAD</p>
-        <h2 id="roadmap-title">What’s next for Weblab.Network</h2>
-        <p>Two directions we plan to explore. These capabilities are not available in the current release, and no delivery dates are set.</p>
+        <h2 id="roadmap-title">Automation today. Teaching tools ahead.</h2>
+        <p>Agent and MCP integration are available now. Classroom accounts and teacher/student roles remain planned, with no delivery date set.</p>
       </div>
       <div class="roadmap-grid">
         <article>
-          <span class="feature-number">PLANNED / AI INTEGRATION</span>
+          <span class="feature-number">AVAILABLE / AGENT &amp; MCP</span>
           <h3>Connect your agent to the lab.</h3>
-          <p>An MCP (Model Context Protocol) interface would let compatible AI agents, including locally hosted models with tool support, create topologies and inspect lab state through controlled tools. Guided exercises and feedback are a longer-term goal.</p>
+          <p>Use the optional Agent window with Ollama or OpenAI, or connect an external assistant through MCP. Create practice topologies, inspect live consoles and approve configuration work. Conversation history, attachments and reference transcript exports keep the work together.</p>
         </article>
         <article>
           <span class="feature-number">PLANNED / EDUCATION KIT</span>

@@ -18,8 +18,9 @@ workspace and its supported profiles.
 8. [Creating practice labs](practice-labs.md) — topology JSON contract and authoring guidance.
 9. [Storage monitoring](storage.md) — filesystem warnings, per-node usage and growth measurements.
 10. [AI assistants and MCP](automation.md) — optional agent discovery, topology previews and approved starts.
-11. [Troubleshooting](troubleshooting.md) — common setup, console, storage and networking issues.
-12. [Supported scope and limitations](limitations.md) — deployment boundaries and known gaps.
+11. [Agent window](agent.md) — optional Ollama/OpenAI conversations, previews and approved lab/console actions.
+12. [Troubleshooting](troubleshooting.md) — common setup, console, storage and networking issues.
+13. [Supported scope and limitations](limitations.md) — deployment boundaries and known gaps.
 
 [Prebuilt container images and EXOS demo](containers.md) provide an alternative
 to building locally, including a wired introductory topology and bundled EXOS image.

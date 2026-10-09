@@ -64,6 +64,9 @@ fixture.stderr.on('data', data => { fixtureLog += data; });
     await page.evaluate(()=>openConsole('r2'));await connected('r2');
     assert.equal(await page.locator('#console-window-r2').count(),0);
     assert.equal(await page.evaluate(()=>consoleFloating),true);
+    await page.locator('#console-tabs').evaluate(e=>e.style.width='180px');
+    await require('./toolbar_ui.cjs').scrollingTabs(page,'#console-tabs');
+    await page.locator('#console-tabs').evaluate(e=>e.style.width='');
     await page.evaluate(()=>closeConsole('r2'));
     await page.evaluate(()=>arrangeWindows());
     // Reproduce the reported state: floating topology plus floating tabbed panel.

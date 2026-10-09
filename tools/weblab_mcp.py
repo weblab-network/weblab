@@ -198,10 +198,12 @@ def create_server(url, allow_write=False, allow_console_input=False):
 
         @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False))
         def start_node(node_id: str, expected_revision: str) -> dict:
-            """Start one authorized node at the exact reviewed topology revision.
+            """Start one authorized node using a recently observed topology revision.
 
             Use persistent IDs from the preview node_id_map/start_order or current state, not
             proposal-local aliases. Start routers/switches before connected PCs. Allocates host resources.
+            Only coordinate changes are tolerated; device settings and cables must still match.
+            Check started/error and use the returned state revision for the next node.
             Failures leave other nodes running; never stops or resets any node.
             Running does not prove CLI readiness or forwarding. Inspect state/logs.
             """

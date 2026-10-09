@@ -12,13 +12,14 @@
   <script src="/app.js" defer></script>
   <script src="/instructions.js" defer></script>
   <script src="/storage.js" defer></script>
+  <script src="/agent.js" defer></script>
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="/" aria-label="Weblab home"><span class="brand-mark">w<span>e</span>b</span><span>LAB<span class="brand-sub">NETWORK WORKSPACE</span></span></a>
     <div class="lab-heading"><span class="eyebrow">TOPOLOGY</span><input id="lab-name" aria-label="Lab name" value="Untitled lab" maxlength="80"></div>
     <span id="save-state" class="save-state">Connecting…</span>
-    <div class="header-actions"><button data-storage aria-controls="storage-dialog">Storage</button><button id="export" aria-label="Export lab" title="Export topology or saved lab">Export</button><button id="import" aria-label="Import lab" title="Import lab">Import</button><button id="stop-all">■ <span>Stop lab</span></button><button class="primary" id="start-all">▶ <span>Start lab</span></button><button id="open-instructions" aria-label="Open lab instructions" title="Open instructions (.md or .txt)" aria-controls="instructions-panel" aria-expanded="false">▤ <span>Instructions</span></button></div>
+    <div class="header-actions"><button data-storage aria-controls="storage-dialog">Storage</button><button id="export" aria-label="Export lab" title="Export topology or saved lab">Export</button><button id="import" aria-label="Import lab" title="Import lab">Import</button><button id="stop-all">■ <span>Stop lab</span></button><button class="primary" id="start-all">▶ <span>Start lab</span></button><button id="open-agent" aria-controls="agent-panel" aria-expanded="false" hidden>✦ <span>Agent</span></button><button id="open-instructions" aria-label="Open lab instructions" title="Open instructions (.md or .txt)" aria-controls="instructions-panel" aria-expanded="false">▤ <span>Instructions</span></button></div>
   </header>
   <div class="workspace" id="workspace">
     <aside class="palette" id="device-library" aria-label="Device library">
@@ -139,6 +140,8 @@
     <p class="muted"><strong>JSON + live configs</strong> includes unsaved changes by reading current running configurations. Start every Cisco device, leave its console at the privileged (#) prompt and release input locks. Capture locks each console, temporarily suppresses console logging when enabled, and restores the original settings before export. It does not save to NVRAM. Use this option when saved-config retrieval is unavailable.</p>
     <p class="muted">Saved lab ZIP also includes IOL NVRAM and IOSv, EXOS, Arista and Junos disk changes, plus saved FRR/LL2S configuration. Save device configurations (for example, <code>write memory</code>), then stop the lab before exporting.</p>
     <p class="field-help">ZIP backups need the same device images on import. Images, licenses and temporary PC files are excluded. Limit: 8 GiB.</p>
+    <label class="export-log-option"><input type="checkbox" id="export-agent"> Include current Agent conversation (ZIP or JSON)</label>
+    <p class="field-help">Reference transcript only, including text attachments; screenshot filenames only. Imports do not restore Agent history. May contain secrets typed in chat or shown by devices; review before sharing.</p>
     <label class="export-log-option"><input type="checkbox" id="export-logs"> Include available console and launcher logs in ZIP</label>
     <p class="field-help">Console output is recorded on the server, including while browser tabs are closed. Up to 8 MiB of recent output per device is retained, starting with the next device launch after this update. Logs may contain configuration details; review before sharing. Logs are for reading and are not restored into devices.</p>
     <div id="export-compact-option" hidden>

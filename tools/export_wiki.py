@@ -21,6 +21,7 @@ PAGES = {
     'storage.md': 'Storage',
     'practice-labs.md': 'Creating-practice-labs',
     'automation.md': 'AI-assistants-and-MCP',
+    'agent.md': 'Agent-window',
     'troubleshooting.md': 'Troubleshooting',
     'limitations.md': 'Supported-scope',
     'development.md': 'Development',

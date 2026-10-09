@@ -37,3 +37,23 @@ The optional FRRouting profile runs the separately downloaded
 notices remain in that image under their upstream licenses. FRR binaries/source
 are not bundled into Weblab's standard image or source tree. The Weblab profile
 and TAP adapter are independently implemented.
+
+
+The optional Agent companion installs `@openai/codex` 0.160.0 (package license:
+Apache-2.0) and the separately pinned MCP Python SDK/dependencies. These are
+installed at image build time. The Codex 0.160.0 upstream
+[license](packaging/agent/Codex-LICENSE.txt) and
+[notice](packaging/agent/Codex-NOTICE.txt) are retained in the companion at
+`/usr/local/share/licenses/codex/`, alongside installed package notices; they are not
+part of the standard Weblab image. Node.js and Debian packages retain their own
+licenses. The independently implemented Weblab bridge and UI use the project's
+MIT license. Model weights are supplied separately by the operator's model server.
+
+The prebuilt `weblab-agent` image redistributes the unmodified Codex package,
+retaining its Apache-2.0 license and NOTICE. Weblab does not claim OpenAI
+endorsement. That software license does not grant model-service access: each
+operator uses their own eligible account or local model service. OpenAI's
+[app-server authentication guidance](https://learn.chatgpt.com/docs/app-server#authentication)
+distinguishes local/open-source integrations from commercial or hosted services;
+the current device-login integration is intended for owner-operated self-hosted
+Weblab, not a public hosted login service.

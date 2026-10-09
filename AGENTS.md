@@ -48,6 +48,16 @@ active lab. Do not delete saved storage to force snippets without a reset reques
   `python3 -m unittest discover -s tests -v`; browser/native instructions are in
   the development guide. Run suites that launch nodes sequentially to avoid ID
   collisions. Native tests require user-supplied images and any required licenses.
+- The optional Agent window defaults to read/preview. Apply/start and console
+  input need separate session settings. Default is one browser approval per exact
+  action; an explicit session YOLO setting preapproves only enabled actions.
+  Preserve turn expiry, single-use decisions, revision/cursor checks and human
+  locks. Keep the gateway route/provider allowlists and session isolation; never
+  expose the ordinary mutation API or generic command execution. Keep the companion on
+  `network_mode: none` with only its dedicated socket/state volumes. OpenAI
+  device login uses per-session Codex homes and the fixed-host TLS gateway; never
+  mount host credentials, return tokens to the browser or widen general egress. See
+  [Agent setup](docs/agent.md) and its disposable tests in the development guide.
 - Preserve shared-console transport, input locks, saved-state precedence and
   transactional archive restore. Never read active guest storage or bypass QEMU
   disk locks with forced sharing. Exported logs are not restored as device state.

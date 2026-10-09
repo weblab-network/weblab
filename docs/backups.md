@@ -16,6 +16,33 @@ licenses are not included. Instructions documents and window positions are not
 part of topology/ZIP exports. EXOS/Arista/Junos support topology JSON and saved ZIP,
 but not configuration-text export or initial snippets.
 
+## Optional Agent conversation
+
+In **Export**, select **Include current Agent conversation (ZIP or JSON)** to
+save the conversation currently selected in this browser's Agent window. The
+option is off by default. Open an older conversation in **Agent → History** first
+if that is the one you want. It captures messages already received, including
+text attachments and screenshot filenames, but not image files or unsent drafts.
+It does not gather other conversations or other users' sessions.
+
+ZIP adds `agent/conversation.md` and `agent/conversation.json`, with manifest
+checksums. JSON exports (including saved/live config variants) add an optional
+`agent_history` field. The transcript is limited to 512 KiB; the complete JSON
+must still fit the 1 MB import limit. Oversized transcripts fail explicitly;
+export without this option and download a transcript separately from History.
+
+These are **reference documents, not resumable Agent sessions**. Import validates
+ZIP transcript paths, sizes and checksums, but does not install the documents or
+replay messages/actions; JSON import ignores `agent_history`. Extract the ZIP or
+retain the exported JSON to read them. ZIPs containing this optional section need
+an importer supporting it; leave the option off for older installations.
+
+Login credentials, session tokens, provider endpoint settings, approvals, internal
+tool logs and Codex conversation IDs are excluded. Message text itself is not
+redacted: it may contain passwords or configuration details supplied in chat or
+quoted from a device. Review before sharing. The recorded conversation is not
+proof that the accompanying lab still has the configuration discussed.
+
 ## Where state is stored
 
 Use [Storage](storage.md) to inspect filesystem capacity and per-node disk/log

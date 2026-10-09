@@ -32,3 +32,15 @@
 !lab_automation.py
 !docs/
 !docs/practice-labs.md
+!agent_bridge.py
+!agent_transport.py
+!agent_companion.py
+!agent_auth.py
+!agent_attachments.py
+!requirements-mcp.txt
+!tools/
+!tools/weblab_mcp.py
+!packaging/
+!packaging/agent/
+!packaging/agent/Codex-LICENSE.txt
+!packaging/agent/Codex-NOTICE.txt

@@ -52,6 +52,21 @@ pin a version or digest when you want deliberate upgrades. `edge` follows main;
 stable release. Save configurations, export a ZIP and stop the lab before pulling
 and recreating an existing deployment. Preserve its image/data mounts.
 
+## Optional Agent window
+
+For the optional in-browser assistant, add the
+[prebuilt Agent companion](agent.md#enable-with-prebuilt-images). It supports
+Ollama or OpenAI through ChatGPT sign-in and requires no local source build.
+Keep the core and companion on matching release versions. Regular Weblab does
+not require an Agent, a model server or an OpenAI account.
+
+The Compose override is the opt-in switch: omit `-f compose.agent.yaml` when
+building from source, or `-f compose.agent.prebuilt.yaml` when using prebuilt
+images, to start regular Weblab without the companion or Agent button. There is
+no additional checkbox or build flag to disable it. For an existing Agent
+installation, see [Disabling the Agent](agent.md#disable-the-agent) to remove the
+companion container while keeping its saved conversations.
+
 ## Container-only switching and routing
 
 Weblab v0.4.0 adds the [LL2S switch profile](devices.md#ll2s-linux-layer-2-switch).

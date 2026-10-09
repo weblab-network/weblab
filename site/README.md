@@ -71,3 +71,13 @@ address only after activation, then displays a selectable mail link. This reduce
 basic plaintext scraping, but cannot prevent determined collection. Without
 JavaScript, the footer offers GitHub issues as an alternative. Keep the README
 linked to this section rather than duplicating the address in Markdown.
+
+## Agent demonstrations
+
+`/#agent-videos` contains two captioned, silent MP4 highlights alongside the
+existing overview, with YouTube alternatives. Both preserve the full source
+frame, use preload=none and do not autoplay. Adjacent text identifies Agent-issued
+console commands and device output. The creation exercise intentionally leaves
+OSPF and RSTP tasks unfinished; the hosted restricted preview has no Agent login.
+Keep the video, thumbnail and full-size screenshot URLs stable: the README and
+Agent help page link to these assets.

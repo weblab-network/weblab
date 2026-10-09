@@ -312,3 +312,113 @@ add `--ollama-url http://HOST:11434/v1 --model MODEL` for model-driven discovery
 and preview using synthetic catalog files. It does not boot vendor devices or
 verify protocols. `--output /tmp/mcp-test` retains the generated exercise and
 conversation locally; review it before sharing.
+
+
+## Optional Agent window checks
+
+`agent_bridge.py` provides browser sessions and a restricted Unix-socket gateway;
+`agent_companion.py` manages pinned Codex processes in the optional companion;
+`agent_auth.py` manages per-session Codex device login;
+`agent_transport.py` is their dependency-free transport. `web/agent.js` uses
+existing floating-window geometry. The main image does not install Codex or MCP.
+The companion permits only its guarded apply/start/input tools through Codex's
+per-tool approval policy, so approval is enforced by Weblab's browser cards or
+the owner's explicit session YOLO setting. Do not replace this with a blanket
+Codex approval policy or remove gateway enforcement.
+Generic Codex shell/elicitation requests remain rejected. Pinned configuration
+fields can be checked against the [Codex configuration reference](https://developers.openai.com/codex/config-reference)
+and the installed CLI's generated schemas.
+
+Default tests cover denied gateway routes, session separation, provider allowlists,
+unchanged labs, duplicate request IDs, interruption and stored conversation state.
+Authentication tests cover device-code completion/cancellation/logout, secret
+redaction, per-session credential directories, disabled generic tools and exact
+CONNECT destinations. The browser fixture covers provider selection and sign-in
+controls without authenticating an account. History checks cover migration,
+restart/resume, ownership, allowlist validation, approval revocation, rename/delete,
+transcript downloads and optional remembered browser access. They use disposable
+state and a simulated Codex RPC; they do not require an account or a running lab:
+
+Attachment checks cover UTF-8/image headers and limits, session/conversation
+ownership, duplicate sends, disk failures, history/restart retention and deletion.
+Browser checks cover file selection, safe previews, removal, download and invalid
+files. The packaged `--tool-gateway-only` fixture also asserts that actual image
+data and text reach its simulated Responses endpoint through Codex. This verifies
+transport, not a cloud model's visual understanding.
+
+Optional lab transcript exports are covered by `tests/test_backup.py` (allowlisted
+fields, bounds, checksums, rejected paths and restore without installing history),
+the Agent ownership tests, and browser JSON/ZIP export checks. JSON import drops
+reference history metadata. These checks use disposable fixtures only.
+
+`tests/agent_packaging.py` checks the actual images with fresh named volumes:
+runtime imports and Codex license/NOTICE, unprivileged network-none companion,
+read/preview defaults, persisted session/draft access after recreating both
+containers, and reset/close. It does not authenticate a real account or run
+inference. `tools/smoke_container.py` also verifies that a plain core image reports
+the Agent disabled. The release workflow runs these before publishing the Agent
+image and requires that job before creating the GitHub release.
+
+```sh
+python3 -m unittest discover -s tests -p test_agent.py -v
+node tests/agent_ui.cjs
+```
+
+For actual Codex/Ollama calls, build the optional image and run this **opt-in** test
+with already installed models. It uses an empty disposable Weblab, no vendor
+images or running lab, and cleans only its own test container/volume:
+
+```sh
+docker build -f packaging/agent/Dockerfile -t weblab-agent:dev .
+python3 tests/agent_native.py --ollama-url http://YOUR_HOST:11434/v1 \
+  --model gpt-oss:20b --model qwen3.5:9b-temp-0.3
+```
+
+To exercise the real pinned Codex device-login protocol and HTTPS gateway without
+logging into an account or making an inference request, use:
+
+```sh
+python3 tests/agent_native.py --openai-login-only
+```
+
+It requests a device code and immediately cancels it, without printing the code.
+It needs outbound access to the fixed OpenAI hosts and disposable Docker storage.
+Signed-in generation, account limits and entitlement errors need a separate
+operator test; never reuse host Codex credentials in automated tests.
+
+For model-visible tool routing, use the real pinned Codex runtime with a local
+simulated Code Mode model and the real Weblab MCP adapter/gateway:
+
+```sh
+python3 tests/agent_native.py --tool-gateway-only
+```
+
+This starts a disposable empty lab and a network-isolated companion. The fixture
+uses bundled `gpt-5.6-sol` catalog metadata, checks that Code Mode is offered,
+executes a read of the empty topology, and verifies that only Weblab tools are
+callable (no shell, patch, filesystem or network globals). It uses no OpenAI
+credentials or cloud inference. `tests/agent_tool_fixture.py` is mounted only by
+this test and must never become a production entrypoint. Keep its checks when
+upgrading Codex, including the builtin namespace exclusions.
+
+For packaging without inference or external network access, also build the core
+image and test the two services with fresh named volumes:
+
+```sh
+docker build -t weblab-agent-core-test:local .
+python3 tests/agent_packaging.py
+```
+
+Add `--approvals` to also exercise browser-approved starts and console input
+against two disposable echo devices, including layout edits during approvals,
+with the real model/companion (no vendor boot).
+Use `--approvals-only --model gpt-oss:20b` to focus on that path and provider failure.
+Add `--protocol-preview` to check a nine-node OSPF/STP draft for redundant switch
+paths, configuration snippets and PC addressing. This checks design structure,
+not configuration syntax or protocol convergence.
+The backend suite also checks denial/expiry/cancellation, session isolation, stale
+revisions/cursors and human locks.
+
+The Ollama test checks real previews, unchanged topology, duplicate-submit handling, Stop,
+container recreation and continued conversation. It does not establish exercise
+correctness or guest boot/forwarding. See [setup and limitations](agent.md).

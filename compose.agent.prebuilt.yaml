@@ -1,0 +1,37 @@
+# Optional prebuilt Agent window; add after compose.prebuilt.yaml (and compose.kvm.yaml if used).
+# Configure WL_AGENT_PROVIDERS to the allowed Ollama /v1 endpoint(s).
+# OpenAI sign-in is selected in Settings; its fixed HTTPS hosts use the gateway.
+services:
+  lab:
+    environment:
+      WL_AGENT_SOCKET_DIR: /run/weblab-agent
+      WL_AGENT_STATE_DIR: /agent-state
+      WL_AGENT_PROVIDERS: ${WL_AGENT_PROVIDERS:-http://127.0.0.1:11434/v1}
+    volumes:
+      - agent-sockets:/run/weblab-agent
+      - agent-bridge-state:/agent-state
+    depends_on:
+      - agent
+  agent:
+    image: ${WL_AGENT_IMAGE:-ghcr.io/weblab-network/weblab-agent:latest}
+    platform: linux/amd64
+    network_mode: none
+    user: '10001:10001'
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 1
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m
+      - /workspace:rw,nosuid,nodev,uid=10001,gid=10001,size=32m
+    volumes:
+      - agent-sockets:/run/weblab-agent
+      - agent-conversations:/home/agent
+    stop_grace_period: 20s
+volumes:
+  agent-sockets:
+  agent-bridge-state:
+  agent-conversations:

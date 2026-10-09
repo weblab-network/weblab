@@ -28,6 +28,15 @@ def revision(topology):
                                      allow_nan=False).encode()).hexdigest()
 
 
+def execution_revision(topology):
+    """Coordinates do not change what a start or console operation targets."""
+    value = copy.deepcopy(topology)
+    for node in value['nodes']:
+        node.pop('x', None)
+        node.pop('y', None)
+    return revision(value)
+
+
 def portable(topology):
     result = copy.deepcopy(topology)
     for node in result['nodes']:
@@ -44,14 +53,63 @@ def resources(nodes):
     }
 
 
+def switching_warnings(topology):
+    """Physical switch graph only; VLANs and guest STP still need verification."""
+    groups = {n['id']: n['id'] for n in topology['nodes'] if n['type'] == 'switch'}
+    if len(groups) < 2:
+        return []
+
+    def root(node):
+        while groups[node] != node:
+            node = groups[node]
+        return node
+
+    cycle = False
+    for link in topology['links']:
+        a, b = link['a']['node'], link['b']['node']
+        if a not in groups or b not in groups:
+            continue
+        a, b = root(a), root(b)
+        if a == b:
+            cycle = True
+        else:
+            groups[a] = b
+    warnings = []
+    count = len({root(node) for node in groups})
+    if count > 1:
+        warnings.append(f'Switches form {count} separate groups without direct switch-to-switch connectivity. Routed links do not join their Layer 2 domains.')
+    if not cycle:
+        warnings.append('No redundant switch-to-switch cycle: STP can run, but this physical graph cannot demonstrate STP blocking/failover between switches. For that exercise add redundant switch links with compatible VLANs.')
+    return warnings
+
+
 class Automation:
     def __init__(self, lab, error, ports, run):
         self.lab, self.error, self.ports, self.run = lab, error, ports, run
         self.proposals = {}
+        self.observed_revisions = {}
+
+    def _observe_revision(self, topology):
+        # Called with the lab lock. Remember only fingerprints, not lab contents.
+        current = revision(topology)
+        self.observed_revisions.pop(current, None)
+        self.observed_revisions[current] = execution_revision(topology)
+        while len(self.observed_revisions) > 128:
+            del self.observed_revisions[next(iter(self.observed_revisions))]
+        return current
+
+    def require_execution_revision(self, expected):
+        # Caller holds the lab lock. Apply deliberately keeps its full revision
+        # check: replacing a topology would otherwise overwrite layout edits.
+        if isinstance(expected, str) and (expected == revision(self.lab.topology) or
+                self.observed_revisions.get(expected) == execution_revision(self.lab.topology)):
+            return
+        raise self.error('Workspace changed; read current state/console and review before continuing')
 
     def state(self):
-        state = self.lab.snapshot()
-        state['revision'] = revision(state['topology'])
+        with self.lab.lock:
+            state = self.lab.snapshot()
+            state['revision'] = self._observe_revision(state['topology'])
         state['guest_readiness'] = 'unverified'
         state['notice'] = 'Running means the launcher is alive, not that login, interfaces or protocols are ready. Use console evidence to verify readiness and connectivity.'
         return state
@@ -80,7 +138,7 @@ class Automation:
         try:
             with self.lab.lock:
                 console = self._console(node_id, cursor)
-                current = revision(self.lab.topology)
+                current = self._observe_revision(self.lab.topology)
             try:
                 return {'node_id': node_id, 'revision': current,
                         **console.window(wait_seconds, max_bytes)}
@@ -100,8 +158,7 @@ class Automation:
         attempted = False
         try:
             with self.lab.lock:
-                if expected_revision != revision(self.lab.topology):
-                    raise self.error('Workspace changed; read the current state and console before sending input')
+                self.require_execution_revision(expected_revision)
                 console = self._console(node_id, expected_cursor)
                 console.acquire()  # Never takes over a human lock; drains replay before ACK.
                 if not console.stream or console.stream['gap'] or console.cursor != expected_cursor:
@@ -203,20 +260,27 @@ class Automation:
     def _shape(self, data):
         if not isinstance(data, dict):
             raise self.error('Expected a topology object')
-        def keys(value, allowed):
-            if not isinstance(value, dict) or set(value) - set(allowed):
-                raise self.error('Unexpected topology fields; read the authoring guide and omit internal iol_id values')
-        keys(data, ('version', 'name', 'nodes', 'links'))
+        def keys(value, allowed, path):
+            if not isinstance(value, dict):
+                raise self.error(f'{path}: expected an object with fields {", ".join(allowed)}')
+            extra = sorted(set(value) - set(allowed))
+            if extra:
+                names = ', '.join(repr(str(k)[:80]) for k in extra[:8])
+                hint = ' Use a and b objects, each with node and port.' if 'endpoints' in extra else ''
+                if 'iol_id' in extra:
+                    hint += ' Omit internal iol_id values; the server assigns them.'
+                raise self.error(f'{path}: unexpected fields {names}. Allowed fields: {", ".join(allowed)}.{hint}')
+        keys(data, ('version', 'name', 'nodes', 'links'), 'topology')
         if data.get('version', 1) != 1:
             raise self.error('Only topology version 1 is supported')
         if not isinstance(data.get('nodes'), list) or not isinstance(data.get('links'), list):
             raise self.error('Expected nodes and links arrays')
-        for n in data['nodes']:
-            keys(n, ('id', 'name', 'type', 'image', 'x', 'y', 'memory', 'ethernet', 'ipv4', 'gateway', 'startup_config', 'iol_l1'))
-        for link in data['links']:
-            keys(link, ('id', 'a', 'b'))
+        for index, n in enumerate(data['nodes']):
+            keys(n, ('id', 'name', 'type', 'image', 'x', 'y', 'memory', 'ethernet', 'ipv4', 'gateway', 'startup_config', 'iol_l1'), f'nodes[{index}]')
+        for index, link in enumerate(data['links']):
+            keys(link, ('id', 'a', 'b'), f'links[{index}]')
             for side in ('a', 'b'):
-                keys(link.get(side), ('node', 'port'))
+                keys(link.get(side), ('node', 'port'), f'links[{index}].{side}')
 
     def _assign_ids(self, topology):
         """Resolve proposal-local aliases; only generated IDs become storage paths."""
@@ -282,6 +346,7 @@ class Automation:
             normalized = portable(self.lab.validate(assigned))
             self._fresh(normalized)
             warnings = ['Structural validation only; configuration syntax and protocol behavior have not been tested.']
+            warnings.extend(switching_warnings(normalized))
             if existing:
                 warnings.append('Apply replaces the current topology. Existing saved node directories are retained, but this is not a saved-state ZIP backup. Export your current lab first if needed.')
             if self.lab.runtime:
@@ -342,8 +407,7 @@ class Automation:
 
     def start_node(self, node_id, expected_revision):
         with self.lab.lock:
-            if not isinstance(expected_revision, str) or expected_revision != revision(self.lab.topology):
-                raise self.error('Workspace changed; get current state and review before starting devices')
+            self.require_execution_revision(expected_revision)
             self.lab.node(node_id)
             try:
                 self.lab.start(node_id)

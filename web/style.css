@@ -278,3 +278,73 @@ body{height:var(--app-height,100vh)}
 [data-storage][data-level="critical"]{color:#ffaaaa;border-color:#ffaaaa}
 #storage-dialog{width:min(760px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto}
 .storage-table{overflow-x:auto}.storage-table table{width:100%;border-collapse:collapse;text-align:left}.storage-table td,.storage-table th{padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap}.storage-table td:first-child{white-space:pre-line;overflow-wrap:anywhere;min-width:140px}.storage-table th{color:var(--muted);font-size:12px}
+
+/* Optional Agent window shares the existing floating-window geometry/keyboard controls. */
+.agent-panel {position:fixed;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--panel,#171e25);border:1px solid #536f68;border-radius:12px;box-shadow:0 18px 50px #0006;pointer-events:auto;color:var(--text,#dce5ed)}
+.agent-panel[hidden],.agent-panel [hidden] {display:none!important}
+.agent-panel .console-toolbar {flex-shrink:0}
+.agent-mode,.agent-hint {color:#9db0bd;font-size:12px}
+.agent-mode {white-space:nowrap}
+.agent-tabs,.agent-actions {display:flex;gap:8px;flex-wrap:wrap;padding:8px 12px;flex-shrink:0}
+.agent-panel .agent-tabs {padding:5px 12px 0;flex-wrap:nowrap;gap:4px}
+.agent-tabs button {flex-shrink:0;white-space:nowrap;border-radius:6px 6px 0 0}
+.agent-tabs .needs-attention {box-shadow:inset 0 -3px var(--accent);font-weight:600}
+#agent-pending {flex-shrink:0;margin:6px 12px;text-align:left;color:var(--accent)}
+.agent-tabs [aria-selected=true] {color:#76dbc3;background:#253d38}
+#agent-status {margin:0;padding:6px 12px;font-size:12px;overflow-wrap:anywhere;border-bottom:1px solid #35414c;max-height:80px;overflow:auto;flex-shrink:0}
+#agent-tool-error {padding:6px 12px;font-size:12px;max-height:120px;overflow:auto;flex-shrink:0}
+#agent-tool-error pre {white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}
+#agent-chat {display:flex;flex:1;flex-direction:column;min-height:0;overflow:auto}
+.agent-hint {margin:8px 12px;line-height:1.5}
+#agent-messages {overflow:auto;min-height:70px;flex:1;padding:0 14px;user-select:text}
+#agent-messages article {padding:12px 0;border-bottom:1px solid #35414c}
+#agent-messages article>div {white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.5;margin-top:7px}
+#agent-messages strong {font-size:12px;color:#79dbc3}
+#agent-prompt-form {padding:8px 12px 14px;flex-shrink:0}
+#agent-prompt {width:100%;resize:vertical;max-height:150px;min-height:55px;box-sizing:border-box}
+#agent-prompt-form .agent-actions {padding:8px 0 0}
+#agent-proposals,#agent-operations,#agent-history {flex:1;min-height:0;overflow:auto;padding:0 12px 12px}
+.agent-history-card {padding:12px 0;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
+.agent-history-card .agent-actions {padding:0}
+.agent-history-rename {display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.agent-history-rename input {min-width:0;flex:1}
+#agent-file-hint {margin:0;font-size:11px}
+#agent-file-error {color:#ffb4ab;margin:6px 0;font-size:12px;max-height:70px;overflow:auto}
+#agent-attachments {max-height:130px;overflow:auto;margin-top:6px}
+#agent-attachments>div {display:flex;align-items:start;gap:6px;margin:4px 0}
+#agent-attachments .agent-attachment {flex:1;min-width:0}
+.agent-attachment {margin:8px 0;overflow-wrap:anywhere}
+.agent-attachment summary {cursor:pointer;color:var(--accent)}
+.agent-attachment img {display:block;max-width:100%;max-height:300px;object-fit:contain;margin:8px 0}
+.agent-attachment pre {white-space:pre-wrap;overflow-wrap:anywhere;max-height:250px;overflow:auto;user-select:text}
+#agent-proposals>div {display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0;font-size:12px}
+#agent-settings {overflow:auto;min-height:0;padding:12px;flex:1}
+#agent-settings label {display:block;margin-bottom:12px;font-size:13px}
+#agent-settings input,#agent-settings select {display:block;width:100%;margin-top:5px;box-sizing:border-box}
+#agent-check-result {font-size:13px;overflow-wrap:anywhere}
+#agent-prompt {font:inherit;background:#10171d;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;line-height:1.5}
+#agent-prompt:focus-visible {outline:2px solid var(--accent);outline-offset:2px}
+.agent-panel .console-toolbar {touch-action:pan-x}
+.agent-proposal-detail {flex-basis:100%;min-width:0;user-select:text}
+.agent-proposal-detail pre {white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}
+
+/* Agent approvals stay readable without interpreting device/model markup. */
+.agent-permission { display: flex !important; flex-direction: row !important; align-items: center; gap: .6rem; }
+.agent-permission input { width: auto !important; }
+#agent-approvals { min-width: 0; }
+.agent-approval { padding: 12px; margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; }
+.agent-approval pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; max-height: 180px; overflow: auto; }
+.agent-approval button { margin: 4px 6px 0 0; }
+.agent-approval p { font-size: 12px; color: var(--muted); }
+#agent-approval-dialog { width: 680px; max-height: calc(100dvh - 32px); overflow: auto; }
+#agent-approval-detail { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; max-height: 35dvh; overflow: auto; }
+#agent-approval-dialog .dialog-actions { flex-wrap: wrap; }
+#agent-approval-error { color: #f4b1b1; }
+
+#agent-progress { display: flex; align-items: center; gap: 8px; padding: 6px 12px; flex-shrink: 0; color: var(--muted); font-size: 12px; }
+#agent-progress[hidden] { display: none; }
+#agent-progress-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent-spinner { width: 11px; height: 11px; flex-shrink: 0; border: 2px solid #35414c; border-top-color: var(--accent); border-radius: 50%; animation: agent-spin 1s linear infinite; }
+#agent-progress.disconnected .agent-spinner { animation: none; border-top-color: var(--muted); }
+@keyframes agent-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .agent-spinner { animation: none; } }

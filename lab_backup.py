@@ -23,6 +23,70 @@ MAX_FILES = 4096
 METADATA_BYTES = 1_000_000
 CHUNK = 1024 * 1024
 LOG_BYTES = 8 * 1024 * 1024
+HISTORY_BYTES = 512 * 1024
+HISTORY_PATHS = {'agent/conversation.json', 'agent/conversation.md'}
+
+
+def conversation_export(record):
+    """Bounded reference transcript, never a resumable session/capability export."""
+    if not isinstance(record, dict):
+        raise ValueError('Invalid Agent conversation')
+    def text(value, limit):
+        if not isinstance(value, str) or len(value.encode('utf-8')) > limit:
+            raise ValueError('Invalid or oversized Agent transcript text')
+        return value
+    settings = record.get('settings', record)
+    if not isinstance(settings, dict):
+        raise ValueError('Invalid Agent conversation settings')
+    result = {'format': 'weblab-agent-transcript', 'version': 1,
+              'title': text(record.get('title', ''), 1000),
+              'provider': text(settings.get('provider', ''), 100),
+              'model': text(settings.get('model', ''), 1000), 'messages': []}
+    for key in ('created', 'updated'):
+        value = record.get(key)
+        if type(value) in (int, float) and 0 <= value < 10**12:
+            result[key] = value
+    messages = record.get('messages')
+    if not isinstance(messages, list) or not 1 <= len(messages) <= 10000:
+        raise ValueError('Agent conversation is empty or too large')
+    for message in messages:
+        if not isinstance(message, dict) or message.get('role') not in ('user', 'assistant'):
+            raise ValueError('Invalid Agent transcript message')
+        item = {'role': message['role'], 'text': text(message.get('text'), HISTORY_BYTES)}
+        attachments = message.get('attachments', [])
+        if not isinstance(attachments, list) or len(attachments) > 4:
+            raise ValueError('Invalid Agent transcript attachments')
+        if attachments:
+            item['attachments'] = []
+        for attachment in attachments:
+            if not isinstance(attachment, dict):
+                raise ValueError('Invalid Agent transcript attachment')
+            meta = {'name': text(attachment.get('name'), 640),
+                    'mime': text(attachment.get('mime'), 100)}
+            if meta['mime'] == 'text/plain':
+                meta['text'] = text(attachment.get('text'), 64 * 1024)
+            # Image bytes, internal IDs and filesystem paths are intentionally absent.
+            item['attachments'].append(meta)
+        result['messages'].append(item)
+    if len(json.dumps(result).encode()) > HISTORY_BYTES:
+        raise ValueError('Agent transcript exceeds 512 KiB; download it separately from History')
+    return result
+
+
+def conversation_markdown(record):
+    parts = ['# ' + record['title'],
+             'Reference transcript only. Import does not restore an Agent session or replay actions. '
+             'Text attachments are included; image attachments are listed by filename only. '
+             'Conversation text may contain secrets you typed or device output. Review before sharing.',
+             'Model: ' + record['model']]
+    for message in record['messages']:
+        parts.extend(['## ' + ('You' if message['role'] == 'user' else 'Agent'), message['text']])
+        for attachment in message.get('attachments', []):
+            parts.extend(['Attachment: ' + attachment['name'],
+                          attachment.get('text', '[Image not included]')])
+    return ('\n\n'.join(parts) + '\n').encode()
+
+
 LOG_NAMES = ('console-output.log.1', 'console-output.log', 'console.log', 'bridge.log')
 LOG_README = '''Lab logs (optional; not device state)
 
@@ -121,11 +185,18 @@ def export_source(lab, node, path, size, compact_veos):
         yield source, size, {}
 
 
-def create(lab, include_logs=False, compact_veos=True):
+def create(lab, include_logs=False, compact_veos=True, agent_history=None):
     if type(include_logs) is not bool:
         raise ValueError('include_logs must be a boolean')
     if type(compact_veos) is not bool:
         raise ValueError('compact_veos must be a boolean')
+    history_files = {}
+    if agent_history is not None:
+        transcript = conversation_export(agent_history)
+        history_files = {'agent/conversation.json': (json.dumps(transcript, indent=2) + '\n').encode(),
+                         'agent/conversation.md': conversation_markdown(transcript)}
+        if any(len(content) > METADATA_BYTES for content in history_files.values()):
+            raise ValueError('Agent transcript is too large')
     with lab.lock:
         stopped(lab)
         expire(lab)
@@ -133,7 +204,7 @@ def create(lab, include_logs=False, compact_veos=True):
             raise ValueError('Download the pending backup first, or wait 15 minutes for it to expire')
         # Budget uncompressed source lengths: compression is not guaranteed.
         # Compact vEOS may also need one full-sized temporary encoding at a time.
-        needed, scratch = 0, 0
+        needed, scratch = sum(map(len, history_files.values())), 0
         for node in lab.topology['nodes']:
             directory = lab.directory / 'nodes' / node['id']
             if directory.is_symlink():
@@ -236,6 +307,15 @@ def create(lab, include_logs=False, compact_veos=True):
                                 source.seek(max(0, info.st_size - LOG_BYTES))
                                 content = source.read(LOG_BYTES)
                             add_log(f"logs/nodes/{node['id']}/{name}", content, info.st_size)
+                if history_files:
+                    manifest['agent_history'] = []
+                    for entry, content in history_files.items():
+                        total += len(content)
+                        if total > MAX_BYTES or len(archive.infolist()) >= MAX_FILES - 1:
+                            raise ValueError('Backup exceeds the 8 GiB / 4096 file limit')
+                        archive.writestr(entry, content)
+                        manifest['agent_history'].append({'path': entry, 'size': len(content),
+                                                         'sha256': hashlib.sha256(content).hexdigest()})
                 metadata = json.dumps(manifest)
                 if len(metadata.encode()) > METADATA_BYTES:
                     raise ValueError('Backup manifest is too large')
@@ -487,6 +567,25 @@ def restore(lab, stream, run):
                             checksum.update(chunk)
                     if checksum.hexdigest() != record['sha256']:
                         raise ValueError('Log file checksum mismatch')
+                history_records = manifest.get('agent_history', [])
+                if not isinstance(history_records, list) or len(history_records) not in (0, 2):
+                    raise ValueError('Invalid Agent history manifest')
+                for record in history_records:
+                    if not isinstance(record, dict) or set(record) != {'path', 'size', 'sha256'}:
+                        raise ValueError('Invalid Agent history entry')
+                    name = record['path']
+                    if not isinstance(name, str) or name not in HISTORY_PATHS or name not in names or name in expected:
+                        raise ValueError('Invalid or duplicate Agent history path')
+                    expected.add(name)
+                    member = archive.getinfo(name)
+                    if type(record['size']) is not int or record['size'] != member.file_size or not 0 <= member.file_size <= METADATA_BYTES:
+                        raise ValueError('Agent history size mismatch or limit exceeded')
+                    restored_total += member.file_size
+                    if restored_total > MAX_BYTES:
+                        raise ValueError('Restored backup exceeds the 8 GiB limit')
+                    if hashlib.sha256(archive.read(member)).hexdigest() != record['sha256']:
+                        raise ValueError('Agent history checksum mismatch')
+                # Transcripts are reference documents only; never install or execute them.
                 if names != expected:
                     raise ValueError('Backup contains unlisted files')
                 for node in topology['nodes']:

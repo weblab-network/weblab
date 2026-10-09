@@ -22,4 +22,22 @@ async function pinnedToolbar(page, selector, moveSelector, hideSelector) {
   await page.mouse.wheel(0, -10000);
   await page.waitForFunction(selector => document.querySelector(selector + ' > .toolbar-scroll').scrollLeft === 0, selector);
 }
-module.exports = {pinnedToolbar};
+async function scrollingTabs(page, selector) {
+  const strip=page.locator(selector);
+  await strip.evaluate(e=>e.scrollLeft=0);
+  assert.ok(await strip.evaluate(e=>e.scrollWidth>e.clientWidth),'Tab strip must overflow');
+  const selected=await strip.locator('[role=tab][aria-selected=true]').getAttribute('id');
+  await strip.hover();await page.mouse.wheel(0,180);
+  await page.waitForFunction(s=>document.querySelector(s).scrollLeft>0,selector);
+  assert.equal(await strip.locator('[role=tab][aria-selected=true]').getAttribute('id'),selected);
+  for (const modifiers of [{ctrlKey:true},{metaKey:true},{deltaX:200}]) {
+    const prevented=await strip.evaluate((e,modifiers)=>{
+      const event=new WheelEvent('wheel',{deltaY:50,bubbles:true,cancelable:true,...modifiers});
+      e.dispatchEvent(event);return event.defaultPrevented;
+    },modifiers);
+    assert.equal(prevented,false,'Keep zoom and horizontal trackpad handling native');
+  }
+  await page.mouse.wheel(0,-10000);
+  await page.waitForFunction(s=>document.querySelector(s).scrollLeft===0,selector);
+}
+module.exports = {pinnedToolbar,scrollingTabs};

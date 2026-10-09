@@ -62,6 +62,56 @@ class BackupTests(unittest.TestCase):
         self.assertEqual(self.nvram.read_bytes(), b'keep this state')
         self.assertFalse(list(self.lab.directory.glob('.restore-*')))
 
+    def test_agent_transcript_roundtrip_is_reference_only(self):
+        source = {'title': 'OSPF lab', 'created': 123, 'updated': 456,
+                  'settings': {'model': 'test', 'provider': 'ollama', 'endpoint': 'PRIVATE_ENDPOINT'},
+                  'thread_id': 'PRIVATE_THREAD', 'token': 'PRIVATE_TOKEN', 'approvals': ['PRIVATE_APPROVAL'],
+                  'messages': [{'role': 'user', 'text': 'Configure OSPF', 'attachments': [
+                      {'name': 'config.txt', 'mime': 'text/plain', 'text': 'router ospf', 'id': 'PRIVATE_ID'},
+                      {'name': 'screen.png', 'mime': 'image/png', 'data': 'PRIVATE_IMAGE'}]},
+                      {'role': 'assistant', 'text': 'OSPF verified.'}]}
+        result = lab_backup.create(self.lab, agent_history=source)
+        stream, _ = lab_backup.take(self.lab, result['url'].rsplit('/', 1)[1])
+        with stream:
+            data = stream.read()
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual({r['path'] for r in manifest['agent_history']}, lab_backup.HISTORY_PATHS)
+            transcript = archive.read('agent/conversation.json')
+            self.assertNotIn(b'PRIVATE_', transcript)
+            self.assertIn(b'router ospf', transcript)
+            self.assertIn(b'OSPF verified.', archive.read('agent/conversation.md'))
+            normalized = json.loads(transcript)
+            self.assertEqual(lab_backup.conversation_export(normalized), normalized)
+        self.nvram.write_bytes(b'changed')
+        self.restore(data)
+        self.assertEqual(self.nvram.read_bytes(), self.contents)
+        self.assertFalse((self.lab.directory / 'agent').exists())
+        self.assertNotIn('agent_history', self.lab.validate({**self.lab.topology, 'agent_history': normalized}))
+        def corrupt(entries):
+            return [(m, b'tampered' if m.filename == 'agent/conversation.md' else content) for m, content in entries]
+        self.assert_unchanged(self.rewrite(data, corrupt))
+        def path_attack(entries):
+            result = []
+            for m, content in entries:
+                if m.filename == 'manifest.json':
+                    manifest = json.loads(content)
+                    manifest['agent_history'][0]['path'] = 'nodes/' + self.node['id'] + '/startup-config'
+                    content = json.dumps(manifest).encode()
+                result.append((m, content))
+            return result
+        self.assert_unchanged(self.rewrite(data, path_attack))
+        with zipfile.ZipFile(io.BytesIO(self.backup())) as archive:
+            self.assertFalse(any(n.startswith('agent/') for n in archive.namelist()))
+
+    def test_agent_transcript_limits_and_invalid_records(self):
+        for record in ({}, {'messages': []}, {'messages': [{'role': 'tool', 'text': 'secret'}]},
+                       {'messages': [{'role': 'user', 'text': 'x' * lab_backup.HISTORY_BYTES}]},
+                       {'messages': [{'role': 'user', 'text': 'x', 'attachments': ['bad']}]}):
+            with self.subTest(record=str(record)[:60]), self.assertRaises(ValueError):
+                lab_backup.create(self.lab, agent_history=record)
+        self.assertFalse(self.lab.exports)
+
     def test_round_trip_remaps_nvram_and_excludes_runtime(self):
         directory = self.nvram.parent
         (directory / 'console.log').write_text('diagnostic')
