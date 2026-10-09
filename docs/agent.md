@@ -309,8 +309,16 @@ ChatGPT account login without putting an API key in Weblab or the browser:
 5. Open Conversation and send a request. Read/preview, permission switches,
    individual approvals or YOLO work exactly as with Ollama.
 
-This uses your account's Codex access and usage limits. API-key authentication
-is not implemented here. **Cancel sign-in** cancels a pending login; **Sign out**
+**Shared usage allowance:** OpenAI requests from Weblab count toward your signed-in
+account's existing Codex / ChatGPT Work limits, shared with your other usage.
+Weblab provides no separate allowance. Longer conversations and repeated console
+checks can consume more usage.
+
+**Plan eligibility:** use a ChatGPT plan with Codex CLI access, such as Plus, Pro
+or an eligible Business, Enterprise or Edu plan. Free/Go desktop access does not
+establish compatibility with this companion. Check OpenAI's
+[current plans and usage limits](https://learn.chatgpt.com/docs/pricing).
+API-key authentication is not implemented here. **Cancel sign-in** cancels a pending login; **Sign out**
 removes that session's credentials and clears its conversation. Neither stops
 lab nodes. After a companion restart, refresh the account to see its status.
 
