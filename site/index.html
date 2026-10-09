@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Build, run and troubleshoot network labs in one browser workspace. Weblab.Network brings your topology, device consoles and exercise instructions together.">
+  <meta name="description" content="Build, run and troubleshoot network labs in one browser workspace. Bring topology, consoles and an optional AI Agent together to create, configure and check practice labs.">
   <meta name="theme-color" content="#10171c">
   <title>Weblab.Network — Your network lab. All in one view.</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css?v=20b9e1703c13">
-  <script src="page.js?v=469888494e89" defer></script>
+  <link rel="stylesheet" href="style.css?v=6719b20bd578">
+  <script src="page.js?v=778109763495" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
-    <a class="brand" href="#" aria-label="Weblab home"><span class="brand-mark" aria-hidden="true">w<span>e</span>b<span class="brand-dot">.</span></span><span class="brand-label">LAB<span>NETWORK WORKSPACE</span></span></a>
+    <a class="brand" href="#" aria-label="Weblab home"><span class="brand-mark" aria-hidden="true">w<span>e</span>b</span><span class="brand-label">LAB<span>NETWORK WORKSPACE</span></span></a>
     <nav aria-label="Main navigation">
       <a href="#features">Explore</a>
       <a href="https://github.com/weblab-network/weblab/wiki">Documentation <span aria-hidden="true">↗</span></a>
@@ -26,21 +26,22 @@
       <div class="hero-copy">
         <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> OPEN SOURCE. SELF-HOSTED. YOUR LAB.</p>
         <h1 id="hero-title">Your network lab.<br><span>All in one view.</span></h1>
-        <p class="hero-description">Build a topology. Open your consoles. Follow the exercise.<br class="desktop-break"> Keep your focus in one browser workspace.</p>
+        <p class="hero-description">Build topologies, open consoles and run exercises.<br class="desktop-break"> Keep your network in one browser workspace.</p>
+        <p class="hero-agent"><strong>Now with an optional AI Agent.</strong> Create labs, configure devices and check connectivity<br class="desktop-break"> using Ollama or OpenAI. You decide what it can change.</p>
         <div class="hero-actions">
           <a class="button primary" href="https://github.com/weblab-network/weblab/wiki/Installation">Build your first lab <span aria-hidden="true">→</span></a>
+          <a class="button secondary agent-cta" href="#agent-create-exercise">Watch the Agent build a lab <span aria-hidden="true">▶</span></a>
           <a class="button secondary" href="#watch">Watch the overview <span aria-hidden="true">▶</span></a>
-          <a class="button secondary" href="https://github.com/weblab-network/weblab">Explore the source <span aria-hidden="true">↗</span></a>
         </div>
         <p class="hero-note">Runs on your Linux host. Works from your desktop, tablet or phone.</p>
       </div>
       <figure class="workspace-shot">
-        <div class="shot-bar"><span><i aria-hidden="true"></i> THE WORKSPACE</span><span>TOPOLOGY + CONSOLES + INSTRUCTIONS</span></div>
-        <a href="assets/workspace.png" target="_blank" rel="noopener" aria-label="Open full-size Weblab workspace screenshot in a new tab">
-          <img src="assets/workspace.png" width="1920" height="1080" alt="A running ten-device Weblab topology with Cisco, Extreme and Arista devices, an EXOS console and the node inspector." fetchpriority="high">
+        <div class="shot-bar"><span><i aria-hidden="true"></i> THE WORKSPACE</span><span>TOPOLOGY + CONSOLES + AGENT</span></div>
+        <a href="assets/weblab-agent-configure-verify.png" target="_blank" rel="noopener" aria-label="Open full-size Agent workspace screenshot in a new tab">
+          <img src="assets/weblab-agent-configure-verify.png" width="1920" height="1200" alt="A running network topology, live device consoles and the Agent reviewing configuration together in one workspace." fetchpriority="high">
           <span class="image-hint">View full size ↗</span>
         </a>
-        <figcaption>A mixed-vendor lab, connected and running. Your map and CLI stay together.</figcaption>
+        <figcaption>The optional Agent works beside your topology and live device consoles.</figcaption>
       </figure>
     </section>
 
@@ -107,11 +108,16 @@
       </details>
 
       <div id="agent-videos" class="agent-media">
-        <h3>Meet the optional Agent window</h3>
+        <p class="eyebrow">FROM A REQUEST TO A RUNNING LAB</p>
+        <h3>Build and check your lab with an Agent.</h3>
         <p>Build a practice lab or configure an existing one with Ollama or OpenAI. The Agent issues the console commands; devices produce the output. In these recordings, the user navigates the workspace and grants permissions without manually typing console commands.</p>
-        <div class="agent-video-grid">
-<article>
-          <h4>Build a practice lab</h4>
+        <nav class="agent-video-picker" aria-label="Choose an Agent video">
+          <a href="#agent-create-exercise" aria-controls="agent-create-exercise"><img src="assets/weblab-agent-create-exercise-thumb.jpg" width="640" height="400" alt="" loading="lazy"><span><strong>Build a practice lab</strong><span>Topology + student exercise · 1:13</span></span></a>
+          <a href="#agent-configure-verify" aria-controls="agent-configure-verify"><img src="assets/weblab-agent-configure-verify-thumb.jpg" width="640" height="400" alt="" loading="lazy"><span><strong>Configure and verify</strong><span>Permissions + console checks · 1:16</span></span></a>
+        </nav>
+        <div class="agent-video-panels">
+        <article id="agent-create-exercise" aria-labelledby="agent-create-title">
+          <h4 id="agent-create-title">Build a practice lab</h4>
           <figure class="workspace-shot overview-video">
             <div class="video-stage">
               <video controls playsinline preload="none" width="1920" height="1080" poster="assets/weblab-agent-create-exercise.png" data-status="create-exercise-status" aria-label="Build a practice lab with the Agent" aria-describedby="create-exercise-caption">
@@ -120,14 +126,14 @@
               </video>
               <button class="video-play" type="button" hidden aria-label="Play build a practice lab, 1:13"><img src="assets/weblab-agent-create-exercise.png" alt="" width="1920" height="1200" loading="lazy"><span class="video-play-label"><span aria-hidden="true">▶</span> Play · 1:13</span></button>
             </div>
-            <figcaption id="create-exercise-caption">1:13 · Silent with captions · Edited / waits shortened.</figcaption>
+            <figcaption id="create-exercise-caption">1:13 · Silent with captions · Edited / waits shortened. Use fullscreen for a closer look at the consoles.</figcaption>
           </figure>
           <p id="create-exercise-status" class="watch-note" role="status" hidden></p>
           <p>FRR routers, an LL2S switch triangle and Linux PCs. Two OSPF/RSTP tasks are intentionally left for the student. Session YOLO is enabled.</p>
           <div class="watch-actions"><a class="text-link" href="https://youtu.be/7zKUZNZRGXA">YouTube ↗</a><a class="text-link" href="assets/weblab-agent-create-exercise.mp4" download>Download MP4</a><a class="text-link" href="assets/weblab-agent-create-exercise.png" target="_blank" rel="noopener">Full-size screenshot ↗</a></div>
         </article>
-<article>
-          <h4>Configure and verify</h4>
+<article id="agent-configure-verify" aria-labelledby="agent-verify-title">
+          <h4 id="agent-verify-title">Configure and verify</h4>
           <figure class="workspace-shot overview-video">
             <div class="video-stage">
               <video controls playsinline preload="none" width="1920" height="1080" poster="assets/weblab-agent-configure-verify.png" data-status="configure-verify-status" aria-label="Configure and verify with the Agent" aria-describedby="configure-verify-caption">
@@ -136,7 +142,7 @@
               </video>
               <button class="video-play" type="button" hidden aria-label="Play configure and verify, 1:16"><img src="assets/weblab-agent-configure-verify.png" alt="" width="1920" height="1200" loading="lazy"><span class="video-play-label"><span aria-hidden="true">▶</span> Play · 1:16</span></button>
             </div>
-            <figcaption id="configure-verify-caption">1:16 · Silent with captions · Edited / waits shortened.</figcaption>
+            <figcaption id="configure-verify-caption">1:16 · Silent with captions · Edited / waits shortened. Use fullscreen for a closer look at the consoles.</figcaption>
           </figure>
           <p id="configure-verify-status" class="watch-note" role="status" hidden></p>
           <p>Attach an exercise, review console access, then inspect switch configuration and the Agent’s explanation. The approval dialog offers optional session YOLO.</p>
@@ -144,6 +150,7 @@
         </article>
 </div>
         <p class="watch-note">The Agent is an optional companion for your self-hosted workspace; it is not enabled in the restricted hosted preview. Individual approvals are the default. Agent output needs verification.</p>
+        <p class="agent-usage"><strong>OpenAI usage:</strong> Agent requests use your signed-in account’s existing Codex / ChatGPT Work allowance, shared with your other usage. Weblab adds no separate quota. You need a plan with Codex CLI access, such as Plus, Pro or an eligible organizational plan. <a class="text-link" href="https://learn.chatgpt.com/docs/pricing">Current plans and limits ↗</a></p>
         <a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Agent-window">Agent installation, permissions and history ↗</a>
       </div>
     </section>
@@ -235,6 +242,6 @@
     </section>
     <section class="closing container"><div><p class="eyebrow">BUILT TO BE SHARED</p><h2>Your next lab<br>starts here.</h2></div><div><p>Free, open-source tools for hands-on networking.<br>Try a lab, report an issue, or help improve the project.</p><a class="button primary" href="https://github.com/weblab-network/weblab">Find Weblab on GitHub <span aria-hidden="true">↗</span></a></div></section>
   </main>
-  <footer class="container"><a class="footer-brand" href="#">weblab<span>.</span></a><p>© 2026 weblab.network · Weblab code: <a href="https://github.com/weblab-network/weblab/blob/main/LICENSE">MIT</a> · <a href="https://github.com/weblab-network/weblab/blob/main/THIRD_PARTY.md">Third-party licenses</a></p><span id="contact" class="email-contact"><button id="show-email" type="button" aria-controls="contact-email" hidden>Show email</button><a id="contact-email" hidden></a><noscript>Email contact requires JavaScript. You can also use GitHub issues.</noscript></span><a href="https://github.com/weblab-network/weblab/issues">Feedback &amp; issues ↗</a></footer>
+  <footer class="container"><a class="footer-brand" href="#">weblab</a><p>© 2026 weblab.network · Weblab code: <a href="https://github.com/weblab-network/weblab/blob/main/LICENSE">MIT</a> · <a href="https://github.com/weblab-network/weblab/blob/main/THIRD_PARTY.md">Third-party licenses</a></p><span id="contact" class="email-contact"><button id="show-email" type="button" aria-controls="contact-email" hidden>Show email</button><a id="contact-email" hidden></a><noscript>Email contact requires JavaScript. You can also use GitHub issues.</noscript></span><a href="https://github.com/weblab-network/weblab/issues">Feedback &amp; issues ↗</a></footer>
 </body>
 </html>

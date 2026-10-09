@@ -75,7 +75,10 @@ linked to this section rather than duplicating the address in Markdown.
 ## Agent demonstrations
 
 `/#agent-videos` contains two captioned, silent MP4 highlights alongside the
-existing overview, with YouTube alternatives. Both preserve the full source
+existing overview, with YouTube alternatives. A selector shows one full-width
+recording at a time. `/#agent-create-exercise` and `/#agent-configure-verify` select
+the respective recording directly; switching pauses the hidden player. Without
+JavaScript, both recordings remain visible at full width. Both preserve the full source
 frame, use preload=none and do not autoplay. Adjacent text identifies Agent-issued
 console commands and device output. The creation exercise intentionally leaves
 OSPF and RSTP tasks unfinished; the hosted restricted preview has no Agent login.

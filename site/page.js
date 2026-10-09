@@ -68,3 +68,24 @@ if (showEmail && contactEmail) {
     contactEmail.focus();
   }, { once: true });
 }
+
+// Stable links select a full-width recording. Switching pauses the hidden player.
+const agentPanels = [...document.querySelectorAll('.agent-video-panels article')];
+const agentChoices = [...document.querySelectorAll('.agent-video-picker a')];
+if (agentPanels.length) {
+  const selectAgentVideo = () => {
+    const linkedPanel = agentPanels.find(panel => '#' + panel.id === location.hash);
+    const selected = linkedPanel || agentPanels[0];
+    agentPanels.forEach(panel => {
+      panel.hidden = panel !== selected;
+      if (panel.hidden) panel.querySelector('video').pause();
+    });
+    agentChoices.forEach(link => {
+      if (link.hash === '#' + selected.id) link.setAttribute('aria-current', 'true');
+      else link.removeAttribute('aria-current');
+    });
+    if (linkedPanel) requestAnimationFrame(() => linkedPanel.scrollIntoView({block: 'start'}));
+  };
+  selectAgentVideo();
+  window.addEventListener('hashchange', selectAgentVideo);
+}

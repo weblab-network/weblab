@@ -26,11 +26,11 @@ with restricted controls for exploring the interface and device consoles.
 
 **Agent window · new in v0.5.0**
 
-<a href="https://youtu.be/7zKUZNZRGXA"><img src="https://weblab.network/assets/weblab-agent-create-exercise-thumb.jpg" alt="Build an OSPF and RSTP practice lab with FRR, LL2S and student tasks" width="280"></a>
-<a href="https://youtu.be/m5IsoAnklPo"><img src="https://weblab.network/assets/weblab-agent-configure-verify-thumb.jpg" alt="Approve Agent console access and inspect switch configuration results" width="280"></a>
+<a href="https://weblab.network/#agent-create-exercise"><img src="https://weblab.network/assets/weblab-agent-create-exercise-thumb.jpg" alt="Build an OSPF and RSTP practice lab with FRR, LL2S and student tasks" width="280"></a>
+<a href="https://weblab.network/#agent-configure-verify"><img src="https://weblab.network/assets/weblab-agent-configure-verify-thumb.jpg" alt="Approve Agent console access and inspect switch configuration results" width="280"></a>
 
-[▶ Create a practice lab · 1:13](https://youtu.be/7zKUZNZRGXA) ·
-[▶ Configure and verify · 1:16](https://youtu.be/m5IsoAnklPo) ·
+[▶ Create a practice lab · 1:13](https://weblab.network/#agent-create-exercise) ·
+[▶ Configure and verify · 1:16](https://weblab.network/#agent-configure-verify) ·
 [Agent setup and permissions](docs/agent.md)
 
 *The Agent issues the console commands; the devices produce the output. The user
