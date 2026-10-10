@@ -338,16 +338,18 @@ class Session:
             config = {k: v for k, v in config.items() if not k.startswith('model_providers.weblab_ollama.')}
             config.update(self.auth_config())
             config['model_provider'] = 'openai'
+        else:
+            config['mcp_servers.weblab.args'].append('--compact-responses')
         if self.settings.get('lab_changes'):
             config['mcp_servers.weblab.args'].append('--allow-write')
             config['mcp_servers.weblab.enabled_tools'] += ['apply_topology', 'start_node']
         if self.settings.get('console_input'):
             config['mcp_servers.weblab.args'].append('--allow-console-input')
-            config['mcp_servers.weblab.enabled_tools'].append('send_console_input')
+            config['mcp_servers.weblab.enabled_tools'] += ['send_console_input', 'send_console_command']
         # These exact tools only request Weblab's independent, server-enforced browser
         # approval. Avoid a second Codex elicitation that cannot reach the browser.
         # Generic execution/elicitation stays denied; never use a global approve policy.
-        for tool in ('apply_topology', 'start_node', 'send_console_input'):
+        for tool in ('apply_topology', 'start_node', 'send_console_input', 'send_console_command'):
             if tool in config['mcp_servers.weblab.enabled_tools']:
                 config[f'mcp_servers.weblab.tools.{tool}.approval_mode'] = 'approve'
         for feature in ('shell_tool', 'shell_snapshot', 'code_mode_host', 'multi_agent', 'apps',
@@ -387,7 +389,7 @@ class Session:
                 'When the user asks for configured working devices, include the requested FRR/LL2S baseline '
                 'in startup_config and PC addressing in ipv4/gateway before previewing. Follow the authoring '
                 'guide syntax; use console input for subsequent configuration and verification. '
-                'When enabled in Settings, apply_topology, start_node and send_console_input create operation '
+                'When enabled in Settings, apply_topology, start_node, send_console_command and send_console_input create operation '
                 'records in the browser. They wait for user approval unless the user enabled YOLO auto-approval. '
                 'Do not ask the user to approve in chat first or claim approval is unavailable. The read-only '
                 'sandbox applies to the companion filesystem, not to enabled Weblab tools. '
@@ -401,7 +403,18 @@ class Session:
                 'and unverified items accurately. A partial start or provided command snippets are not a '
                 'working configured lab. Do not substitute manual instructions for enabled requested actions. '
                 'Read each console and inspect prompt and pending input before sending. Use that read revision/cursor. '
-                'Use vendor-specific syntax, bounded commands, and explicit carriage returns. Read again after input '
+                'For an initial check use get_console_output without cursor (latest output by default). '
+                'If capture_end is limit, keep reading with each returned cursor until the backlog is drained; '
+                'never send input from an incomplete read or repeatedly reread the first chunk. '
+                'omitted_bytes means older text was left out, so a latest excerpt is not a complete configuration. '
+                'Old boot messages and topology startup_config are not evidence of current guest readiness or running configuration. '
+                'A rejected stale cursor means reread, not wait for another boot or guess a password. '
+                'Prefer send_console_command for one ordinary CLI command: pass command text only, without Enter escapes. '
+                'It appends a real Enter byte. Use send_console_input for bare Enter, pager/control keys or partial input only. '
+                'Before EVERY command or raw input call, make a fresh get_console_output call, even after a successful send. '
+                'Establish an empty input line at the appropriate prompt; never append commands to an unfinished line. '
+                'A rejected command did not execute; echoed input alone is not command output. '
+                'Use vendor-specific syntax and bounded commands. Read again after input '
                 'to check results; sent input or capture timeout is not proof of completion. Never blindly retry '
                 'uncertain input. Human locks and changed consoles require a fresh read and new approval. '
                 'Ask before destructive configuration or shutdown. Tools cannot stop/delete nodes or upload images. '

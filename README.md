@@ -83,7 +83,17 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
-## New in v0.5.0
+## Updated in v0.5.1
+
+- More reliable Agent console reads, with explicit continuation for long output
+  and clearer cursor errors when a model supplies incorrect tool arguments.
+- A single-command tool that appends Enter correctly for both Ollama and OpenAI.
+- Compact Ollama tool responses and readable Markdown replies, including tables.
+- [Console guide](docs/agent-console-guide.md) and documented local-model limits.
+
+See [v0.5.1 release notes](docs/releases/v0.5.1.md) for details and upgrade steps.
+
+### Introduced in v0.5.0
 
 - [Optional Agent window](docs/agent.md): floating conversations alongside the
   topology and consoles, using Ollama or OpenAI through ChatGPT sign-in.

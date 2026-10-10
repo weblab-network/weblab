@@ -14,6 +14,11 @@ Stopping/deleting nodes, manipulating live links and uploading images remain
 manual operations. The agent can configure running devices through their CLI
 when input is enabled and approved, individually or through YOLO.
 
+Agent replies display Markdown headings, emphasis, lists, tables and code blocks.
+Wide tables and code blocks scroll within the reply. Raw HTML is shown as text;
+model-provided links and images remain inactive. Messages you type, attachments
+and exported transcripts retain their original text.
+
 You can arrange nodes while approving starts or console input; coordinate-only
 edits do not invalidate those operations. Settings or cable changes require a
 fresh review. Applying a replacement topology still checks layout changes too.
@@ -26,6 +31,79 @@ and PC addressing in its proposal, then request each start and console check.
 Review the final device states and protocol evidence; a completed model turn
 does not guarantee the requested lab is running or configured correctly.
 
+Initial console checks show the latest retained output rather than the start of
+old boot logs. When older text is omitted, the tool reports it; the excerpt is
+not a complete running configuration. Subsequent reads use a cursor to collect
+command output without skipping bytes. If more output remains, the agent must
+continue reading before typing. Console changes and human input locks still
+reject stale input, including in YOLO mode. A timeout alone does not prove a
+guest is ready or a command has finished.
+
+Both providers can use `send_console_command` for one plain-text CLI command;
+the tool appends Enter automatically. It uses the existing console-input setting
+and appears as **Send console input** in Operations, with the exact bytes shown
+for approval. Multiline input, control characters and literal `\r`/`\n` escapes
+are rejected before sending. The raw `send_console_input` tool remains available
+for bare Enter, control keys and pager input. Neither tool clears pending input
+or verifies successful execution automatically.
+
+Ollama sessions use compact MCP responses: node discovery excludes bulky startup
+snippets and pages large topologies with explicit continuation offsets. Console
+captures are capped at 1024 raw bytes per call, even if the model requests more;
+the returned cursor retrieves subsequent output. This avoids the companion's
+separate tool-output truncation hiding nodes or the middle of a configuration.
+Initial latest reads remain excerpts, with omitted history reported. OpenAI
+sessions keep the ordinary tool responses and capture budgets.
+
+
+## Known model and console issues
+
+In testing with Ollama-hosted `gpt-oss:20b` and Qwen3.5 9B, local models could
+discover devices and complete some console tasks, but did not reliably finish
+multi-step configuration or verification. Observed failures included:
+
+- Treating historical prompts or commands as current evidence, even after a
+  console session expired and displayed **Press RETURN to get started**.
+- Skipping a required fresh console read, failing to retry a rejected `enable`,
+  or attempting privileged commands from a Cisco user-EXEC (`>`) prompt.
+- Omitting Enter, typing literal control-key notation, or failing to collect
+  all pages/chunks of command output.
+- Claiming an action succeeded when it was rejected, or describing an explicit
+  CLI error as no output. A completed conversation is not a verified result.
+
+These issues are not exclusive to local models. An OpenAI `gpt-6-luna` run also
+double-escaped Enter in JavaScript tool calls, typing literal `\r` characters
+instead of submitting commands. The tool returned echoed input, not results
+from those commands. Other calls in the same conversation used Enter correctly;
+a successful earlier command does not guarantee later input is encoded correctly.
+Prefer `send_console_command` to avoid encoding Enter for ordinary commands.
+It addresses this submission error, not incorrect CLI choices or unsupported
+claims about results; models can still misuse the raw-input tool.
+
+These are observed model/workflow limitations, not evidence that every model
+or every run fails. Larger models may handle the workflow better, but that has not been
+validated as a remedy; model size or provider alone is not a reliability guarantee.
+The console-output and compact-response fixes reduce missing context but do not
+resolve these remaining reasoning and tool-use errors.
+
+When trying a model, start with a small inspection task, keep individual
+approvals enabled, and compare its answer with Operations and fresh device output.
+YOLO removes approval prompts; it does not improve command correctness or bypass
+console checks. After a failed or uncertain send, inspect the console before
+retrying. The guide below can help, but is not a guaranteed workaround. Report
+the model tag, Weblab version, exact tool error and relevant console excerpt;
+remove credentials and private configuration before sharing them.
+
+## Console guidance for models
+
+For models that need more explicit console guidance, attach
+[Console guide for Weblab agents](agent-console-guide.md) and say:
+“Follow the attached console guide for this task. Read the current lab and verify
+commands from device output.” It covers Enter/control-key encoding, Cisco
+privilege and pagers, Junos pagination, and complete versus truncated captures.
+An attachment named `AGENTS.md` is still reference text in this window; its name
+does not automatically install it as the companion's instructions. Guidance
+helps, but does not guarantee that a model follows the procedure correctly.
 
 ## Watch the Agent in action
 
@@ -62,8 +140,8 @@ image/data mounts and project name when adding the companion.
 
 ```sh
 mkdir -p images lab-data
-export WL_IMAGE=ghcr.io/weblab-network/weblab:0.5.0
-export WL_AGENT_IMAGE=ghcr.io/weblab-network/weblab-agent:0.5.0
+export WL_IMAGE=ghcr.io/weblab-network/weblab:0.5.1
+export WL_AGENT_IMAGE=ghcr.io/weblab-network/weblab-agent:0.5.1
 # For Ollama, use the /v1 URL reachable from the Weblab service:
 export WL_AGENT_PROVIDERS=http://YOUR_OLLAMA_HOST:11434/v1
 docker compose -f compose.prebuilt.yaml -f compose.agent.prebuilt.yaml pull
@@ -293,6 +371,13 @@ Images use Codex's [documented local image input](https://learn.chatgpt.com/docs
 
 ## OpenAI sign-in
 
+**Recommended model: `gpt-6.1-sol`.** In the maintainer's hands-on Weblab testing,
+it has been the most reliable choice for completing multi-step lab tasks,
+including console configuration and verification. This is reported project
+experience, not a comparative benchmark or a guarantee. Select it if available
+to your account; other models remain selectable. Continue checking operation
+results and device evidence with any model.
+
 For an owner-operated, self-hosted workspace, the companion supports Codex's
 ChatGPT account login without putting an API key in Weblab or the browser:
 
@@ -304,7 +389,7 @@ ChatGPT account login without putting an API key in Weblab or the browser:
 3. Leave Weblab open while signing in. It reports **Signed in** when Codex confirms
    completion. No callback port needs to be published from the container.
 4. Use **Refresh account / models** to check an existing login and populate model
-   suggestions. Select an available model and save; `gpt-5.6-sol` is the prefill, not
+   suggestions. Select an available model and save; `gpt-6.1-sol` is the prefill, not
    a promise of account access. The returned catalog is not an entitlement check.
 5. Open Conversation and send a request. Read/preview, permission switches,
    individual approvals or YOLO work exactly as with Ollama.

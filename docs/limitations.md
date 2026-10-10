@@ -56,3 +56,14 @@ Unplug/Reconnect is limited to IOSv/IOSvL2 and the two exact tested IOL 17.18.02
 profiles, plus the FRR and LL2S container profiles. The UI reports requested state, not an instant guest acknowledgment.
 Faults are runtime-only and are not included in backups. Stop the lab before
 changing cable endpoints.
+
+## Agent and model reliability
+
+Agent reliability depends on the selected model and its use of tools. Tests with
+Ollama-hosted gpt-oss:20b and Qwen3.5 9B exposed stale-console interpretation,
+incorrect command submission and unsupported success claims. A completed turn
+or an accepted input operation does not prove a device was configured or checked.
+Literal Enter-escape errors have also been observed with an OpenAI model; these
+limitations are not exclusive to Ollama or self-hosted models.
+See [known model and console issues](agent.md#known-model-and-console-issues).
+Larger models have not been validated as a remedy for these failures.

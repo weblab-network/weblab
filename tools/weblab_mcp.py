@@ -12,6 +12,77 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 MAX_RESPONSE = 4 * 1024 * 1024
+COMPACT_CHARS = 8000
+COMPACT_CONSOLE_BYTES = 1024
+
+
+def command_input(command):
+    """Validate a single command and append one actual Enter byte."""
+    if not isinstance(command, str) or not command.strip():
+        raise ToolError('command must be a nonempty single line; use raw input for a bare Enter')
+    if any(ord(c) < 32 or 127 <= ord(c) < 160 or c in '\u2028\u2029' for c in command):
+        raise ToolError('command must not contain line endings or control characters; Enter is appended automatically')
+    if any(escape in command for escape in ('\\r', '\\n')):
+        raise ToolError('command contains literal \\r or \\n; omit Enter escapes. No input was sent. '
+                        'For intentional literal escape text, use send_console_input after inspecting the console')
+    try:
+        size = len(command.encode('utf-8'))
+    except UnicodeEncodeError as exc:
+        raise ToolError('command must be valid UTF-8') from exc
+    if size > 4095:
+        raise ToolError('command must fit 4095 UTF-8 bytes plus one Enter byte')
+    return command + '\r'
+
+
+def compact_state(state, node_offset=0, link_offset=0, page_size=8):
+    """Bound model-visible state without hiding identities behind config blobs."""
+    for value in (node_offset, link_offset):
+        if type(value) is not int or value < 0:
+            raise ToolError('State offsets must be nonnegative integers')
+    if type(page_size) is not int or not 1 <= page_size <= 16:
+        raise ToolError('page_size must be between 1 and 16')
+    topology = state['topology']
+    nodes, links = topology['nodes'], topology['links']
+    if node_offset > len(nodes) or link_offset > len(links):
+        raise ToolError('State offset is past the end; read the first page again')
+    selected_nodes = []
+    for node in nodes[node_offset:node_offset + page_size]:
+        item = {k: v for k, v in node.items() if k != 'startup_config'}
+        item['has_startup_config'] = bool(node.get('startup_config'))
+        selected_nodes.append(item)
+    selected_links = [{k: link[k] for k in ('id', 'a', 'b')} for link in links[link_offset:link_offset + page_size]]
+    while True:
+        statuses = {}
+        for node in selected_nodes:
+            status = dict(state.get('status', {}).get(node['id'], {}))
+            for key in ('error', 'warning'):
+                if len(status.get(key, '')) > 400:
+                    status[key] = status[key][:400]
+                    status[key + '_truncated'] = True
+            statuses[node['id']] = status
+        next_node = node_offset + len(selected_nodes)
+        next_link = link_offset + len(selected_links)
+        result = {'revision': state['revision'],
+                  'topology': {'version': topology.get('version', 1), 'name': topology['name'],
+                               'nodes': selected_nodes, 'links': selected_links},
+                  'status': statuses, 'guest_readiness': state.get('guest_readiness', 'unverified'),
+                  'compact': True, 'total_nodes': len(nodes), 'total_links': len(links),
+                  'node_offset': node_offset, 'link_offset': link_offset,
+                  'next_node_offset': next_node if next_node < len(nodes) else None,
+                  'next_link_offset': next_link if next_link < len(links) else None,
+                  'complete': next_node == len(nodes) and next_link == len(links) and node_offset == link_offset == 0,
+                  'notice': 'Startup config text, exercise text and live link diagnostics are omitted from this discovery view. '
+                            'Startup snippets are not running configuration. Follow next offsets for remaining entries; '
+                            'keep an exhausted offset at its total. All pages must have the same revision. '
+                            'Missing entries on a page do not mean a node is absent or stopped.'}
+        if len(json.dumps(result, ensure_ascii=True, indent=2)) <= COMPACT_CHARS:
+            return result
+        if len(selected_links) > 1 or (selected_links and selected_nodes):
+            selected_links.pop()
+        elif len(selected_nodes) > 1:
+            selected_nodes.pop()
+        else:
+            raise ToolError('A state entry exceeds the compact response budget; inspect it in the Weblab UI')
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -50,7 +121,7 @@ class Client:
             raise ToolError(f'Weblab request failed: {exc}. Read state before retrying any write.') from exc
 
 
-def create_server(url, allow_write=False, allow_console_input=False):
+def create_server(url, allow_write=False, allow_console_input=False, compact_responses=False):
     client = Client(url)
     server = MCPServer('Weblab', instructions=(
         'Build original practice labs. First read get_lab_state, list_device_profiles and '
@@ -75,10 +146,39 @@ def create_server(url, allow_write=False, allow_console_input=False):
     read = ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=False)
     draft = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False)
 
-    @server.tool(annotations=read)
-    def get_lab_state() -> dict:
-        """Read topology, revision and process status; does not establish guest readiness."""
-        return client.request('/api/automation/state')
+    if compact_responses:
+        @server.tool(annotations=read)
+        def get_lab_state(node_offset: int = 0, link_offset: int = 0, page_size: int = 8) -> dict:
+            """Read compact topology, exact node IDs and status, without startup config text.
+
+            Follow next_node_offset and next_link_offset until both are null.
+            Keep an exhausted offset at total_nodes/total_links while paging the
+            other list. Compare revision across pages; restart if it changed.
+            Entries missing from a page are not absent from the lab. Defaults
+            return up to eight nodes and links; response size may reduce that.
+            Does not establish guest readiness or current running configuration.
+            """
+            return compact_state(client.request('/api/automation/state'), node_offset, link_offset, page_size)
+    else:
+        @server.tool(annotations=read)
+        def get_lab_state() -> dict:
+            """Read topology, revision and process status; does not establish guest readiness."""
+            return client.request('/api/automation/state')
+
+    def console_budget(max_bytes):
+        if compact_responses:
+            if type(max_bytes) is not int or not 1 <= max_bytes <= 262144:
+                raise ToolError('max_bytes must be between 1 and 262144')
+            return min(max_bytes, COMPACT_CONSOLE_BYTES)
+        return max_bytes
+
+    def console_result(result, requested):
+        if compact_responses:
+            result['capture_max_bytes'] = console_budget(requested)
+            result['capture_budget_notice'] = ('Ollama compact mode caps each capture at 1024 raw bytes to protect '
+                'output and cursor metadata from downstream truncation. Follow cursors for complete output. '
+                'Omitted bytes in a latest read are older history, not a complete command result.')
+        return result
 
     @server.tool(annotations=read)
     def get_storage_report() -> dict:
@@ -119,25 +219,58 @@ def create_server(url, allow_write=False, allow_console_input=False):
 
     @server.tool(annotations=read)
     def get_console_output(node_id: str, cursor: str | None = None,
-                           wait_seconds: float = 1, max_bytes: int = 65536) -> dict:
+                           wait_seconds: float = 1, max_bytes: int = 65536,
+                           latest: bool = True) -> dict:
         """Observe retained/live console output without typing or acquiring an input lock.
 
-        Initially omit cursor to read retained history. Pass the returned cursor to
-        resume. gap means history was lost or the device restarted. capture_end=limit
-        means more output may remain; continue reading before sending input.
+        Initially omit cursor for the latest output (default latest=true), keeping
+        at most max_bytes and reporting omitted_bytes for older text left out.
+        This is an excerpt, not a complete configuration. For history from its
+        beginning, omit cursor and set latest=false. Pass the returned cursor to
+        resume without skipping bytes (latest is ignored when cursor is supplied).
+        gap means history was lost or the device restarted. capture_end=limit
+        means more output may remain: keep reading with each returned cursor
+        BEFORE sending input. Do not mistake old boot text for current boot status.
         wait_seconds is 0.1–30; max_bytes is 1–262144. Output is terminal text,
         not launcher logs or a command result. Inspect prompts and evidence yourself.
         """
-        return client.request('/api/automation/console-read', {
-            'node_id': node_id, 'cursor': cursor, 'wait_seconds': wait_seconds, 'max_bytes': max_bytes})
+        return console_result(client.request('/api/automation/console-read', {
+            'node_id': node_id, 'cursor': cursor, 'wait_seconds': wait_seconds,
+            'max_bytes': console_budget(max_bytes), 'latest': latest}), max_bytes)
 
     if allow_console_input:
+        @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=True))
+        def send_console_command(node_id: str, command: str, expected_revision: str,
+                                 expected_cursor: str, wait_seconds: float = 1,
+                                 max_bytes: int = 65536) -> dict:
+            """Submit ONE authorized CLI command; the server appends Enter automatically.
+
+            Prefer this tool for ordinary commands, e.g. command="show clock".
+            Do not include Enter escapes, line endings or control keys. Maximum
+            4095 UTF-8 bytes. Use send_console_input for bare Enter, pager keys,
+            control keys or intentional literal escape text. Never use this to
+            append to an unfinished line: first inspect a fresh get_console_output
+            and establish an empty input line at the appropriate CLI prompt.
+            Use that read's exact revision/cursor. Same console-input permission,
+            exact browser approval/YOLO, fresh-read checks and human locks as raw
+            input. It may change configuration; it is not a read-only filter.
+            A sent result or timeout is NOT execution or success. Read subsequent
+            output with the cursor and verify the result before the next command.
+            No automatic enable, login, pager handling, clearing or retry occurs.
+            """
+            return console_result(client.request('/api/automation/console-send', {
+                'node_id': node_id, 'input': command_input(command), 'expected_revision': expected_revision,
+                'expected_cursor': expected_cursor, 'wait_seconds': wait_seconds,
+                'max_bytes': console_budget(max_bytes)}), max_bytes)
+
         @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=True))
         def send_console_input(node_id: str, input: str, expected_revision: str,
                                expected_cursor: str, wait_seconds: float = 1,
                                max_bytes: int = 65536) -> dict:
             """Send explicitly authorized input to a shared device CLI, then collect output.
 
+            Prefer send_console_command for ordinary commands with automatic Enter.
+            This raw tool is for bare Enter, control/pager keys and partial input.
             Requires a recent get_console_output revision and cursor. Refuses changed
             history or another station's lock. Input is raw text (1–4096 UTF-8 bytes):
             include \\r to press Enter; no newline is appended. Control characters work
@@ -148,9 +281,10 @@ def create_server(url, allow_write=False, allow_console_input=False):
             timeout neither cancels the command nor proves success. Read again before
             retrying input after a lost response. Other stations see the same output.
             """
-            return client.request('/api/automation/console-send', {
+            return console_result(client.request('/api/automation/console-send', {
                 'node_id': node_id, 'input': input, 'expected_revision': expected_revision,
-                'expected_cursor': expected_cursor, 'wait_seconds': wait_seconds, 'max_bytes': max_bytes})
+                'expected_cursor': expected_cursor, 'wait_seconds': wait_seconds,
+                'max_bytes': console_budget(max_bytes)}), max_bytes)
 
     def downloads(proposal):
         proposal['downloads'] = {k: client.url + v for k, v in proposal['downloads'].items()}
@@ -194,7 +328,8 @@ def create_server(url, allow_write=False, allow_console_input=False):
             Replaces the topology; requires prior user authorization. Does not start
             devices or delete saved storage. A proposal ID is not proof of approval.
             """
-            return client.request('/api/automation/apply', {'proposal_id': proposal_id})
+            result = client.request('/api/automation/apply', {'proposal_id': proposal_id})
+            return compact_state(result) if compact_responses else result
 
         @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False))
         def start_node(node_id: str, expected_revision: str) -> dict:
@@ -207,8 +342,11 @@ def create_server(url, allow_write=False, allow_console_input=False):
             Failures leave other nodes running; never stops or resets any node.
             Running does not prove CLI readiness or forwarding. Inspect state/logs.
             """
-            return client.request('/api/automation/start-node', {
+            result = client.request('/api/automation/start-node', {
                 'node_id': node_id, 'expected_revision': expected_revision})
+            if compact_responses and 'state' in result:
+                result['state'] = compact_state(result['state'])
+            return result
     return server
 
 
@@ -217,8 +355,9 @@ def main():
     parser.add_argument('--url', default='http://127.0.0.1:8080')
     parser.add_argument('--allow-write', action='store_true', help='Expose apply/start tools; keep client approval enabled')
     parser.add_argument('--allow-console-input', action='store_true', help='Expose shared-console input separately from topology writes')
+    parser.add_argument('--compact-responses', action='store_true', help='Paginate discovery and cap console chunks for local-model output budgets')
     args = parser.parse_args()
-    create_server(args.url, args.allow_write, args.allow_console_input).run(transport='stdio')
+    create_server(args.url, args.allow_write, args.allow_console_input, args.compact_responses).run(transport='stdio')
 
 
 if __name__ == '__main__':

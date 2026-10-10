@@ -10,6 +10,11 @@
   const imageTypes = {png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp'};
   const textTypes = new Set(['txt','md','json','yaml','yml','cfg','conf','config','log','csv','ini','xml']);
   const tabs = ['chat','operations','proposals','history','settings'];
+  // Reuse the bundled parser, without active content from model output.
+  const markdown = window.markdownit({html:false, linkify:false, typographer:false, breaks:true, maxNesting:32});
+  markdown.disable(['image','link','autolink']);
+  markdown.renderer.rules.table_open = () => '<div class="agent-table" tabindex="0" role="region" aria-label="Response table"><table>';
+  markdown.renderer.rules.table_close = () => '</table></div>';
   let remember = false;
   try {
     token = sessionStorage.getItem(KEY) || localStorage.getItem(KEY) || '';
@@ -66,6 +71,7 @@
         <p id="agent-device-code" hidden>Enter code <strong></strong> in the OpenAI tab. <a href="https://auth.openai.com/codex/device" target="_blank" rel="noopener noreferrer">Open OpenAI sign-in ↗</a></p>
       </div>
       <label>Model<input id="agent-model" list="agent-model-list" maxlength="160" placeholder="gpt-oss:20b" required><datalist id="agent-model-list"></datalist></label>
+      <p id="agent-model-recommendation" class="agent-hint" hidden>Recommended for Weblab: <strong>gpt-6.1-sol</strong> — the most reliable results reported in the maintainer's hands-on lab testing. Choose a model available to your account and verify its results.</p>
       <label>Context window (tokens)<input id="agent-context" type="number" min="4096" max="131072" step="1024" required></label>
       <label>Turn deadline (seconds)<input id="agent-deadline" type="number" min="30" max="3600" required></label>
       <p class="agent-hint">Total time for one message, including model generation, tools and approval waits. New sessions default to 900 seconds (15 minutes). Completed actions remain if time runs out; inspect and continue in another turn.</p>
@@ -221,7 +227,8 @@
     endpoint.disabled = openai;
     $('agent-openai-auth').hidden = !openai;
     $('agent-check').hidden = openai;
-    $('agent-model').placeholder = openai ? 'gpt-5.6-sol' : 'gpt-oss:20b';
+    $('agent-model-recommendation').hidden = !openai;
+    $('agent-model').placeholder = openai ? 'gpt-6.1-sol' : 'gpt-oss:20b';
     if (!openai) $('agent-model-list').replaceChildren();
   }
   function switchTab(name) {
@@ -445,7 +452,12 @@
       for (const message of next.messages || []) {
         const article = document.createElement('article'), label = document.createElement('strong'), text = document.createElement('div');
         label.textContent = message.role === 'user' ? 'You' : 'Agent';
-        text.textContent = message.text; // Deliberately plain text: no model HTML, images or arbitrary links.
+        if (message.role === 'assistant') {
+          text.className = 'agent-markdown';
+          text.innerHTML = markdown.render(message.text || '');
+        } else {
+          text.textContent = message.text;
+        }
         article.append(label,text); messages.append(article);
         for (const item of message.attachments || []) article.append(attachmentView(item,next.conversation_id));
       }
@@ -566,7 +578,7 @@
   $('agent-settings').oninput = event => {if(event.target.id==='agent-remember')return;settingsDirty=true;controls();};
   $('agent-provider').onchange = () => {
     providerControls(); settingsDirty=true;
-    $('agent-model').value = $('agent-provider').value==='openai' ? 'gpt-5.6-sol' : 'gpt-oss:20b';
+    $('agent-model').value = $('agent-provider').value==='openai' ? 'gpt-6.1-sol' : 'gpt-oss:20b';
     controls();
   };
   $('agent-settings').onsubmit = event => {event.preventDefault();action(async()=>{

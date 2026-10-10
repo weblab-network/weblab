@@ -368,11 +368,29 @@ class Bridge:
                     service.require_execution_revision(arguments['expected_revision'])
                 if operation == 'console-send':
                     observation = self.observations.get(session['id'], {}).get(arguments['node_id'])
-                    if (not observation or observation.get('cursor') != arguments['expected_cursor']
-                            or observation.get('revision') != arguments['expected_revision']):
-                        raise ValueError('Read this console in this conversation before requesting input')
+                    if not observation:
+                        raise ValueError('Read this console in this conversation before requesting input; no input was sent. '
+                                         'Call get_console_output for this node, inspect the output, then use its exact '
+                                         'cursor and revision as expected_cursor and expected_revision. '
+                                         'This is a missing fresh read, not an approval error; no authorization code is needed.')
+                    if observation.get('cursor') != arguments['expected_cursor']:
+                        raise ValueError('Invalid console cursor: expected_cursor does not match the latest read for this node; '
+                                         'no input was sent. Call get_console_output again, inspect the output, then copy '
+                                         'its exact cursor and revision into expected_cursor and expected_revision. '
+                                         'The cursor is an opaque value, not the CLI prompt (such as SW4#). '
+                                         'This is not an approval error; no authorization code is needed.')
+                    if observation.get('revision') != arguments['expected_revision']:
+                        raise ValueError('Console read revision does not match expected_revision; no input was sent. '
+                                         'Call get_console_output again for this node, inspect the output, then use '
+                                         'its exact cursor and revision. This is not an approval error; '
+                                         'no authorization code is needed.')
                     if observation.get('gap'):
                         raise ValueError('Console history has a gap; read it again before requesting input')
+                    if observation.get('capture_end') == 'limit':
+                        raise ValueError('Console read is incomplete; no input was sent. '
+                                         'Call get_console_output with the returned cursor until capture_end is not limit, '
+                                         'then inspect the prompt before requesting input. '
+                                         'Do not reread the first chunk or reuse this cursor for input.')
                     service._console_options(arguments['node_id'], arguments['expected_cursor'],
                                              arguments.get('wait_seconds', 1), arguments.get('max_bytes', 65536))
                     value = arguments['input']

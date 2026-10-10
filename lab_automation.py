@@ -133,15 +133,17 @@ class Automation:
             raise self.error('Start this node before accessing its console')
         return console_capture.Console(runtime['port'], cursor=cursor)
 
-    def console_read(self, node_id, cursor=None, wait_seconds=1, max_bytes=65536):
+    def console_read(self, node_id, cursor=None, wait_seconds=1, max_bytes=65536, latest=False):
         self._console_options(node_id, cursor, wait_seconds, max_bytes)
+        if type(latest) is not bool:
+            raise self.error('latest must be a boolean')
         try:
             with self.lab.lock:
                 console = self._console(node_id, cursor)
                 current = self._observe_revision(self.lab.topology)
             try:
                 return {'node_id': node_id, 'revision': current,
-                        **console.window(wait_seconds, max_bytes)}
+                        **console.window(wait_seconds, max_bytes, latest=latest and cursor is None)}
             finally:
                 console.close()
         except (ValueError, OSError) as exc:
@@ -162,7 +164,12 @@ class Automation:
                 console = self._console(node_id, expected_cursor)
                 console.acquire()  # Never takes over a human lock; drains replay before ACK.
                 if not console.stream or console.stream['gap'] or console.cursor != expected_cursor:
-                    raise self.error('Console changed or history expired; read it again before sending input')
+                    raise self.error('Console changed or history expired; no input was sent. '
+                                     'Call get_console_output for this node with the last read cursor; '
+                                     'if capture_end is limit, keep reading with each returned cursor. '
+                                     'Inspect the latest prompt, then use the new revision/cursor. '
+                                     'To inspect the current tail instead, omit cursor and set latest=true. '
+                                     'Do not retry input using the rejected cursor.')
                 # A lock can still be taken over by a human. The wrapper enforces
                 # ownership when processing the binary input, including that race.
                 attempted = True

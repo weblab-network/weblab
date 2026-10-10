@@ -400,6 +400,10 @@ callable (no shell, patch, filesystem or network globals). It uses no OpenAI
 credentials or cloud inference. `tests/agent_tool_fixture.py` is mounted only by
 this test and must never become a production entrypoint. Keep its checks when
 upgrading Codex, including the builtin namespace exclusions.
+With console input enabled in this fixture, it also calls `send_console_command`
+with a deliberately double-escaped Enter and checks rejection before any approval
+or lab mutation. MCP tests separately verify exact submission, empty/control/multiline
+rejection, byte limits, stale cursors and lossless output in compact mode.
 
 For packaging without inference or external network access, also build the core
 image and test the two services with fresh named volumes:
@@ -418,6 +422,17 @@ paths, configuration snippets and PC addressing. This checks design structure,
 not configuration syntax or protocol convergence.
 The backend suite also checks denial/expiry/cancellation, session isolation, stale
 revisions/cursors and human locks.
+
+Use `--console-tail-only --model gpt-oss:20b` to reproduce the small-read console
+failure with a real model: a disposable echo device emits over 20 KiB of boot
+history before its prompt. Six node baselines also exceed the ordinary tool-output
+budget. The model reads state, requests a 2 KiB console read (capped at 1 KiB in
+Ollama compact mode), calls `send_console_command` with `show clock` and checks
+the echo and exact approved input bytes (one real Enter). The test inspects
+the runtime transcript to verify all six node IDs reached the model without
+middle truncation. This tests the latest-output default and guarded input
+path, not real Cisco command behavior. Unit and MCP tests also cover explicit
+history reads, lossless cursor continuation, bounded scans and stale-input refusal.
 
 The Ollama test checks real previews, unchanged topology, duplicate-submit handling, Stop,
 container recreation and continued conversation. It does not establish exercise

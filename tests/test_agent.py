@@ -399,6 +399,57 @@ class AgentApprovalTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Read this console'):
             self.bridge.tool(self.session,'POST','/api/automation/console-send',item['arguments'],self.turn)
 
+    def test_incomplete_console_read_requires_continuation_before_approval(self):
+        args = self.console_arguments()
+        first = self.bridge.tool(self.session, 'POST', '/api/automation/console-read',
+                                 {'node_id': 'r1', 'wait_seconds': .1, 'max_bytes': 4})
+        args.update(expected_cursor=first['cursor'], expected_revision=first['revision'])
+        with self.assertRaisesRegex(ValueError, 'Console read is incomplete; no input was sent'):
+            self.bridge.tool(self.session, 'POST', '/api/automation/console-send', args, self.turn)
+        self.assertEqual(self.bridge.approval_state(self.session), [])
+        rest = self.bridge.tool(self.session, 'POST', '/api/automation/console-read',
+                                {'node_id': 'r1', 'cursor': first['cursor'], 'latest': True, 'wait_seconds': .1})
+        args.update(expected_cursor=rest['cursor'], expected_revision=rest['revision'])
+        thread, result, item = self.launch('console-send', args)
+        self.decide(item); thread.join(3)
+        self.assertEqual(result['result']['input_status'], 'sent')
+
+    def test_console_cursor_errors_do_not_request_approval_or_send_input(self):
+        args = self.console_arguments()
+        for provider in ('ollama', 'openai'):
+            for automatic in (False, True):
+                self.session['settings'].update(provider=provider, auto_approve=automatic)
+                for cursor in ('SW4#', args['expected_cursor'] + '0'):
+                    with self.subTest(provider=provider, automatic=automatic, cursor=cursor):
+                        with self.assertRaises(ValueError) as error:
+                            self.bridge.tool(self.session, 'POST', '/api/automation/console-send',
+                                             {**args, 'expected_cursor': cursor}, self.turn)
+                        message = str(error.exception)
+                        self.assertIn('Invalid console cursor', message)
+                        self.assertIn('get_console_output', message)
+                        self.assertIn('not the CLI prompt', message)
+                        self.assertIn('not an approval error', message)
+                        self.assertIn('no input was sent', message)
+                        self.assertEqual(self.bridge.approval_state(self.session), [])
+        # A correct cursor can still refer to an observation from an old revision.
+        observation = self.bridge.observations[self.session['id']]['r1']
+        observation['revision'] = 'old-revision'
+        with self.assertRaisesRegex(ValueError, 'Console read revision does not match'):
+            self.bridge.tool(self.session, 'POST', '/api/automation/console-send', args, self.turn)
+        self.bridge.observations[self.session['id']].pop('r1')
+        with self.assertRaises(ValueError) as error:
+            self.bridge.tool(self.session, 'POST', '/api/automation/console-send', args, self.turn)
+        self.assertIn('missing fresh read, not an approval error', str(error.exception))
+        self.assertEqual(self.bridge.approval_state(self.session), [])
+        self.assertNotIn('RX:', self.bridge.automation.console_read('r1', wait_seconds=.1)['output'])
+        # Recovery still requires a fresh read and the normal approval path.
+        self.session['settings']['auto_approve'] = False
+        args = self.console_arguments()
+        thread, result, item = self.launch('console-send', args)
+        self.decide(item); thread.join(3)
+        self.assertEqual(result['result']['input_status'], 'sent')
+        self.assertIn('RX:show test', result['result']['output'])
+
     def test_denial_expiry_stop_and_session_isolation(self):
         args = {'node_id':'r1','expected_revision':self.bridge.automation.state()['revision']}
         thread, result, item = self.launch('start-node', args)
@@ -774,7 +825,7 @@ class CompanionTests(unittest.TestCase):
                     return {'account':{'type':'chatgpt','email':'private@example.test','planType':'plus','access_token':'SECRET'}}
                 if method=='model/list': return {'data':[{'model':'test-openai'}]}
                 return result
-        self.settings.update(provider='openai',endpoint=agent_bridge.OPENAI_ENDPOINT)
+        self.settings.update(provider='openai',endpoint=agent_bridge.OPENAI_ENDPOINT,console_input=True)
         with patch.object(agent_companion,'RPC',AuthRPC):
             self.manager.handle('login',self.payload)
             session=self.manager.sessions['a'*32]
@@ -794,6 +845,9 @@ class CompanionTests(unittest.TestCase):
             self.wait(lambda:session.status=='running')
             turn_rpc=FakeRPC.instances[-1]
             self.assertEqual(turn_rpc.config['model_provider'],'openai')
+            self.assertNotIn('--compact-responses', turn_rpc.config['mcp_servers.weblab.args'])
+            self.assertIn('send_console_command', turn_rpc.config['mcp_servers.weblab.enabled_tools'])
+            self.assertEqual(turn_rpc.config['mcp_servers.weblab.tools.send_console_command.approval_mode'],'approve')
             self.assertNotIn('model_providers.weblab_ollama.base_url',turn_rpc.config)
             self.assertFalse(turn_rpc.config['features.shell_tool'])
             self.assertTrue(turn_rpc.config['features.code_mode_host'])
@@ -873,9 +927,13 @@ class CompanionTests(unittest.TestCase):
         self.wait(lambda:session.status=='running')
         config=FakeRPC.instances[-1].config
         self.assertIn('--allow-write',config['mcp_servers.weblab.args'])
+        self.assertIn('--compact-responses',config['mcp_servers.weblab.args'])
         self.assertIn('--allow-console-input',config['mcp_servers.weblab.args'])
         self.assertIn('send_console_input',config['mcp_servers.weblab.enabled_tools'])
         self.assertNotIn('send_console_input',agent_companion.TOOLS)
+        self.assertIn('send_console_command',config['mcp_servers.weblab.enabled_tools'])
+        self.assertNotIn('send_console_command',agent_companion.TOOLS)
+        self.assertEqual(config['mcp_servers.weblab.tools.send_console_command.approval_mode'],'approve')
         self.assertEqual(config['mcp_servers.weblab.tools.send_console_input.approval_mode'],'approve')
         self.assertNotIn('mcp_servers.weblab.default_tools_approval_mode',config)
         self.assertEqual(config['approval_policy'],'on-request')

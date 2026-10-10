@@ -110,6 +110,7 @@ async def main(args):
                     assert ('start_node' in names) == writable
                     assert 'get_console_output' in names
                     assert ('send_console_input' in names) == console_input
+                    assert ('send_console_command' in names) == console_input
                     by_name = {t.name: t for t in (await session.list_tools()).tools}
                     assert by_name['get_lab_state'].annotations.read_only_hint
                     assert by_name['get_console_output'].annotations.read_only_hint
@@ -120,6 +121,8 @@ async def main(args):
                     if console_input:
                         assert not by_name['send_console_input'].annotations.read_only_hint
                         assert by_name['send_console_input'].annotations.destructive_hint
+                        assert by_name['send_console_command'].annotations.destructive_hint
+                        assert not by_name['send_console_command'].annotations.read_only_hint
                     if writable:
                         assert by_name['apply_topology'].annotations.destructive_hint
                     assert 'stop_node' not in names
@@ -185,6 +188,41 @@ async def main(args):
                             'wait_seconds': 0.2}))
                         assert 'RX:MCP-CONSOLE' in result['output']
                         assert result['input_status'] == 'sent'
+                        # Default no-cursor reads select the tail, even when a
+                        # local model asks for a tiny output budget.
+                        tail = payload(await session.call_tool('get_console_output', {
+                            'node_id': 'console_echo', 'wait_seconds': 0.1, 'max_bytes': 16}))
+                        assert tail['read_mode'] == 'latest'
+                        assert tail['omitted_bytes'] > 0
+                        assert 'MCP-CONSOLE' in tail['output']
+                        history = payload(await session.call_tool('get_console_output', {
+                            'node_id': 'console_echo', 'wait_seconds': 0.1,
+                            'max_bytes': 4, 'latest': False}))
+                        assert history['output'] == 'BOOT'
+                        assert history['capture_end'] == 'limit'
+                        remainder = payload(await session.call_tool('get_console_output', {
+                            'node_id': 'console_echo', 'wait_seconds': 0.1, 'cursor': history['cursor']}))
+                        assert remainder['read_mode'] == 'stream'
+                        assert ' READY' in remainder['output']
+                        command_args = {'node_id': 'console_echo', 'expected_revision': remainder['revision'],
+                                        'expected_cursor': remainder['cursor'], 'wait_seconds': .2}
+                        # Bad syntax must not type anything, including doubled
+                        # JavaScript escapes from the reported failure.
+                        for command in ('', ' ', 'show clock\\r', 'one\\ntwo', 'show clock\r',
+                                        'one\ntwo', 'show\tclock', '\x03', '\x7f', '\x85',
+                                        'one\u2028two', 'x'*4096, 'é'*2048):
+                            bad = await session.call_tool('send_console_command', {**command_args, 'command': command})
+                            assert bad.is_error, repr(command[:30])
+                        unchanged = payload(await session.call_tool('get_console_output', {
+                            'node_id': 'console_echo', 'cursor': remainder['cursor'], 'wait_seconds': .1}))
+                        assert unchanged['cursor'] == remainder['cursor'] and unchanged['output'] == ''
+                        sent = payload(await session.call_tool('send_console_command', {
+                            **command_args, 'command': 'show clock'}))
+                        assert sent['output'] == 'RX:show clock', sent
+                        assert sent['input_status'] == 'sent'
+                        stale_command = await session.call_tool('send_console_command', {
+                            **command_args, 'command': 'STALE'})
+                        assert stale_command.is_error
                         stale = await session.call_tool('send_console_input', {
                             'node_id': 'console_echo', 'input': 'STALE\r',
                             'expected_revision': observed['revision'], 'expected_cursor': observed['cursor']})
@@ -217,6 +255,74 @@ async def main(args):
                             (lab.image_dir / name).touch()
                         await model_test(session, args, initialization)
                         assert not lab.topology['nodes'], 'Model preview must not mutate the lab'
+        # Large saved snippets must not bury later node identities in the
+        # local model's tool-output budget. Exercise real SDK serialization.
+        nodes = [{**fixture.node('large_' + str(i)), 'name': 'SW' + str(i + 1),
+                  'startup_config': '! saved baseline\n' * 700} for i in range(12)]
+        links = [{'id': 'edge_' + str(i), 'a': {'node': nodes[i]['id'], 'port': '0/0'},
+                  'b': {'node': nodes[(i+1)%12]['id'], 'port': '0/1'}} for i in range(12)]
+        lab.save({'name': 'Large state', 'nodes': nodes, 'links': links})
+        for compact in (False, True):
+            params = StdioServerParameters(command=sys.executable, args=[str(ROOT/'tools/weblab_mcp.py'),
+                '--url', url, '--allow-console-input', '--allow-write'] + (['--compact-responses'] if compact else []))
+            async with stdio_client(params) as (reader, writer):
+                async with ClientSession(reader, writer) as session:
+                    await session.initialize()
+                    state = payload(await session.call_tool('get_lab_state', {}))
+                    if not compact:
+                        ordinary = lab.automation.state()
+                        # Filesystem free space can change between these calls.
+                        assert set(state) == set(ordinary)
+                        assert {k:v for k,v in state.items() if k != 'storage'} == {
+                            k:v for k,v in ordinary.items() if k != 'storage'}, 'Ordinary/OpenAI state must remain unchanged'
+                        assert all(n.get('startup_config') for n in state['topology']['nodes'])
+                        continue
+                    found_nodes, found_links = [], []
+                    revision = state['revision']
+                    for _ in range(30):
+                        assert len(json.dumps(state, ensure_ascii=True, indent=2)) <= 8000
+                        assert state['revision'] == revision
+                        assert all('startup_config' not in n and n['has_startup_config'] for n in state['topology']['nodes'])
+                        found_nodes.extend(n['id'] for n in state['topology']['nodes'])
+                        found_links.extend(n['id'] for n in state['topology']['links'])
+                        if state['next_node_offset'] is None and state['next_link_offset'] is None:
+                            break
+                        state = payload(await session.call_tool('get_lab_state', {
+                            'node_offset': state['next_node_offset'] if state['next_node_offset'] is not None else state['total_nodes'],
+                            'link_offset': state['next_link_offset'] if state['next_link_offset'] is not None else state['total_links']}))
+                    assert found_nodes == [n['id'] for n in nodes]
+                    assert found_links == [n['id'] for n in links]
+                    invalid = await session.call_tool('get_lab_state', {'node_offset': -1})
+                    assert invalid.is_error
+                    started = payload(await session.call_tool('start_node', {
+                        'node_id': nodes[0]['id'], 'expected_revision': revision}))
+                    assert started['started'] and started['state']['compact']
+                    assert len(json.dumps(started, ensure_ascii=True, indent=2)) < 9000
+                    initial = payload(await session.call_tool('get_console_output', {'node_id': nodes[0]['id'], 'wait_seconds': .1}))
+                    probe = 'BEGIN-' + 'x' * 4085 + '-END'
+                    reply = payload(await session.call_tool('send_console_command', {
+                        'node_id': nodes[0]['id'], 'expected_revision': initial['revision'],
+                        'expected_cursor': initial['cursor'], 'command': probe, 'max_bytes': 65536, 'wait_seconds': .2}))
+                    output = reply['output']
+                    assert reply['capture_max_bytes'] == 1024
+                    assert reply['capture_end'] == 'limit'
+                    while reply['capture_end'] == 'limit':
+                        reply = payload(await session.call_tool('get_console_output', {
+                            'node_id': nodes[0]['id'], 'cursor': reply['cursor'], 'max_bytes': 65536, 'wait_seconds': .1}))
+                        assert reply['omitted_bytes'] == 0
+                        assert len(json.dumps(reply, ensure_ascii=True, indent=2)) < 8000
+                        output += reply['output']
+                    # Echo fixture prefixes every PTY read, which may split the
+                    # maximum-size input into multiple transport packets.
+                    assert output.startswith('RX:') and output.replace('RX:', '') == probe, (
+                        'Console continuation lost or duplicated output', len(output), output[:30], output[-30:])
+                    lab.stop_all()
+                    proposal = payload(await session.call_tool('preview_topology', {
+                        'topology': {'name': 'Compact apply', 'nodes': [fixture.node('replacement')], 'links': []},
+                        'instructions': '# Disposable test', 'replace_existing': True}))
+                    applied = payload(await session.call_tool('apply_topology', {'proposal_id': proposal['proposal_id']}))
+                    assert applied['compact'] and applied['complete']
+        print('Compact state pagination preserves every node/link; console chunks roundtrip without loss; ordinary state unchanged.', flush=True)
     finally:
         fixture.tearDown()
 

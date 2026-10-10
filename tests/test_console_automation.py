@@ -90,9 +90,60 @@ class ConsoleAutomationTests(unittest.TestCase):
         with self.assertRaisesRegex(lab_server.LabError, 'Console changed'):
             self.send(first)
 
+    def test_latest_read_reaches_prompt_after_long_history(self):
+        initial = self.read()
+        # Echo enough old text to reproduce a model requesting tiny boot chunks.
+        self.send(initial, 'OLD-' + 'x' * 3500 + '\rCURRENT-PROMPT\r')
+        history = self.read(max_bytes=128)
+        self.assertEqual(history['capture_end'], 'limit')
+        with self.assertRaisesRegex(lab_server.LabError, 'no input was sent'):
+            self.send(history, 'REJECTED\r')
+        latest = self.read(max_bytes=128, latest=True)
+        self.assertEqual(latest['capture_end'], 'timeout')
+        self.assertEqual(latest['read_mode'], 'latest')
+        self.assertGreater(latest['omitted_bytes'], 3000)
+        self.assertIn('CURRENT-PROMPT', latest['output'])
+        self.assertNotIn('BOOT READY', latest['output'])
+        self.assertIn('RX:AFTER-TAIL', self.send(latest, 'AFTER-TAIL\r')['output'])
+        with self.assertRaisesRegex(lab_server.LabError, 'Console changed'):
+            self.send(latest, 'STALE-TAIL\r')
+        self.assertNotIn('REJECTED', self.read()['output'])
+        self.assertNotIn('STALE-TAIL', self.read()['output'])
+
+    def test_latest_with_cursor_preserves_every_byte(self):
+        first = self.read(max_bytes=4)
+        rest = self.read(cursor=first['cursor'], latest=True)
+        whole = self.read()
+        self.assertEqual(first['output'] + rest['output'], whole['output'])
+        self.assertEqual(rest['read_mode'], 'stream')
+        self.assertEqual(rest['omitted_bytes'], 0)
+
+    def test_latest_scan_limit_is_bounded_and_resumable(self):
+        with patch.object(console_capture, 'LATEST_SCAN_LIMIT', 8):
+            first = self.read(max_bytes=4, latest=True)
+        self.assertEqual(first['bytes_read'], 8)
+        self.assertEqual(first['omitted_bytes'], 4)
+        self.assertEqual(first['capture_end'], 'limit')
+        self.assertIn('before sending input', first['next_action'])
+        with self.assertRaisesRegex(lab_server.LabError, 'Console changed'):
+            self.send(first)
+        rest = self.read(cursor=first['cursor'], latest=True)
+        whole = self.read()
+        self.assertEqual(first['output'] + rest['output'], whole['output'][4:])
+
+    def test_latest_read_respects_human_lock(self):
+        human = console_capture.Console(self.lab.runtime['r1']['port'])
+        self.addCleanup(human.close)
+        human.acquire()
+        latest = self.read(latest=True)
+        self.assertTrue(latest['locked'])
+        with self.assertRaisesRegex(lab_server.LabError, 'input lock'):
+            self.send(latest)
+
     def test_validation_stopped_nodes_and_server_opt_in(self):
         for options in ({'wait_seconds': 31}, {'wait_seconds': float('nan')},
-                        {'max_bytes': True}, {'max_bytes': 262145}, {'cursor': '../bad'}):
+                        {'max_bytes': True}, {'max_bytes': 262145}, {'cursor': '../bad'},
+                        {'latest': 'true'}, {'latest': 1}):
             with self.subTest(options=options), self.assertRaises(lab_server.LabError):
                 self.api.console_read('r1', **options)
         observed = self.read()

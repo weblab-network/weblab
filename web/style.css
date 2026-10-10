@@ -299,7 +299,21 @@ body{height:var(--app-height,100vh)}
 #agent-messages {overflow:auto;min-height:70px;flex:1;padding:0 14px;user-select:text}
 #agent-messages article {padding:12px 0;border-bottom:1px solid #35414c}
 #agent-messages article>div {white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.5;margin-top:7px}
-#agent-messages strong {font-size:12px;color:#79dbc3}
+#agent-messages article>strong {font-size:12px;color:#79dbc3}
+#agent-messages .agent-markdown {white-space:normal;min-width:0}
+.agent-markdown p,.agent-markdown ul,.agent-markdown ol,.agent-markdown blockquote,.agent-markdown pre,.agent-markdown .agent-table {margin:0 0 12px}
+.agent-markdown>:last-child {margin-bottom:0}
+.agent-markdown h1,.agent-markdown h2,.agent-markdown h3,.agent-markdown h4,.agent-markdown h5,.agent-markdown h6 {font-size:1.1em;line-height:1.4;margin:16px 0 8px}
+.agent-markdown>:first-child {margin-top:0}
+.agent-markdown ul,.agent-markdown ol {padding-left:24px}
+.agent-markdown blockquote {border-left:3px solid #526573;padding-left:12px;color:var(--muted)}
+.agent-markdown code {font-family:monospace;background:#10171d;padding:1px 4px;border-radius:3px}
+.agent-markdown pre {max-width:100%;overflow:auto;white-space:pre;overflow-wrap:normal;background:#10171d;padding:10px;border-radius:4px}
+.agent-markdown pre code {padding:0;background:none}
+.agent-table {max-width:100%;overflow:auto}
+.agent-table table {width:100%;border-collapse:collapse}
+.agent-table th,.agent-table td {border:1px solid #35414c;padding:7px 9px;text-align:left;vertical-align:top;min-width:70px}
+.agent-table th {background:#202c35;font-weight:600}
 #agent-prompt-form {padding:8px 12px 14px;flex-shrink:0}
 #agent-prompt {width:100%;resize:vertical;max-height:150px;min-height:55px;box-sizing:border-box}
 #agent-prompt-form .agent-actions {padding:8px 0 0}

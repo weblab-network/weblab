@@ -190,14 +190,45 @@ automation routes to an older running server.
 
 ## Shared console access
 
-`get_console_output(node_id, cursor?, wait_seconds=1, max_bytes=65536)` observes
+`get_console_output(node_id, cursor?, wait_seconds=1, max_bytes=65536, latest=true)` observes
 the running node's existing console without typing, clearing a line, or acquiring
-its input lock. Omit `cursor` on the first read to receive retained history (up to
-256 KiB). Pass the returned cursor to read subsequent bytes without replaying old
-output. `gap=true` means history expired or the device restarted. A `capture_end`
-of `limit` means more bytes may remain; read again before sending input. Output
+its input lock. Omit `cursor` on the first read to get the latest output: it drains
+retained history and keeps its last `max_bytes`, reporting `omitted_bytes` for
+older text left out. This excerpt is not a complete configuration. Set
+`latest=false` without a cursor to read from the beginning of retained history
+(up to 256 KiB). Pass the returned cursor to read subsequent bytes without
+skipping or replaying old output; `latest` is ignored when a cursor is supplied.
+Latest reads scan at most 1 MiB within the requested wait, so continuous logging
+cannot cause an unbounded read. The HTTP console-read API retains its original
+stream default; the MCP adapter explicitly selects latest reads.
+
+`gap=true` means history expired or the device restarted. A `capture_end`
+of `limit` means more bytes may remain; keep reading with each returned cursor
+before sending input. Do not restart from the beginning each time or interpret
+old boot text as current boot status. A rejected stale input sends nothing;
+reread and inspect the prompt before requesting input with the new cursor. Output
 has terminal formatting removed; this is not a full terminal emulator, and a
 byte-limited window may split a UTF-8 character or escape sequence.
+
+The optional adapter flag `--compact-responses` is selected automatically only
+by the Ollama companion. It caps reads and send-result captures at 1024 raw bytes
+and reports `capture_max_bytes`. Larger output remains available through cursor
+continuation; no post-capture text slicing advances a cursor past unseen output.
+Its `get_lab_state(node_offset=0, link_offset=0, page_size=8)` returns bounded
+discovery pages without startup snippets, exercise text or live link diagnostics.
+Follow both next offsets, holding an exhausted list at its total; restart pagination
+if the revision changes. The HTTP state API and ordinary adapter/OpenAI response
+format remain unchanged. Keep compact-mode adapters paired with this server version.
+
+`send_console_command(node_id, command, expected_revision, expected_cursor,
+wait_seconds=1, max_bytes=65536)` exists only with `--allow-console-input`.
+It submits one plain command by appending one carriage return in the MCP adapter,
+then calls the existing guarded console-send API. It shares raw input's permissions,
+approvals, locks, capture budgets and cursor/revision checks. Use it for ordinary
+commands without Enter escapes. Empty/whitespace-only commands, control characters,
+literal `\r`/`\n` and commands over 4095 UTF-8 bytes are rejected before any input.
+It does not inspect or clear pending input, elevate privileges, retry or determine
+command completion. Inspect the prompt first and verify returned output afterward.
 
 `send_console_input(node_id, input, expected_revision, expected_cursor,
 wait_seconds=1, max_bytes=65536)` exists only with `--allow-console-input`.

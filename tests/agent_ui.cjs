@@ -57,7 +57,11 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
       if(file.mime==='text/plain')file.text=Buffer.from(a.data,'base64').toString('utf8');
       sentFiles.set(file.id,file);const {data,...meta}=file;return meta;
     });
-    messages=[{role:'user',text:body.prompt,attachments},{role:'assistant',text:'<img src=x onerror="window.injected=true">'}];result=state();
+    messages=[{role:'user',text:body.prompt,attachments},{role:'assistant',text:
+      '**Task 7 is next**, but check `TST` first.\n\n| Tasks | Current status |\n|---|---|\n| **1** | Incomplete |\n| 2 | Complete |\n\n' +
+      '### Verification\n\n- Inspect the prompt\n- Read the output\n\n```text\nshow interfaces\n'+'x'.repeat(250)+'\n```\n\n'+
+      '<img src=x onerror="window.injected=true">\n\n<script>window.injected=true</script>\n\n'+
+      '[unsafe](javascript:alert(1)) [external](https://example.invalid/) ![remote](https://example.invalid/track.png)'}];result=state();
    }
    else if(action==='attachment'){assert.equal(body.conversation_id,conversationId);result=sentFiles.get(body.id);}
    else if(action==='stop'){stop++;status='interrupted';result=state();}
@@ -112,6 +116,29 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
  assert.ok(await page.locator('#agent-intro').isHidden());
  assert.equal(await page.locator('#agent-prompt').getAttribute('placeholder'),'Message your agent…');
  assert.equal(await page.locator('#agent-messages img').count(),0);assert.equal(await page.evaluate(()=>window.injected),undefined);
+ const formatted=page.locator('#agent-messages .agent-markdown');
+ assert.equal(await formatted.locator('p strong').first().textContent(),'Task 7 is next');
+ assert.equal(await formatted.locator('tbody tr').count(),2);
+ assert.equal(await formatted.locator('th').first().textContent(),'Tasks');
+ assert.equal(await formatted.locator('td strong').textContent(),'1');
+ assert.equal(await formatted.locator('h3').textContent(),'Verification');
+ assert.equal(await formatted.locator('li').count(),2);
+ assert.ok((await formatted.locator('pre code').textContent()).startsWith('show interfaces\n'));
+ assert.equal(await formatted.locator('a,img,script,iframe').count(),0);
+ assert.ok(await formatted.locator('pre').evaluate(e=>e.scrollWidth>e.clientWidth));
+ assert.ok(await page.locator('#agent-messages').evaluate(e=>e.scrollWidth<=e.clientWidth+1),'Long code stays inside the conversation');
+ // In-progress Markdown is reparsed as chunks arrive, without executing HTML.
+ const completeReply=messages[1].text;
+ messages[1].text='**Streaming';
+ await page.waitForFunction(()=>document.querySelector('.agent-markdown')?.textContent.includes('**Streaming'));
+ messages[1].text='**Streaming complete**';
+ await page.waitForFunction(()=>document.querySelector('.agent-markdown strong')?.textContent==='Streaming complete');
+ messages[1].text='|'+Array(12).fill('Column').join('|')+'|\n|'+Array(12).fill('---').join('|')+'|\n|'+Array(12).fill('Value').join('|')+'|';
+ await page.waitForFunction(()=>document.querySelectorAll('.agent-markdown th').length===12);
+ assert.ok(await formatted.locator('.agent-table').evaluate(e=>e.scrollWidth>e.clientWidth));
+ assert.ok(await page.locator('#agent-messages').evaluate(e=>e.scrollWidth<=e.clientWidth+1),'Wide tables scroll independently');
+ messages[1].text=completeReply;
+ await formatted.locator('table').waitFor();
  assert.equal(sentFiles.size,2);assert.equal(await page.locator('#agent-attachments').isHidden(),true);
  await page.locator('#agent-messages .agent-attachment summary').nth(0).click();
  await page.waitForFunction(()=>document.querySelector('#agent-messages .agent-attachment pre')?.textContent.includes('router ospf'));
@@ -273,9 +300,11 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
  assert.equal(await page.evaluate(()=>localStorage.getItem('weblab.agent.session.v1')),null);
  assert.equal(await page.evaluate(()=>sessionStorage.getItem('weblab.agent.session.v1')),'browser-capability');
  await page.locator('#agent-provider').selectOption('openai');
+ assert.ok(await page.locator('#agent-model-recommendation').isVisible());
+ assert.ok((await page.locator('#agent-model-recommendation').textContent()).includes('gpt-6.1-sol'));
+ assert.equal(await page.locator('#agent-model').inputValue(),'gpt-6.1-sol');
+ assert.equal(await page.locator('#agent-model').getAttribute('placeholder'),'gpt-6.1-sol');
  assert.ok(await page.locator('#agent-openai-auth').isVisible());
- assert.equal(await page.locator('#agent-model').getAttribute('placeholder'),'gpt-5.6-sol');
- assert.equal(await page.locator('#agent-model').inputValue(),'gpt-5.6-sol');
  assert.ok(await page.locator('#agent-login').isDisabled());
  await page.locator('#agent-save').click();await page.waitForFunction(()=>!document.querySelector('#agent-login').disabled);
  assert.equal(settings.provider,'openai');
@@ -289,8 +318,10 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
  await page.locator('#agent-login-cancel').click();await page.locator('#agent-device-code').waitFor({state:'hidden'});
  await page.locator('#agent-account').click();await page.waitForFunction(()=>document.querySelector('#agent-auth-status').textContent.includes('Signed in'));
  assert.equal(await page.locator('#agent-model-list option').getAttribute('value'),'gpt-5.6-sol');
+ assert.equal(await page.locator('#agent-model').inputValue(),'gpt-6.1-sol','Refreshing suggestions must not replace the chosen model');
  await page.locator('#agent-logout').click();await page.waitForFunction(()=>document.querySelector('#agent-auth-status').textContent.includes('signed-out'));
  await page.locator('#agent-provider').selectOption('ollama');
+ assert.ok(await page.locator('#agent-model-recommendation').isHidden());
  assert.ok(await page.locator('#agent-openai-auth').isHidden());
  await page.locator('#agent-save').click();
  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(200);

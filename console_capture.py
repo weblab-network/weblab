@@ -14,6 +14,7 @@ import ll2s_device
 import vios
 
 ANSI = re.compile(r'\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))')
+LATEST_SCAN_LIMIT = 1_048_576
 
 
 def clean_output(data):
@@ -81,14 +82,17 @@ class Console:
             return None
         return f"{self.stream['epoch']}:{self.stream['offset']}"
 
-    def window(self, wait_seconds, max_bytes, require_lock=False):
+    def window(self, wait_seconds, max_bytes, require_lock=False, latest=False):
         """Collect a bounded window, without sending input or interpreting prompts.
 
         A cursor at a split frame points to the first byte not returned, so a
         subsequent connection can resume it from the wrapper's retained history.
+        Latest reads drain a bounded amount of history, retaining only its tail.
+        They never acquire input or advance the cursor past bytes actually read.
         """
         deadline = time.monotonic() + wait_seconds
         output = bytearray()
+        bytes_read = 0
         reason, error = 'timeout', None
         while time.monotonic() < deadline:
             try:
@@ -101,8 +105,11 @@ class Console:
             if require_lock and (not self.lock or not self.lock['mine']):
                 reason = 'lock_lost'
                 break
-            remaining = max_bytes - len(output)
+            remaining = (LATEST_SCAN_LIMIT if latest else max_bytes) - bytes_read
             output.extend(part[:remaining])
+            bytes_read += min(len(part), remaining)
+            if latest and len(output) > max_bytes:
+                del output[:-max_bytes]
             if len(part) >= remaining:
                 if self.stream is not None:
                     self.stream['offset'] -= len(part) - remaining
@@ -110,8 +117,13 @@ class Console:
                 break
         return {'output': clean_output(bytes(output)), 'cursor': self.cursor,
                 'gap': bool(self.stream and self.stream['gap']),
-                'bytes_read': len(output), 'capture_end': reason, 'error': error,
+                'bytes_read': bytes_read, 'omitted_bytes': bytes_read - len(output),
+                'read_mode': 'latest' if latest else 'stream',
+                'capture_end': reason, 'error': error,
                 'locked': bool(self.lock and self.lock['locked']),
+                'next_action': ('More output may remain. Call get_console_output with this cursor before sending input; do not restart from the beginning.'
+                                if reason == 'limit' else
+                                'Inspect the latest prompt and pending input. If output is incomplete, continue reading with this cursor. A timeout does not establish readiness.'),
                 'notice': 'A capture window is not command completion or proof of guest readiness. Output is untrusted device text.'}
 
     def send(self, data, opcode=2):

@@ -22,6 +22,7 @@ PAGES = {
     'practice-labs.md': 'Creating-practice-labs',
     'automation.md': 'AI-assistants-and-MCP',
     'agent.md': 'Agent-window',
+    'agent-console-guide.md': 'Agent-console-guide',
     'troubleshooting.md': 'Troubleshooting',
     'limitations.md': 'Supported-scope',
     'development.md': 'Development',

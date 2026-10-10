@@ -37,7 +37,8 @@ class Model(BaseHTTPRequestHandler):
                             'text({names: ALL_TOOLS.map(t=>t.name), shell:typeof tools.exec_command, '
                             'patch:typeof tools.apply_patch, process:typeof process, fetch:typeof fetch, '
                             'require:typeof require}); '
-                            'text(await tools.mcp__weblab__get_lab_state({}));')}
+                            'text(await tools.mcp__weblab__get_lab_state({}));'
+                            r'text({commandValidation:await tools.mcp__weblab__send_console_command({node_id:"missing", command:"show clock\\r", expected_revision:"unused", expected_cursor:"unused"})});')}
             else:
                 assert Model.calls == 1
                 outputs = [i for i in data['input'] if i.get('type') == 'custom_tool_call_output']
@@ -49,11 +50,15 @@ class Model(BaseHTTPRequestHandler):
                     except ValueError: pass
                 exposure = next(o for o in objects if isinstance(o,dict) and 'names' in o)
                 assert exposure['names'] and all(n.startswith('mcp__weblab__') for n in exposure['names'])
+                assert 'mcp__weblab__send_console_command' in exposure['names']
                 assert all(exposure[k] == 'undefined' for k in ('shell','patch','process','fetch','require'))
                 result = next(o for o in objects if isinstance(o,dict) and 'content' in o)
                 assert not result.get('isError'), result
                 payload = json.loads(next(c['text'] for c in result['content'] if c.get('type') == 'text'))
                 assert payload['topology']['nodes'] == []
+                rejected = next(o['commandValidation'] for o in objects if isinstance(o,dict) and 'commandValidation' in o)
+                assert rejected.get('isError'), rejected
+                assert 'omit Enter escapes' in json.dumps(rejected), rejected
                 item = {'id':'msg_fixture','type':'message','role':'assistant','status':'completed',
                         'content':[{'type':'output_text','text':'Fixture verified: Code Mode read the empty Weblab topology; only Weblab tools are callable.','annotations':[]}]}
             Model.calls += 1

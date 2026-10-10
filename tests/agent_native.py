@@ -78,7 +78,7 @@ def main(args):
                 'import socket\ns=socket.socket();s.settimeout(1)\ntry: s.connect(("192.0.2.1",80))\nexcept OSError: pass\nelse: raise SystemExit("Unexpected egress")'],check=True)
             if args.tool_gateway_only:
                 settings={**api('state')['settings'], 'provider':'openai',
-                          'endpoint':agent_bridge.OPENAI_ENDPOINT, 'model':'gpt-5.6-sol'}
+                          'endpoint':agent_bridge.OPENAI_ENDPOINT, 'model':'gpt-5.6-sol', 'console_input':True}
                 api('settings',settings)
                 def png_chunk(kind, content):
                     return struct.pack('>I',len(content))+kind+content+struct.pack('>I',zlib.crc32(kind+content))
@@ -92,6 +92,7 @@ def main(args):
                 assert state['status']=='completed',state.get('error')
                 assert any('Fixture verified:' in m['text'] for m in state['messages']),state['messages']
                 assert lab.topology==before and not lab.runtime
+                assert not state['approvals'], 'Invalid command must not create an approval'
                 print('PASS: packaged text/image attachment transport and Code Mode model -> Weblab MCP -> gateway -> empty lab; only Weblab tools exposed, no credentials or cloud inference',flush=True)
                 return
             if args.openai_login_only:
@@ -113,6 +114,93 @@ def main(args):
                 assert state['auth']['status']=='cancelled',state['auth']['status']
                 assert lab.topology==before and not lab.runtime
                 print('PASS: native account check, unauthenticated guard, device-code request and cancellation; no account login or inference',flush=True)
+                return
+            if args.console_tail_only:
+                import test_lab
+                fixture = test_lab.LabTests(); fixture.setUp()
+                bridge.lab = bridge.automation.lab = fixture.lab
+                original_tool = bridge.tool
+                console_reads = []
+                console_results = []
+                state_results = []
+                def record_console_read(session, method, path, data, turn_id=''):
+                    result = original_tool(session, method, path, data, turn_id)
+                    if path == '/api/automation/console-read':
+                        console_reads.append((copy.deepcopy(data), copy.deepcopy(result)))
+                    if path in ('/api/automation/console-read', '/api/automation/console-send'):
+                        console_results.append(copy.deepcopy(result))
+                    if path == '/api/automation/state':
+                        state_results.append(copy.deepcopy(result))
+                    return result
+                bridge.tool = record_console_read
+                try:
+                    image = fixture.root/'fake.bin'
+                    image.write_text(image.read_text().replace(
+                        "os.write(1, b'BOOT READY\\r\\n')",
+                        "os.write(1, b'Old boot log line\\r\\n' * 1200 + b'\\r\\nSW1#')"))
+                    fixture.lab.start('r1')
+                    # Baselines deliberately exceed the model's ordinary tool
+                    # output budget. Only r1 is booted; all data is disposable.
+                    fixture.lab.topology['nodes'].extend(fixture.node('r' + str(i)) for i in range(3, 7))
+                    for node in fixture.lab.topology['nodes']:
+                        node['startup_config'] = '! old saved baseline\n' * 700
+                    settings = {'endpoint': args.ollama_url, 'model': args.model[-1],
+                                'context_window': 32768, 'turn_timeout': 300,
+                                'console_input': True, 'auto_approve': True}
+                    api('settings', settings)
+                    api('turn', {'prompt':
+                        'First read get_lab_state. Then use Weblab tools to inspect the running r1 console with max_bytes=2048. '
+                        'Once you see its current CLI prompt, call send_console_command with command="show clock" '
+                        '(no Enter escapes; the tool appends Enter). '
+                        'and verify the echoed response. This is a disposable echo-device test; '
+                        'do not configure anything or start/stop devices.', 'request_id': uuid.uuid4().hex})
+                    state = await_state(lambda s:s['status'] not in ('starting','running','stopping'))
+                    assert state['status'] == 'completed', state.get('error')
+                    operations = state['approvals']
+                    assert any(a['operation'] == 'console-send' and a['status'] == 'completed'
+                               for a in operations), 'Model did not send the requested console probe'
+                    assert any(a['operation'] == 'console-send' and a['arguments']['input'] == 'show clock\r'
+                               and a['status'] == 'completed' for a in operations), 'Expected exact command plus one Enter'
+                    assert not any(a['status'] == 'failed' for a in operations), 'A console operation failed'
+                    assert any(d.get('max_bytes') == 1024 and r.get('read_mode') == 'latest'
+                               and r.get('omitted_bytes', 0) > 16000 and 'SW1#' in r['output']
+                               for d, r in console_reads), 'Model did not observe the bounded console tail'
+                    assert any('RX:show clock' in r.get('output', '') for r in console_results), 'Model did not receive the response'
+                    assert state_results and len(state_results[0]['topology']['nodes']) == 6
+                    # Inspect what the pinned Codex runtime actually delivered
+                    # to the local model, not just the gateway's larger response.
+                    subprocess.run(['docker', 'exec', ident, 'python3', '-c', '''
+import json
+from pathlib import Path
+found = False
+command_called = False
+for path in Path('/home/agent').rglob('rollout*.jsonl'):
+    for line in path.open():
+        item = json.loads(line).get('payload', {})
+        if item.get('type') == 'function_call' and item.get('name', '').endswith('send_console_command'):
+            command_called = True
+        if item.get('type') != 'function_call_output' or not isinstance(item.get('output'), list):
+            continue
+        for block in item['output']:
+            text = block.get('text', '')
+            if '"compact": true' not in text:
+                continue
+            result = json.loads(text)  # A middle-truncated response is invalid JSON.
+            assert len(result['topology']['nodes']) == 6
+            assert {n['id'] for n in result['topology']['nodes']} == {'r1','r2','r3','r4','r5','r6'}
+            found = True
+assert found, 'No complete compact state reached the model'
+assert command_called, 'Model did not use the explicit command helper'
+print('PASS: model-visible state contains all six node IDs without downstream truncation')
+'''], check=True)
+                    output = bridge.automation.console_read('r1', wait_seconds=.2, latest=True)['output']
+                    assert 'RX:show clock' in output, 'Echo probe missing'
+                    print('PASS: real model reached the latest prompt after >20 KiB boot history, '
+                          'completed approved input and verified echo', flush=True)
+                finally:
+                    bridge.tool = original_tool
+                    bridge.lab = bridge.automation.lab = lab
+                    fixture.tearDown()
                 return
             for model in ([] if args.approvals_only else args.model):
                 settings={'endpoint':args.ollama_url,'model':model,'context_window':32768,'turn_timeout':300}
@@ -234,11 +322,12 @@ if __name__=='__main__':
     parser.add_argument('--approvals-only',action='store_true',help='Run only approved operations and provider outage checks')
     parser.add_argument('--approvals',action='store_true',help='Also test approved starts/input on disposable echo nodes')
     parser.add_argument('--protocol-preview',action='store_true',help='Check a nine-node OSPF/STP design instead of the small VLAN preview')
+    parser.add_argument('--console-tail-only',action='store_true',help='Check model console input after long boot history on a disposable echo device')
     parser.add_argument('--image',default='weblab-agent:dev')
     args=parser.parse_args()
     if not args.model: args.model=['gpt-oss:20b']
     if args.openai_login_only and args.tool_gateway_only:
         parser.error('Choose one isolated protocol test')
-    if (args.openai_login_only or args.tool_gateway_only) and (args.approvals or args.approvals_only or args.protocol_preview):
+    if (args.openai_login_only or args.tool_gateway_only) and (args.approvals or args.approvals_only or args.protocol_preview or args.console_tail_only):
         parser.error('--openai-login-only cannot be combined with inference tests')
     main(args)
