@@ -39,18 +39,21 @@
       <button id="agent-settings-tab" role="tab" tabindex="-1" aria-selected="false" aria-controls="agent-settings">Settings</button>
     </div>
     <button id="agent-pending" type="button" hidden></button>
-    <p id="agent-status" role="status">Connecting…</p>
-    <div id="agent-progress" hidden><span class="agent-spinner" aria-hidden="true"></span><span id="agent-progress-text"></span></div>
+    <div id="agent-status-line">
+      <p id="agent-status" role="status">Connecting…</p>
+      <div id="agent-progress" hidden><span class="agent-spinner" aria-hidden="true"></span><span id="agent-progress-text"></span></div>
+      <details id="agent-usage" class="console-menu" hidden><summary id="agent-usage-summary" title="Allowance and token details">Usage</summary><div class="console-menu-list"><div id="agent-usage-detail"></div><button id="agent-usage-refresh" type="button">Refresh allowance</button></div></details>
+    </div>
     <details id="agent-tool-error" hidden><summary>Latest tool error</summary><pre></pre></details>
     <div id="agent-chat" role="tabpanel" aria-labelledby="agent-chat-tab">
       <p id="agent-intro" class="agent-hint">Ask for a practice topology or inspect the current lab. Enable lab changes or console input in Settings. Review changes in Operations, or enable YOLO to preapprove enabled actions.</p>
       <div id="agent-messages" tabindex="0" aria-label="Conversation"></div>
-      <form id="agent-prompt-form"><label for="agent-prompt">Message</label><textarea id="agent-prompt" rows="3" maxlength="16000" placeholder="${starterPrompt}"></textarea>
+      <form id="agent-prompt-form"><label class="agent-message-label" for="agent-prompt">Message</label><textarea id="agent-prompt" rows="2" maxlength="16000" placeholder="${starterPrompt}"></textarea>
       <input id="agent-files" type="file" multiple accept=".png,.jpg,.jpeg,.webp,.txt,.md,.json,.yaml,.yml,.cfg,.conf,.config,.log,.csv,.ini,.xml" hidden>
       <div id="agent-attachments" aria-label="Pending attachments" hidden></div>
       <p id="agent-file-error" role="alert" hidden></p>
       <div class="agent-actions"><button id="agent-send" class="primary" type="submit">Send</button><button id="agent-attach" type="button">Attach files</button><button id="agent-new" type="button">New conversation</button><button id="agent-reconnect" type="button">Reconnect</button></div>
-      <p id="agent-file-hint" class="agent-hint">Up to 4 files · 2 MiB total · text/configs up to 64 KiB total. Screenshots need an image-capable model. Files are sent with your message.</p></form>
+      <details id="agent-attachment-help"><summary>Attachment help</summary><p id="agent-file-hint" class="agent-hint">Up to 4 files · 2 MiB total · text/configs up to 64 KiB total. Screenshots need an image-capable model. Files are sent with your message.</p></details><p id="agent-draft-hint" hidden>Draft your next message while the agent works. Send it when this turn finishes.</p></form>
     </div>
     <div id="agent-operations" role="tabpanel" aria-labelledby="agent-operations-tab" hidden>
       <p id="agent-operations-empty" class="agent-hint">No operations yet. Requests to change the lab and their results appear here.</p>
@@ -157,6 +160,7 @@
   const view = {panel, maximized: false, rect: null, applyLayout};
   documentWindows.add(view);
   function applyLayout() {
+    if (window.weblabLayout?.documentLayout(view)) return;
     const bounds = consoleViewport();
     view.rect = boundedConsoleRect(view.rect || {x:bounds.x+60,y:bounds.y+45,width:640,height:680});
     const r = view.maximized ? bounds : view.rect;
@@ -180,7 +184,7 @@
     }
     return result;
   }
-  function error(e) { $('agent-status').textContent = e.message || String(e); }
+  function error(e) { $('agent-status').hidden = false; $('agent-status').textContent = e.message || String(e); }
   // Export only this browser's selected conversation; never expose its capability.
   window.weblabAgentTranscript = async () => {
     if (!token) throw new Error('Open the Agent conversation to include it in the export.');
@@ -257,7 +261,11 @@
     const active = ['starting','running','stopping'].includes(state?.status);
     const authenticating = ['connecting','waiting'].includes(state?.auth?.status);
     $('agent-send').disabled = busy || readingFiles || active || authenticating || !token;
-    $('agent-attach').disabled = busy || readingFiles || active || authenticating || !token;
+    $('agent-attach').disabled = busy || readingFiles || authenticating || !token;
+    $('agent-prompt').disabled = busy;
+    $('agent-draft-hint').hidden = !active;
+    $('agent-send').textContent = active ? 'Working…' : 'Send';
+    $('agent-usage-refresh').disabled = busy || active || authenticating || !token || state?.settings?.provider !== 'openai';
     for (const control of $('agent-attachments').querySelectorAll('button')) control.disabled=busy || readingFiles;
     $('agent-stop').disabled = !active;
     for (const id of ['agent-new','agent-save','agent-check','agent-end']) $(id).disabled = busy || readingFiles || active || authenticating || !token;
@@ -415,9 +423,60 @@
       container.append(card);
     }
   }
+  const countTokens = value => Number.isFinite(value) ? value.toLocaleString() : 'Unavailable';
+  const duration = seconds => seconds < 60 ? `${seconds}s` : `${Math.floor(seconds/60)}m ${seconds%60}s`;
+  const turnDuration = next => {
+    const seconds = next.usage?.turns?.at(-1)?.duration_seconds;
+    return !['starting','running','stopping'].includes(next.status) && Number.isInteger(seconds) && seconds >= 0
+      ? duration(seconds) : null;
+  };
+  const windowName = minutes => minutes ? (minutes % 1440 === 0 ? `${minutes/1440}d` : minutes % 60 === 0 ? `${minutes/60}h` : `${minutes}m`) : 'Window';
+  function renderUsage(next) {
+    const openai = next.settings?.provider === 'openai';
+    const allowance = next.auth?.allowance;
+    const usage = next.usage || {}, turn = usage.turns?.at(-1);
+    const rows = Object.entries(allowance?.limits || {}).flatMap(([bucket,windows]) =>
+      ['primary','secondary'].filter(key=>windows[key]).map(key=>({bucket,...windows[key]})));
+    const stale = !!allowance?.unavailable || !allowance?.checked_at || Date.now()/1000-allowance.checked_at>300 || rows.some(w=>w.resets_at && w.resets_at<=Date.now()/1000);
+    const summary = openai ? (rows.length ? rows.map(w=>`${windowName(w.window_minutes)}: ${Math.max(0,100-w.used_percent)}% left`).join(' · ')+(stale?' · last known':'') : 'Allowance unavailable')
+      : 'Tokens: '+countTokens(turn?.tokens?.totalTokens)+' this turn';
+    $('agent-usage').hidden = !openai && !usage.total;
+    $('agent-usage-summary').textContent = summary;
+    const detail = $('agent-usage-detail');
+    const lines=[];
+    if (turnDuration(next) !== null) lines.push('Turn duration: '+turnDuration(next)+' (including tool calls and approval waits).');
+    if (openai) {
+      lines.push('Account-wide Codex allowance, shared with your other Codex sessions. This is not a per-turn charge.');
+      for (const w of rows) {
+        const reset = w.resets_at ? new Date(w.resets_at*1000) : null;
+        lines.push(`${w.bucket} · ${windowName(w.window_minutes)} · ${w.used_percent}% used`+
+          (reset && Number.isFinite(reset.getTime()) ? ` · resets ${reset.toLocaleString()}` : ' · reset time unavailable'));
+      }
+      if (allowance?.checked_at) lines.push('Last checked: '+new Date(allowance.checked_at*1000).toLocaleString());
+      if (stale) lines.push('No fresh allowance reading. Refresh when idle; an elapsed reset time does not guarantee replenishment.');
+    }
+    const describe = (label,tokens) => {
+      lines.push(label+': '+countTokens(tokens?.totalTokens)+' tokens');
+      if (tokens) lines.push(`Input ${countTokens(tokens.inputTokens)} (cached ${countTokens(tokens.cachedInputTokens)}); output ${countTokens(tokens.outputTokens)} (reasoning ${countTokens(tokens.reasoningOutputTokens)}).`);
+    };
+    describe('This turn',turn?.tokens); describe('Conversation reported total',usage.total);
+    if (turn?.partial) lines.push('This turn has an incomplete usage baseline; its token count is unavailable.');
+    lines.push('Token counts are provider-reported. Cached input and reasoning are included in their parent counts.');
+    // Plain text only; account metadata never becomes HTML.
+    const text = lines.join('\n');
+    if (detail.textContent !== text) detail.textContent = text;
+    $('agent-usage-refresh').hidden = !openai;
+  }
+  function sizeComposer() {
+    const input = $('agent-prompt');
+    input.style.height = 'auto'; input.style.height = Math.min(120,Math.max(44,input.scrollHeight))+'px';
+  }
+  $('agent-prompt').addEventListener('input',sizeComposer);
+  $('agent-usage-refresh').onclick = () => action(async()=>{await api('login-status',{});await refresh();});
   function progress() {
     const active = ['starting','running','stopping'].includes(state?.status);
     const line = $('agent-progress'); line.hidden = !active;
+    $('agent-status').hidden = active && !state?.error;
     line.classList.toggle('disconnected', !connected);
     if (!active) return;
     const elapsed = Math.max(0, (state.elapsed_seconds || 0) + Math.floor((Date.now()-progressReceived)/1000));
@@ -432,7 +491,6 @@
     if (pending) phase = 'Waiting for your approval';
     if (state.status==='stopping') phase = 'Stopping';
     if (!connected) phase = 'Connection lost — reconnect to check progress';
-    const duration = seconds => seconds < 60 ? `${seconds}s` : `${Math.floor(seconds/60)}m ${seconds%60}s`;
     const timing = `${duration(elapsed)} / ${duration(state.settings.turn_timeout)}`;
     $('agent-progress-text').textContent = `${phase} · ${timing}${quiet>=15 && !pending && connected ? ` · last event ${quiet}s ago` : ''}`;
   }
@@ -507,12 +565,14 @@
       row.append(detail);proposals.append(row);
     }
     }
-    renderApprovals(next.approvals || []); renderHistory(next.history || []); updateTabCounts(); progress(); syncApprovalDialog();
+    renderUsage(next); renderApprovals(next.approvals || []); renderHistory(next.history || []); updateTabCounts(); progress(); syncApprovalDialog();
     const toolError = $('agent-tool-error'); toolError.hidden = !next.tool_error;
     toolError.querySelector('pre').textContent = next.tool_error ? `${next.tool_error.operation}: ${next.tool_error.message}` : '';
     $('agent-mode').textContent = (next.settings.lab_changes || next.settings.console_input) ?
       (next.settings.auto_approve ? 'YOLO' : 'Approval required') : 'Read & preview';
-    $('agent-status').textContent = next.error || `${next.settings.model} · ${next.status}${next.activity ? ' · '+next.activity : ''}`;
+    const elapsed = turnDuration(next);
+    $('agent-status').textContent = (next.error || `${next.settings.model} · ${next.status}${next.activity ? ' · '+next.activity : ''}`)
+      + (elapsed !== null ? ` · ${elapsed}` : '');
     if (!settingsDirty) fillSettings(next.settings);
     const auth = next.auth || {};
     $('agent-auth-status').textContent = auth.error || (auth.signed_in ? `Signed in${auth.plan ? ' · '+auth.plan : ''}. Model list is a catalog; access is verified when you send a message.` : `Sign-in: ${auth.status || 'not checked'}`);
@@ -548,7 +608,7 @@
     finally { busy = false; controls(); }
   }
   button.onclick = () => {
-    dismissCompactPanel(); panel.hidden=false; applyLayout(); bringConsoleForward(panel);
+    dismissCompactPanel(); window.weblabLayout?.show('agent'); panel.hidden=false; applyLayout(); bringConsoleForward(panel);
     button.setAttribute('aria-expanded','true'); action(ensureSession);
   };
   $('agent-hide').onclick = () => { panel.hidden=true; button.setAttribute('aria-expanded','false'); button.focus(); };
@@ -593,6 +653,7 @@
   });
   $('agent-prompt-form').onsubmit = event => {event.preventDefault();action(async()=>{
     if(readingFiles)return;
+    if (['starting','running','stopping'].includes(state?.status)) return;
     const prompt=$('agent-prompt').value.trim(); if (!prompt) return;
     const bytes=crypto.getRandomValues(new Uint8Array(16));
     const request_id=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
@@ -600,7 +661,7 @@
     try {
       await api('turn',{prompt,request_id,...(attachments.length?{attachments:attachments.map(({name,data})=>({name,data}))}:{})});
     } catch(e) {fileError(e.message);throw e;}
-    $('agent-prompt').value=''; attachments=[];fileDrafts.delete(state?.conversation_id);renderAttachments();await refresh();
+    $('agent-prompt').value=''; sizeComposer(); attachments=[];fileDrafts.delete(state?.conversation_id);renderAttachments();await refresh();
   });};
   $('agent-attach').onclick=()=>$('agent-files').click();
   $('agent-files').onchange=async()=>{await addFiles([...$('agent-files').files]);$('agent-files').value='';};
@@ -610,7 +671,7 @@
     fileDrafts.set(state?.conversation_id,attachments);
     await api('reset',{});await refresh();$('agent-prompt').value='';attachments=[];renderAttachments();switchTab('chat');
   });
-  $('agent-end').onclick = () => action(async()=>{await api('close',{});storeToken('');state=null;conversationHints();signature='';proposalSignature='';approvalSignature='';historySignature='';drafts.clear();fileDrafts.clear();attachments=[];renderAttachments();$('agent-history-list').replaceChildren();$('agent-approvals').replaceChildren();$('agent-messages').replaceChildren();$('agent-proposals').replaceChildren();$('agent-tool-error').hidden=true;updateTabCounts();$('agent-status').textContent='Session closed. Reconnect to start a new one.';});
+  $('agent-end').onclick = () => action(async()=>{await api('close',{});storeToken('');state=null;conversationHints();signature='';proposalSignature='';approvalSignature='';historySignature='';drafts.clear();fileDrafts.clear();attachments=[];renderAttachments();$('agent-history-list').replaceChildren();$('agent-approvals').replaceChildren();$('agent-messages').replaceChildren();$('agent-proposals').replaceChildren();$('agent-tool-error').hidden=true;updateTabCounts();$('agent-usage').hidden=true;$('agent-usage').open=false;$('agent-status').textContent='Session closed. Reconnect to start a new one.';});
   $('agent-reconnect').onclick = () => action(ensureSession);
   for (const [id,kind] of [['agent-toolbar','move'],['agent-resize','resize']]) bindConsolePointer($(id),kind,view);
   for (const [id,kind] of [['agent-move','move'],['agent-resize','resize']]) bindConsoleKeys($(id),kind,view);
@@ -618,6 +679,7 @@
   setInterval(()=>{syncApprovalDialog();if (!panel.hidden || ['starting','running','stopping'].includes(state?.status)) {progress();refresh();}},1000);
   api('info').then(result=>{
     info=result; button.hidden=!info.enabled;
+    window.weblabLayout?.availability();
     if(info.enabled) providerControls();
   }).catch(()=>{});
 })();

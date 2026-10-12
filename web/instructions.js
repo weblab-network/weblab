@@ -45,6 +45,7 @@
     } catch (_) { /* Reading still works when browser storage is disabled or full. */ }
   }
   function applyLayout() {
+    if (window.weblabLayout?.documentLayout(view)) return;
     const bounds = consoleViewport();
     view.rect = boundedConsoleRect(view.rect || {x:bounds.x+40, y:bounds.y+55, width:720, height:640});
     const rect = view.maximized ? bounds : view.rect;
@@ -115,6 +116,7 @@
     body.setAttribute('aria-label', file.name);
   }
   function show() {
+    window.weblabLayout?.show('instructions');
     dismissCompactPanel();
     panel.hidden = false;
     applyLayout(); bringConsoleForward(panel);
@@ -130,7 +132,7 @@
     $('open-instructions').focus({preventScroll:true});
     remember();
   }
-  const open = () => documentFile ? show() : $('instructions-file').click();
+  const open = () => documentFile || window.weblabLayout?.active() ? show() : $('instructions-file').click();
   $('open-instructions').onclick = open;
   document.addEventListener('click', event => { if (event.target.closest('[data-show-instructions]')) open(); });
   $('instructions-open').onclick = () => $('instructions-file').click();

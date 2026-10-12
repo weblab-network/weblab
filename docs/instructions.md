@@ -8,6 +8,11 @@ inside the workspace, including fullscreen. **Open file** replaces the document;
 **Hide** keeps it available. Reopen it with the main Instructions button, the
 floating topology toolbar, or a console's **Actions → Instructions** shortcut.
 
+In a [workspace preset](topology.md#workspace-layouts), the **Instructions** tab
+opens the docked reader. If no file is loaded, it displays a short message;
+choose **Open file** to select an exercise. Opening an empty pane does not fetch
+instructions from the topology or Agent conversation.
+
 Drag its handle/title or resize from its corner; those handles also support arrow
 keys. Use **A− / A+** for 12–24px text, the size button to reset to 15px, and the
 maximize button to fill the visible screen. **Arrange windows** includes visible

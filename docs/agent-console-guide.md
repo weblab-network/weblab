@@ -3,6 +3,21 @@
 Use this guide when the user asks you to follow it for console work. It explains
 tool usage; it does not grant permission to configure, restart or replace a lab.
 
+## Optional operator preparation
+
+With local models that struggle to reach the initial prompt, the user can prepare
+the console before requesting a task. On Cisco IOS/IOL, obtain a live prompt,
+enter `enable` when the requested configuration or inspection needs privileged
+EXEC, and run `terminal length 0` for long output. Basic commands permitted in
+user EXEC may not need elevation. Leave an empty EXEC prompt and release any
+human input lock; do not pre-enter configuration mode just for the Agent.
+
+This preparation has helped in maintainer testing, but is not guaranteed or
+mandatory for every model. The Agent must still read the current console, verify
+its actual mode, and use the usual permissions and cursor checks. Session expiry
+can invalidate earlier preparation. See the operator checklist in
+[Agent setup](agent.md#preparing-consoles-for-local-models).
+
 ## Read, inspect, send, read
 
 1. Read `get_lab_state` at the start of each turn. Use returned internal node IDs,

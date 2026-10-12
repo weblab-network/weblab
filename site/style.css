@@ -72,3 +72,8 @@ footer{flex-wrap:wrap}
 @media(max-width:680px){.agent-video-picker{grid-template-columns:1fr;gap:10px}.agent-video-picker img{width:88px}.hero-agent{font-size:13px}.agent-media h3{font-size:26px}}
 
 .agent-media .agent-usage{padding:14px 18px;border-left:2px solid var(--mint);background:var(--surface);font-size:13px}.agent-usage strong{color:var(--text)}
+
+.agent-usage-feature{margin-top:26px;padding-top:22px;border-top:1px solid var(--line)}
+.agent-usage-feature h4{font-size:20px;margin:0}
+.agent-usage-feature .workspace-shot{margin-top:18px}
+.agent-usage-feature>.text-link{margin-top:18px}

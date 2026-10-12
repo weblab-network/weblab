@@ -94,6 +94,36 @@ retrying. The guide below can help, but is not a guaranteed workaround. Report
 the model tag, Weblab version, exact tool error and relevant console excerpt;
 remove credentials and private configuration before sharing them.
 
+## Preparing consoles for local models
+
+Local-model tasks have worked more smoothly in the maintainer's testing when the
+user first obtained a live prompt, selected the privilege level needed by the
+task, and disabled pagination. This is a practical workaround for prompt/Enter
+handling, not a requirement that every model needs manual preparation or a
+guarantee that the task will succeed.
+
+For Cisco IOS/IOL consoles, before handing the task to the Agent:
+
+1. Wait for startup to finish. If the console says **Press RETURN to get started**,
+   press Enter and inspect the resulting prompt; complete any required login yourself.
+2. Choose the privilege level for the requested work. User EXEC (`SW1>`) can be
+   enough for basic troubleshooting commands allowed by that device. For
+   configuration or privileged inspection such as `show running-config`, enter
+   `enable`, supply the authorized password if requested, and verify `SW1#`.
+3. For long output, run `terminal length 0` and check that the command succeeded.
+   Leave an empty EXEC prompt for the Agent; you do not need to pre-enter
+   `configure terminal`.
+4. Release any console input lock you hold, then ask the Agent to use the MCP
+   tools and verify the result from fresh console output. Enable **Allow console
+   input** if the task requires commands; privilege mode does not replace the
+   Agent's permission/approval settings.
+
+Command availability depends on the image and its configured privileges. Recheck
+this preparation after a console session expires or reconnects. For Junos and
+other platforms, use their own CLI modes and pagination commands; do not apply
+Cisco `enable` universally. Disabling device pagination does not remove Weblab's
+capture limits: the Agent still needs to follow output cursors when required.
+
 ## Console guidance for models
 
 For models that need more explicit console guidance, attach
@@ -140,8 +170,8 @@ image/data mounts and project name when adding the companion.
 
 ```sh
 mkdir -p images lab-data
-export WL_IMAGE=ghcr.io/weblab-network/weblab:0.5.1
-export WL_AGENT_IMAGE=ghcr.io/weblab-network/weblab-agent:0.5.1
+export WL_IMAGE=ghcr.io/weblab-network/weblab:0.6.0
+export WL_AGENT_IMAGE=ghcr.io/weblab-network/weblab-agent:0.6.0
 # For Ollama, use the /v1 URL reachable from the Weblab service:
 export WL_AGENT_PROVIDERS=http://YOUR_OLLAMA_HOST:11434/v1
 docker compose -f compose.prebuilt.yaml -f compose.agent.prebuilt.yaml pull
@@ -394,6 +424,15 @@ ChatGPT account login without putting an API key in Weblab or the browser:
 5. Open Conversation and send a request. Read/preview, permission switches,
    individual approvals or YOLO work exactly as with Ollama.
 
+<details>
+<summary>Screenshot: signed-in OpenAI settings and allowance</summary>
+
+<a href="https://weblab.network/assets/openai-allowance-token.png"><img src="https://weblab.network/assets/openai-allowance-token.png" alt="OpenAI settings with signed-in status, model selection and remaining allowance on the activity line" width="720"></a>
+
+Example account state; model access and allowance depend on the signed-in account.
+
+</details>
+
 **Shared usage allowance:** OpenAI requests from Weblab count toward your signed-in
 account's existing Codex / ChatGPT Work limits, shared with your other usage.
 Weblab provides no separate allowance. Longer conversations and repeated console
@@ -571,3 +610,68 @@ never use a blanket `docker compose down -v` on an installation with wanted data
 
 The pinned app-server protocol is experimental. Upgrade Codex only after running
 [the companion tests](development.md#optional-agent-window-checks).
+
+## Docked workspace layouts
+
+Choose **Layout → Agent workspace** in the topology toolbar to keep the map
+full height beside Agent and consoles. Switch the upper pane to Instructions
+when following an exercise. **Side by side** gives the selected tool the full
+right column. Layout changes preserve the conversation and draft; **Float**
+returns the Agent to a movable window. See [workspace layouts](topology.md#workspace-layouts).
+
+## Allowance and token usage
+
+<a href="https://weblab.network/assets/codex-allowance-after-turn.png"><img src="https://weblab.network/assets/codex-allowance-after-turn.png" alt="Agent workspace with topology, console and completed-turn details showing duration, OpenAI allowance and tokens" width="800"></a>
+
+[Open the full-size screenshot](https://weblab.network/assets/codex-allowance-after-turn.png).
+The activity line keeps allowance and elapsed time beside the conversation;
+the popup adds reset times and token breakdowns.
+
+When a turn ends, its elapsed time stays beside **completed**, **interrupted** or
+**failed** on the activity line (for example, `completed · 1m 23s`), and in usage
+details when available. This is total elapsed time, including tool calls and
+approval waits, not just model generation. It is retained with conversation
+history and after a companion restart. Older turns without a recorded duration
+do not show a time; starting a new turn starts a fresh timer.
+
+For OpenAI, the right end of the Agent status/activity line shows the remaining
+account allowance for each reported window (for example, 5h and 7d). Click it to
+see window reset times in your browser's timezone, the last check time, and token
+details. These limits are shared with other Codex sessions on the signed-in account; they
+are not a per-turn charge or an estimate of how much Weblab alone consumed.
+
+Allowance is checked during account/model refresh, before an OpenAI turn and
+when it completes. Live provider updates are also accepted. **Refresh allowance**
+checks again while idle. Missing/failed readings show unavailable or last-known
+values; readings older than five minutes or past a reported reset are marked
+last known. Weblab does not assume the allowance refilled when a timer elapsed.
+An unavailable usage lookup does not prevent login or generation.
+
+Token details show the current/latest turn and the provider's conversation total.
+A turn can contain multiple model requests and tool calls. Counts come from
+cumulative provider usage, with duplicate updates counted only once; cached input
+and reasoning are breakdowns of input and output, not additional totals. Missing
+counts are unavailable, not zero. Older conversations without a baseline or
+provider counter resets can make a turn's count unavailable. Counts are kept with
+conversation history; account allowance is refreshed separately and not exported.
+Ollama token counts appear only when the provider supplies them. Monetary/credit
+cost estimates are not included.
+
+<details>
+<summary>Local-model example: reported tokens and completed-turn duration</summary>
+
+<a href="https://weblab.network/assets/gemma4-12b-tokens.png"><img src="https://weblab.network/assets/gemma4-12b-tokens.png" alt="Gemma4 12B completed turn with elapsed time and provider-reported input, cached input and output tokens" width="800"></a>
+
+This example reports about five million tokens across the turn's model requests,
+mostly input including cached input. Repeatedly supplied context contributes to
+the total; it does not mean five million generated tokens, a five-million-token
+context window, or a monetary charge. These are reported counters, not a model
+speed or quality comparison.
+
+</details>
+
+In docked layouts, Agent/Instructions and window controls share a header row.
+The smaller message box grows as you type. You can draft a follow-up and prepare
+attachments during generation, but **Send** stays disabled until the current turn
+ends. Drafts are never automatically submitted. Attachment limits are under
+**Attachment help**; Stop and approvals remain available while work is running.

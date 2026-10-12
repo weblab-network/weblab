@@ -28,6 +28,17 @@ CONVERSATION_SETTINGS = ('provider', 'endpoint', 'model', 'context_window')
 MAX_CONVERSATIONS = 50
 
 
+TOKEN_FIELDS = ('inputTokens', 'cachedInputTokens', 'outputTokens', 'reasoningOutputTokens', 'totalTokens')
+
+
+def token_counts(value):
+    if not isinstance(value, dict):
+        return None
+    if any(type(value.get(k)) is not int or not 0 <= value[k] <= 10**15 for k in TOKEN_FIELDS):
+        return None
+    return {k: value[k] for k in TOKEN_FIELDS}
+
+
 class RPC:
     def __init__(self, config, env=None):
         args = ['codex', 'app-server', '--listen', 'stdio://']
@@ -186,6 +197,8 @@ class Session:
         self.request_id = ''
         self.started_at = self.last_event_at = None
         self.phase = ''
+        self.usage = {'total': None, 'turns': []}
+        self._usage_baseline = None
         self.auth = Login(self, lambda *args, **kwargs: RPC(*args, **kwargs))
         self.touched = time.time()
         self.history = {}
@@ -197,6 +210,7 @@ class Session:
             self.messages, self.seen = saved.get('messages', []), saved.get('seen', [])
             self.status = saved.get('status', 'idle')
             self.error = saved.get('error', '')
+            self.usage = saved.get('usage', self.usage)
             self.history = saved.get('history', {})
             self.conversation = saved.get('conversation', self.conversation)
             if not self.conversation['title'] and self.messages:
@@ -217,7 +231,7 @@ class Session:
     def record(self):
         return copy.deepcopy({**self.conversation, 'thread_id': self.thread_id,
                               'messages': self.messages, 'seen': self.seen[-100:],
-                              'status': self.status, 'error': self.error,
+                              'status': self.status, 'error': self.error, 'usage': self.usage,
                               'isolated_home': not self.legacy_history})
 
     def history_list(self):
@@ -234,7 +248,7 @@ class Session:
         if not self.conversation['title'] and self.messages:
             self.conversation['title'] = ' '.join(self.messages[0]['text'].split())[:100]
         save_json(self.path, {'thread_id': self.thread_id, 'messages': self.messages,
-                             'seen': self.seen[-100:], 'status': self.status, 'error': self.error,
+                             'seen': self.seen[-100:], 'status': self.status, 'error': self.error, 'usage': self.usage,
                              'isolated_home': not self.legacy_history,
                              'conversation': self.conversation, 'history': self.history})
 
@@ -246,7 +260,7 @@ class Session:
             return copy.deepcopy({'status': status, 'error': self.error,
                                   'messages': self.messages, 'activity': self.activity, 'request_id': self.request_id,
                                   'conversation_id': self.conversation['id'], 'history': self.history_list(),
-                                  'phase': self.phase,
+                                  'phase': self.phase, 'usage': self.usage,
                                   'auth': self.auth.snapshot(),
                                   'elapsed_seconds': int(time.monotonic()-self.started_at) if self.started_at and status in ACTIVE else 0,
                                   'quiet_seconds': int(time.monotonic()-self.last_event_at) if self.last_event_at and status in ACTIVE else 0})
@@ -289,6 +303,11 @@ class Session:
                 self.manager.busy.release()
                 raise
             self.request_id = request_id
+            self._usage_baseline = copy.deepcopy(self.usage.get('total'))
+            if self._usage_baseline is None and not self.thread_id:
+                self._usage_baseline = dict.fromkeys(TOKEN_FIELDS, 0)
+            self.usage['turns'] = [*self.usage.get('turns', []),
+                                   {'id': request_id, 'tokens': None, 'partial': self._usage_baseline is None}][-100:]
             self.conversation['settings'] = {k: self.settings.get(k, 'ollama' if k == 'provider' else None)
                                              for k in CONVERSATION_SETTINGS}
             self.started_at = self.last_event_at = time.monotonic()
@@ -312,6 +331,26 @@ class Session:
                 self.manager.busy.release()
                 raise ValueError(self.error) from None
             return self.snapshot()
+
+    def update_usage(self, params, turn):
+        if params.get('threadId') != self.thread_id or params.get('turnId') != turn:
+            return
+        usage = params.get('tokenUsage')
+        total = token_counts(usage.get('total')) if isinstance(usage, dict) else None
+        if total is None or not self.usage['turns']:
+            return
+        previous = self.usage.get('total')
+        # Duplicate cumulative snapshots must not double count. Regressions can
+        # follow provider resets/compaction: mark this turn unavailable, not negative.
+        baseline = self._usage_baseline
+        if previous and any(total[k] < previous[k] for k in TOKEN_FIELDS):
+            baseline = self._usage_baseline = None
+        current = self.usage['turns'][-1]
+        current['tokens'] = ({k: total[k] - baseline[k] for k in TOKEN_FIELDS}
+                             if baseline and all(total[k] >= baseline[k] for k in TOKEN_FIELDS) else None)
+        current['partial'] = baseline is None
+        self.usage['total'] = total
+        self.usage['updated_at'] = time.time()
 
     def run(self, prompt, attachments=None):
         started = time.monotonic()
@@ -370,6 +409,7 @@ class Session:
                 account = rpc.call('account/read', {'refreshToken': False}, cancel=self.stop)
                 if (account.get('account') or {}).get('type') != 'chatgpt':
                     raise ValueError('Sign in with OpenAI in Settings before sending a message')
+                self.auth.read_allowance(rpc, self.stop)
             params = {'cwd': '/workspace', 'model': self.settings['model'],
                       'modelProvider': config['model_provider'], 'sandbox': 'read-only', 'approvalPolicy': 'on-request'}
             params['developerInstructions'] = (
@@ -480,9 +520,14 @@ class Session:
                 except queue.Empty:
                     continue
                 method, params = event.get('method'), event.get('params', {})
+                if method == 'account/rateLimits/updated' and self.settings.get('provider') == 'openai':
+                    self.auth.update_allowance(params)
+                    continue
                 if params.get('turnId', turn) != turn:
                     continue
                 with self.lock:
+                    if method == 'thread/tokenUsage/updated':
+                        self.update_usage(params, turn)
                     if len(self.messages) > 128 or sum(len(m['text']) for m in self.messages) > 320000:
                         raise ValueError('Conversation output limit reached. Start a new conversation.')
                     if method in ('item/started', 'item/completed', 'item/agentMessage/delta',
@@ -526,6 +571,8 @@ class Session:
                         self.error = 'Model connection failed. Check the endpoint/model in Settings; the prompt will not be resent.'
                         self.stop.set()
                     if method == 'turn/completed' and params.get('turn', {}).get('id') == turn:
+                        if self.settings.get('provider') == 'openai' and not self.stop.is_set():
+                            self.auth.read_allowance(rpc, self.stop)
                         self.status = params['turn']['status']
                         if params['turn'].get('error'):
                             self.error = 'The model turn failed. Check Settings and try a new turn.'
@@ -535,6 +582,9 @@ class Session:
                 self.status = 'interrupted' if self.stop.is_set() else 'failed'
                 self.error = str(exc)[:700]
         finally:
+            with self.lock:
+                if self.started_at is not None and self.usage['turns']:
+                    self.usage['turns'][-1]['duration_seconds'] = max(0, int(time.monotonic() - self.started_at))
             if rpc:
                 rpc.close()
             with self.lock:
@@ -549,6 +599,8 @@ class Session:
                 raise ValueError('Stop the active turn before changing settings or starting a new conversation')
             self.archive_current()
             self.thread_id, self.messages, self.seen = None, [], []
+            self.usage = {'total': None, 'turns': []}
+            self._usage_baseline = None
             self.conversation = self.new_conversation()
             self.legacy_history = False
             self.status, self.error = 'idle', ''
@@ -591,6 +643,8 @@ class Session:
                 self.archive_current()
                 self.conversation = {k: copy.deepcopy(record[k]) for k in ('id', 'title', 'created', 'updated', 'settings')}
                 self.thread_id, self.messages, self.seen = record['thread_id'], copy.deepcopy(record['messages']), list(record['seen'])
+                self.usage = copy.deepcopy(record.get('usage', {'total': None, 'turns': []}))
+                self._usage_baseline = None
                 self.legacy_history = not record['isolated_home']
                 self.status, self.error = record['status'], record['error']
                 self.activity = self.phase = self.request_id = ''

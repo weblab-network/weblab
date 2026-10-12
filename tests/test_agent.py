@@ -957,6 +957,95 @@ class CompanionTests(unittest.TestCase):
         self.assertNotIn('turn/start',[name for name,params in FakeRPC.instances[-1].calls])
         self.assertFalse(self.manager.busy.locked())
 
+    def test_usage_cumulative_events_turns_and_history(self):
+        def counts(n):
+            return dict(zip(agent_companion.TOKEN_FIELDS, [n*10, n*2, n*3, n, n*13]))
+        def event(rpc, n, thread='thread'):
+            rpc.events.put({'method': 'thread/tokenUsage/updated', 'params': {
+                'threadId': thread, 'turnId': 'turn', 'tokenUsage': {'total': counts(n)}}})
+        def finish(rpc):
+            rpc.events.put({'method':'turn/completed','params':{'turn':{'id':'turn','status':'completed'}}})
+            self.wait(lambda:not session.worker.is_alive())
+        self.manager.handle('turn',{**self.payload,'prompt':'inspect','request_id':'usage-1'})
+        session=self.manager.sessions['a'*32]
+        self.wait(lambda:session.status=='running')
+        first_id=session.conversation['id']
+        rpc=FakeRPC.instances[-1]
+        event(rpc, 1); event(rpc, 1); event(rpc, 3); event(rpc, 999, 'foreign')
+        finish(rpc)
+        self.assertEqual(session.usage['turns'][-1]['tokens'], counts(3))
+        self.manager.handle('turn',{**self.payload,'prompt':'again','request_id':'usage-2'})
+        self.wait(lambda:session.status=='running')
+        rpc=FakeRPC.instances[-1];event(rpc, 5);finish(rpc)
+        self.assertEqual(session.usage['turns'][-1]['tokens'], counts(2))
+        self.assertEqual(session.usage['total'],counts(5))
+        saved=json.loads(session.path.read_text())
+        self.assertEqual(saved['usage'],session.snapshot()['usage'])
+        session.reset()
+        self.assertIsNone(session.usage['total'])
+        session.history_action('history-open',{'id':first_id})
+        self.assertEqual(session.usage['total'],counts(5))
+        self.manager.handle('turn',{**self.payload,'prompt':'after reset','request_id':'usage-3'})
+        self.wait(lambda:session.status=='running')
+        rpc=FakeRPC.instances[-1];event(rpc, 1);finish(rpc)
+        self.assertTrue(session.usage['turns'][-1]['partial'])
+        self.assertIsNone(session.usage['turns'][-1]['tokens'])
+        self.assertIsNone(agent_companion.token_counts({'totalTokens':True}))
+
+    def test_turn_duration_without_tokens_persists_and_resets(self):
+        for status in ('completed', 'failed', 'interrupted'):
+            self.manager.handle('turn',{**self.payload,'prompt':'inspect','request_id':'timing-'+status})
+            session=self.manager.sessions['a'*32]
+            self.wait(lambda:session.status=='running')
+            self.assertNotIn('duration_seconds',session.snapshot()['usage']['turns'][-1])
+            with session.lock:
+                session.started_at = time.monotonic()-83
+            FakeRPC.instances[-1].events.put({'method':'turn/completed','params':{'turn':{'id':'turn','status':status}}})
+            self.wait(lambda:not session.worker.is_alive())
+            elapsed=session.snapshot()['usage']['turns'][-1]['duration_seconds']
+            self.assertGreaterEqual(elapsed,83)
+            self.assertLess(elapsed,86)
+            self.assertIsNone(session.usage['total'])  # Timing does not require provider token reports.
+            with patch.object(agent_companion.time,'monotonic',return_value=time.monotonic()+100):
+                self.assertEqual(session.snapshot()['usage']['turns'][-1]['duration_seconds'],elapsed)
+        conversation=session.conversation['id']
+        session.close()
+        del self.manager.sessions['a'*32]
+        self.manager.handle('state',self.payload)
+        session=self.manager.sessions['a'*32]
+        self.assertEqual(session.usage['turns'][-1]['duration_seconds'],elapsed)
+        session.reset()
+        self.assertEqual(session.usage['turns'],[])
+        session.history_action('history-open',{'id':conversation})
+        self.assertEqual(session.usage['turns'][-1]['duration_seconds'],elapsed)
+        # Older saved conversations have no timing to reconstruct.
+        session.usage['turns']=[{'tokens':None}]
+        session.persist()
+        self.assertNotIn('duration_seconds',session.snapshot()['usage']['turns'][-1])
+
+    def test_allowance_lookup_redaction_sparse_updates_and_failure(self):
+        self.manager.handle('state',self.payload)
+        session=self.manager.sessions['a'*32]
+        auth=session.auth
+        auth.update_allowance({'rateLimits':{'limitId':'codex','primary':{
+            'usedPercent':25,'windowDurationMins':300,'resetsAt':1900000000},
+            'secondary':{'usedPercent':40,'windowDurationMins':10080,'resetsAt':1900600000},
+            'access_token':'SECRET'}, 'email':'PRIVATE'})
+        auth.update_allowance({'rateLimits':{'limitId':'codex','primary':{
+            'usedPercent':30,'windowDurationMins':300,'resetsAt':1900000000}}})
+        snapshot=auth.snapshot()['allowance']
+        self.assertEqual(snapshot['limits']['codex']['primary']['used_percent'],30)
+        self.assertEqual(snapshot['limits']['codex']['secondary']['used_percent'],40)
+        self.assertNotIn('SECRET',json.dumps(snapshot));self.assertNotIn('PRIVATE',json.dumps(snapshot))
+        with patch.object(FakeRPC,'call',side_effect=ValueError('SECRET')):
+            auth.read_allowance(FakeRPC({}))
+        self.assertTrue(auth.snapshot()['allowance']['unavailable'])
+        self.assertEqual(auth.snapshot()['allowance']['limits'],snapshot['limits'])
+        auth.update_allowance({'rateLimitsByLimitId':{'other':{'primary':{
+            'usedPercent':50,'windowDurationMins':60}},'invalid':{'primary':{'usedPercent':float('nan')}}}},replace=True)
+        self.assertEqual(set(auth.snapshot()['allowance']['limits']),{'other'})
+        self.assertNotIn('SECRET',json.dumps(auth.snapshot()))
+
     def test_stream_text_and_terminal_failure(self):
         self.manager.handle('turn',{**self.payload,'prompt':'hello','request_id':'9'*32})
         session=self.manager.sessions['a'*32]

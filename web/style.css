@@ -362,3 +362,67 @@ body{height:var(--app-height,100vh)}
 #agent-progress.disconnected .agent-spinner { animation: none; border-top-color: var(--muted); }
 @keyframes agent-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .agent-spinner { animation: none; } }
+
+/* Named workspace presets use the existing live panels in resizable grid slots. */
+.workspace-layout-menu{flex-shrink:0}
+.workspace-layout-menu [aria-pressed="true"]{color:var(--accent);background:#263631}
+.workarea.workspace-split{display:grid;grid-template-columns:minmax(0,var(--workspace-column,.55fr)) 8px minmax(0,var(--workspace-other,.45fr));grid-template-rows:minmax(0,1fr);overflow:hidden}
+.workspace-split>#topology-panel{grid-column:1;grid-row:1;min-height:0}
+.workspace-split>#topology-panel .canvas-scroll{min-height:0}
+#workspace-column-divider{grid-column:2;grid-row:1}
+#workspace-right{grid-column:3;grid-row:1;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);min-height:0;min-width:0;overflow:hidden;background:#141b23}
+#workspace-right.workspace-stacked{grid-template-rows:auto minmax(0,var(--workspace-row,.5fr)) 8px minmax(0,var(--workspace-bottom,.5fr))}
+#workspace-tool-tabs{display:flex;gap:4px;padding:5px 8px 0;border-bottom:1px solid var(--border);overflow:auto}
+#workspace-tool-tabs button{flex-shrink:0;border-radius:6px 6px 0 0}
+#workspace-tool-tabs [aria-selected="true"]{color:var(--accent);background:#263e37}
+.workspace-slot{position:relative;min-height:0;min-width:0;display:flex;overflow:hidden;grid-column:1;grid-row:2}
+.workspace-stacked #workspace-console-slot{grid-row:4}
+#workspace-row-divider{grid-row:3;grid-column:1;cursor:row-resize}
+.workspace-divider{background:#202c32;cursor:col-resize;touch-action:none;position:relative;outline-offset:-2px}
+.workspace-divider:hover,.workspace-divider:focus-visible{background:#42675c;outline:2px solid var(--accent)}
+.workspace-divider:after{content:"";position:absolute;background:#72888c;border-radius:2px}
+#workspace-column-divider:after{width:2px;height:40px;left:3px;top:calc(50% - 20px)}
+#workspace-row-divider:after{height:2px;width:40px;top:3px;left:calc(50% - 20px)}
+.workspace-slot>.workspace-docked{position:relative!important;inset:auto!important;width:100%!important;height:100%!important;flex:1;min-width:0;min-height:0;border:0;border-radius:0;box-shadow:none;z-index:auto!important}
+.workspace-slot>.console-panel.no-docked-console{height:100%!important;flex-shrink:1}
+.workspace-inactive{display:none!important}
+.workspace-docked .console-move,.workspace-docked .console-resize,.workspace-docked #agent-maximize,.workspace-docked #instructions-maximize,.workspace-docked #expand-console,.workspace-docked #console-divider{display:none!important}
+.workspace-float-document{display:none}
+.workspace-docked .workspace-float-document{display:inline-block}
+.workspace-empty{align-self:center;padding:20px;color:var(--muted);font-size:12px}
+.workarea.workspace-narrow{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,var(--workspace-column,.55fr)) 8px minmax(0,var(--workspace-other,.45fr))}
+.workspace-narrow>#workspace-column-divider{grid-column:1;grid-row:2;cursor:row-resize}
+.workspace-narrow>#workspace-right{grid-column:1;grid-row:3}
+.workspace-narrow>#workspace-column-divider:after{height:2px;width:40px;top:3px;left:calc(50% - 20px)}
+
+.instructions-empty{color:var(--muted);font-size:13px;line-height:1.6}
+
+/* Docked tools share the workspace selector row; floating views keep their titlebar. */
+#workspace-tool-header{display:flex;align-items:center;min-width:0;border-bottom:1px solid var(--border)}
+#workspace-tool-header #workspace-tool-tabs{border-bottom:0;flex-shrink:0;padding-top:0}
+#workspace-tool-header #workspace-tool-tabs button{padding:6px 10px}
+#workspace-tool-controls{flex:1;min-width:0}
+.workspace-docked-toolbar{height:42px;padding:0 6px;border-bottom:0;background:transparent;gap:4px}
+.workspace-docked-toolbar .console-move,.workspace-docked-toolbar .topology-window-title,
+.workspace-docked-toolbar .toolbar-scroll>strong,.workspace-docked-toolbar [data-arrange-windows],
+.workspace-docked-toolbar #agent-maximize,.workspace-docked-toolbar #instructions-maximize{display:none!important}
+.workspace-docked-toolbar .workspace-float-document{display:inline-block}
+.workspace-docked-toolbar .toolbar-scroll{justify-content:flex-end}
+#agent-status-line{display:flex;align-items:center;gap:6px;min-width:0;flex-shrink:0;border-bottom:1px solid var(--border)}
+#agent-status-line #agent-status,#agent-status-line #agent-progress{flex:1;min-width:0;border-bottom:0;margin:0}
+#agent-status-line #agent-status{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#agent-usage{margin-left:auto;padding:0 8px 0 0;font-size:11px;flex:0 1 auto;min-width:0;max-width:55%}
+#agent-usage summary{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px;font-size:11px;min-height:0}
+#agent-usage .console-menu-list{width:420px;padding:10px}
+#agent-usage-summary{cursor:pointer;color:var(--accent)}
+#agent-usage-detail{white-space:pre-wrap;line-height:1.6;padding:8px 0;color:var(--muted)}
+#agent-usage-refresh{font-size:11px;padding:4px 8px}
+#agent-prompt-form{padding:6px 12px 8px}
+.agent-message-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+#agent-prompt{min-height:44px;height:58px;max-height:120px;resize:vertical}
+#agent-prompt-form .agent-actions{gap:5px;padding-top:6px}
+#agent-prompt-form .agent-actions button{padding:5px 9px;font-size:12px}
+#agent-attachment-help{font-size:10px;color:var(--muted);margin-top:5px}
+#agent-attachment-help summary{cursor:pointer}
+#agent-draft-hint{font-size:11px;color:var(--muted);margin:5px 0 0}
+.workspace-docked #agent-tabs{padding-top:0}

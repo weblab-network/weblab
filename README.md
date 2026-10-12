@@ -83,7 +83,18 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
-## Updated in v0.5.1
+## New in v0.6.0
+
+- [Workspace layouts](docs/topology.md#workspace-layouts): keep the topology
+  full height beside consoles, Agent and instructions, with adjustable splits.
+- [Agent usage](docs/agent.md#allowance-and-token-usage): remaining OpenAI account
+  allowance, provider-reported tokens and completed-turn duration.
+- Compact docked controls and a message box that lets you prepare a follow-up
+  while the Agent works, without sending it automatically.
+
+See [v0.6.0 release notes](docs/releases/v0.6.0.md) for details and upgrade steps.
+
+### Updated in v0.5.1
 
 - More reliable Agent console reads, with explicit continuation for long output
   and clearer cursor errors when a model supplies incorrect tool arguments.

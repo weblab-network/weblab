@@ -1,11 +1,38 @@
 """Codex-managed, per-session ChatGPT device login; never return credentials."""
 import copy
+import math
 import queue
 import re
 import threading
 import time
 
 DEVICE_URL = 'https://auth.openai.com/codex/device'
+
+
+def limit_snapshot(value):
+    """Allowlist display-only quota fields; never forward account/credential blobs."""
+    if not isinstance(value, dict):
+        return {}
+    result = {}
+    for name in ('primary', 'secondary'):
+        if name not in value:
+            continue
+        window = value[name]
+        if window is None:
+            result[name] = None
+            continue
+        if not isinstance(window, dict):
+            continue
+        percent = window.get('usedPercent')
+        if type(percent) not in (int, float) or not math.isfinite(percent) or percent < 0:
+            continue
+        clean = {'used_percent': min(percent, 100)}
+        for source, target in [('windowDurationMins', 'window_minutes'), ('resetsAt', 'resets_at')]:
+            number = window.get(source)
+            if type(number) is int and 0 <= number <= 10**12:
+                clean[target] = number
+        result[name] = clean
+    return result
 
 
 class Login:
@@ -20,6 +47,45 @@ class Login:
     def snapshot(self):
         with self.lock:
             return copy.deepcopy(self.value)
+
+    def update_allowance(self, data, replace=False):
+        if not isinstance(data, dict):
+            return
+        buckets = {}
+        single = data.get('rateLimits')
+        if isinstance(single, dict):
+            buckets[str(single.get('limitId') or 'codex')[:80]] = single
+        multiple = data.get('rateLimitsByLimitId')
+        if isinstance(multiple, dict):
+            for key, value in list(multiple.items())[:16]:
+                if isinstance(key, str) and isinstance(value, dict):
+                    buckets[key[:80]] = value
+        with self.lock:
+            previous = self.value.get('allowance', {})
+            limits = {} if replace else copy.deepcopy(previous.get('limits', {}))
+            changed = False
+            for key, value in buckets.items():
+                clean = limit_snapshot(value)
+                if clean:
+                    changed = True
+                    old = limits.get(key, {})
+                    limits[key] = {**old, **{name: ({**(old.get(name) or {}), **window}
+                                               if window is not None else None)
+                                           for name, window in clean.items()}}
+            if not changed and not replace:
+                return
+            self.value['allowance'] = {'limits': dict(list(limits.items())[:16]),
+                                       'checked_at': time.time(),
+                                       'unavailable': not any(w for bucket in limits.values() for w in bucket.values())}
+
+    def read_allowance(self, rpc, cancel=None):
+        try:
+            result = rpc.call('account/rateLimits/read', {}, timeout=3, cancel=cancel)
+            self.update_allowance(result, replace=True)
+        except Exception:
+            # Usage is optional telemetry: a quota lookup must not fail a turn/login.
+            with self.lock:
+                self.value['allowance'] = {**self.value.get('allowance', {}), 'unavailable': True}
 
     def busy(self):
         return bool(self.worker and self.worker.is_alive())
@@ -52,6 +118,8 @@ class Login:
             self.value = {'status': 'signed-in' if signed_in else 'signed-out',
                           'signed_in': signed_in, 'models': models,
                           'plan': str(account.get('planType', ''))[:80] if signed_in else ''}
+        if signed_in:
+            self.read_allowance(rpc, self.stop)
 
     def run(self, action):
         rpc, login_id = None, None

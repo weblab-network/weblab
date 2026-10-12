@@ -54,7 +54,7 @@ try {
 function applyPanelLayout() {
   const area = $("canvas-scroll");
   const center = {x:area.scrollLeft+area.clientWidth/2, y:area.scrollTop+area.clientHeight/2};
-  const compact = panelMedia.matches;
+  const compact = panelMedia.matches || !!window.weblabLayout?.active();
   $("workspace").classList.toggle("panels-compact", compact);
   for (const [key,id,label] of [["palette","device-library","device library"],["inspector","inspector","inspector"]]) {
     const open = compact ? compactPanel === key : desktopPanels[key];
@@ -68,6 +68,7 @@ function applyPanelLayout() {
   }
   $("panel-backdrop").hidden = !compact || !compactPanel;
   // Keep keyboard focus out of canvas/console controls covered by the drawer.
+  if ($("workspace-right")) $("workspace-right").inert = compact && !!compactPanel;
   area.inert = $("console-panel").inert = $("console-windows").inert = compact && !!compactPanel;
   area.scrollLeft = center.x-area.clientWidth/2;
   area.scrollTop = center.y-area.clientHeight/2;
@@ -75,7 +76,7 @@ function applyPanelLayout() {
 }
 
 function setPanel(key, open, keyboard = false) {
-  if (panelMedia.matches) compactPanel = open ? key : (compactPanel === key ? null : compactPanel);
+  if (panelMedia.matches || window.weblabLayout?.active()) compactPanel = open ? key : (compactPanel === key ? null : compactPanel);
   else {
     desktopPanels[key] = open;
     try { localStorage.setItem("iol-panels", JSON.stringify(desktopPanels)); } catch (_) { /* Keep this session's choice. */ }
@@ -85,7 +86,7 @@ function setPanel(key, open, keyboard = false) {
 }
 
 function dismissCompactPanel() {
-  if (panelMedia.matches && compactPanel) setPanel(compactPanel, false);
+  if ((panelMedia.matches || window.weblabLayout?.active()) && compactPanel) setPanel(compactPanel, false);
 }
 
 for (const key of Object.keys(desktopPanels)) {
@@ -99,7 +100,7 @@ document.addEventListener("pointerdown", event => { backdropPress = event.target
 $("panel-backdrop").onclick = () => { if (backdropPress) dismissCompactPanel(); backdropPress = false; };
 panelMedia.addEventListener("change", () => { compactPanel = null; applyPanelLayout(); });
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape" && panelMedia.matches && compactPanel && !document.querySelector("dialog[open]")) {
+  if (event.key === "Escape" && (panelMedia.matches || window.weblabLayout?.active()) && compactPanel && !document.querySelector("dialog[open]")) {
     event.preventDefault(); event.stopImmediatePropagation(); dismissCompactPanel();
   }
 }, true);
@@ -1223,6 +1224,7 @@ function activateConsole(id, focusTerminal = true) {
     if (focusTerminal) session.terminal.focus();
     return;
   }
+  window.weblabLayout?.show("console");
   consoleNode = id;
   $("console-panel").hidden = false;
   for (const entry of consoleSessions.values()) {
@@ -1405,6 +1407,7 @@ function dockHeightLimits() {
 function applyConsoleLayout() {
   fitWorkspaceViewport();
   const panel = $("console-panel");
+  if (window.weblabLayout?.consoleLayout()) return;
   const parent = consoleFloating ? $("console-windows") : consoleDockParent;
   if (panel.parentElement !== parent) { parent.append(panel); if (consoleFloating) bringConsoleForward(panel); }
   panel.classList.toggle('floating', consoleFloating);
@@ -1466,6 +1469,7 @@ function setDockHeight(height) {
 }
 function startConsoleGesture(event, kind, floating = null) {
   if (event.button !== 0 || consoleGesture || kind !== 'dock' && (floating ? floating.maximized : !consoleFloating || consoleMaximized)) return;
+  if (floating?.panel.classList.contains('workspace-docked')) return;
   if (kind === 'move' && !event.target.closest('.console-move,.console-title,.topology-window-title')) return;
   if (kind === 'move' && event.target.closest('button,input,label,summary,select') && !event.target.closest('.console-move')) return;
   event.preventDefault();
@@ -1522,6 +1526,7 @@ function resizeConsoleLayouts() {
   for (const view of documentWindows) if (!view.panel.hidden) view.applyLayout();
 }
 function bringConsoleForward(panel) {
+  if (panel.classList.contains("workspace-docked")) return;
   floatingConsoleOrder = floatingConsoleOrder.filter(p => p.isConnected && p.classList.contains('floating') && p !== panel);
   floatingConsoleOrder.push(panel);
   floatingConsoleOrder.forEach((p,i) => p.style.zIndex = String(i+1));
@@ -1665,6 +1670,7 @@ function applyTopologyLayout() {
   expand.textContent = view.maximized ? '↙' : '↗';
 }
 function floatTopology() {
+  window.weblabLayout?.leave();
   dismissCompactPanel();
   if (topologyWindow) { topologyWindow.panel.hidden = false; applyTopologyLayout(); bringConsoleForward(topologyWindow.panel); return; }
   const panel = $("topology-panel"), area = $("canvas-scroll");

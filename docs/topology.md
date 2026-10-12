@@ -64,6 +64,41 @@ consoles and instructions. Escape or browser Back can leave fullscreen. Unsuppor
 browsers show a disabled button. Mobile layouts adapt to the visible viewport
 when the software keyboard opens; behavior still depends on the browser.
 
+## Workspace layouts
+
+Use **Layout** in the topology toolbar to choose a browser-local workspace:
+
+- **Build** keeps the device library and inspector beside the map, with the
+  grouped consoles below it.
+- **Side by side** keeps the topology on the left and a full-height tool pane on
+  the right. Choose **Consoles**, **Agent** or **Instructions** in that pane.
+- **Agent workspace** keeps the topology full height on the left, with Agent or
+  Instructions above the grouped consoles on the right. Instructions remains
+  available when the optional Agent is disabled.
+- **Free layout** returns to the existing floating-window controls. **Tile
+  floating windows** arranges visible windows automatically.
+
+Drag the dividers to adjust the split. Keyboard users can focus a divider and
+use arrow keys (Shift for larger steps), or Home/End for its limits. In the
+working layouts, Devices and Inspector open as temporary drawers without taking
+width away from the map. Escape or the backdrop closes a drawer.
+
+Opening another console adds or selects its tab in the console area. In Side by
+side, this selects the Consoles tool; in Agent workspace, the upper tool remains
+visible. Individual console tabs can still float, and Agent/Instructions have a
+**Float** control. Select the tool again to return it to its assigned pane.
+Choosing a preset brings existing console windows back into the grouped pane.
+
+At widths of 1000px or less, or in portrait orientation, the map and tool area
+stack vertically and the tools share tabs. Returning to a wider view restores
+the chosen desktop arrangement. Layout changes reuse console connections,
+scrollback and locks, and preserve Agent conversation state and unsent drafts.
+
+The preset, selected tools and split ratios are remembered in this browser.
+They do not change topology positions, permissions or lab exports. **Reset
+layout** restores Build and the default split sizes. Floating-window positions
+remain temporary and are not remembered on reload.
+
 ## Float the topology
 
 **Float map** moves the live topology into a movable, resizable window. **Dock**
@@ -82,7 +117,7 @@ stay together. Explicit docking remains respected.
 
 ## Arrange windows
 
-**Arrange windows** on the map or **Arrange** in a console tiles the topology,
+**Layout → Tile floating windows** on the map or **Arrange** in a console tiles the topology,
 visible console windows and visible instructions across the viewport. A visible
 docked console panel floats as a group; detach its tabs first to get one tile
 per console. Hidden consoles stay hidden, and Arrange brings the topology back.

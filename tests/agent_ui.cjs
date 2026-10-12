@@ -23,7 +23,7 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
  page.on('pageerror',e=>errors.push(e.message));
  await page.goto(base);await page.waitForFunction(()=>loaded);
  assert.ok(await page.locator('#open-agent').isHidden());
- let status='idle',messages=[],count=0,stop=0,proposals=[],approvals=[],decisions=[],phase='Thinking',toolError=null,auth={status:'unknown',signed_in:false,models:[]};
+ let status='idle',messages=[],count=0,stop=0,proposals=[],approvals=[],decisions=[],phase='Thinking',toolError=null,usage=null,auth={status:'unknown',signed_in:false,models:[]};
  const settings={endpoint:'http://model:11434/v1',model:'gpt-oss:20b',lab_changes:false,console_input:false,auto_approve:false,context_window:32768,turn_timeout:900};
  let conversationId='c'.repeat(32), conversationNumber=0;
  const historyRecords=new Map();
@@ -36,7 +36,7 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
    record.messages=messages;if(!record.title && messages.length)record.title=messages[0].text.slice(0,100);
    historyRecords.set(conversationId,record);
    const history=[...historyRecords.values()].map(r=>({id:r.id,title:r.title||'New conversation',updated:r.updated,model:r.settings.model,active:r.id===conversationId,message_count:r.messages.length}));
-   return {status,messages,settings,proposals,approvals,history,conversation_id:conversationId,activity:'',error:'',phase,elapsed_seconds:5,quiet_seconds:0,tool_error:toolError,auth};
+   return {status,messages,settings,proposals,approvals,history,conversation_id:conversationId,activity:'',error:'',phase,elapsed_seconds:5,quiet_seconds:0,tool_error:toolError,usage,auth};
   };
   let result;
   if(action==='info')result={enabled:true,providers:[settings.endpoint]};
@@ -47,7 +47,7 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
    else if(action==='settings'){Object.assign(settings,body);result={settings};}
    else if(action==='login'){auth={status:'waiting',signed_in:false,models:[],code:'ABCD-1234'};result=auth;}
    else if(action==='login-cancel'){auth={status:'cancelled',signed_in:false,models:[]};result=auth;}
-   else if(action==='login-status'){auth={status:'signed-in',signed_in:true,models:['gpt-5.6-sol']};result=auth;}
+   else if(action==='login-status'){auth={status:'signed-in',signed_in:true,models:['gpt-5.6-sol'],allowance:{checked_at:Date.now()/1000,limits:{codex:{primary:{used_percent:25,window_minutes:300,resets_at:1900000000},secondary:{used_percent:60,window_minutes:10080,resets_at:1900600000}}}}};result=auth;}
    else if(action==='logout'){auth={status:'signed-out',signed_in:false,models:[]};result=auth;}
    else if(action==='check')result={available:true,models:[settings.model]};
    else if(action==='turn'){
@@ -214,7 +214,23 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
  await page.locator('#agent-hide').click();await page.locator('#open-agent').click();assert.equal(count,1);
  await page.reload();await page.locator('#open-agent').click();await page.locator('#agent-chat-tab').click();
  await page.waitForFunction(()=>!document.querySelector('#agent-stop').disabled);assert.equal(count,1);
- await page.locator('#agent-stop').click();await page.waitForFunction(()=>document.querySelector('#agent-stop').disabled);assert.equal(stop,1);assert.ok(await page.locator('#agent-progress').isHidden());
+ assert.ok(await page.locator('#agent-prompt').isEnabled());
+ await page.locator('#agent-prompt').fill('Next draft while working');
+ await page.waitForTimeout(1100);
+ assert.equal(await page.locator('#agent-prompt').inputValue(),'Next draft while working');
+ assert.ok(await page.locator('#agent-draft-hint').isVisible());
+ await page.locator('#agent-stop').click();await page.waitForFunction(()=>document.querySelector('#agent-stop').disabled);
+ assert.equal(await page.locator('#agent-prompt').inputValue(),'Next draft while working');
+ assert.equal(count,1,'Draft is not automatically sent');assert.equal(stop,1);assert.ok(await page.locator('#agent-progress').isHidden());
+ usage={total:null,turns:[{tokens:null,duration_seconds:83}]};
+ await page.waitForFunction(()=>document.querySelector('#agent-status').textContent.endsWith('interrupted · 1m 23s'));
+ status='completed';
+ await page.waitForFunction(()=>document.querySelector('#agent-status').textContent.endsWith('completed · 1m 23s'));
+ await page.reload();await page.locator('#open-agent').click();
+ await page.waitForFunction(()=>document.querySelector('#agent-status').textContent.endsWith('completed · 1m 23s'));
+ assert.match(await page.locator('#agent-usage-detail').textContent(),/Turn duration: 1m 23s/);
+ usage=null;
+ await page.waitForFunction(()=>document.querySelector('#agent-status').textContent.endsWith(' · completed'));
  await page.locator('#agent-settings-tab').click();await page.locator('#agent-auto-approve').check();
  await page.locator('#agent-deadline').fill('1800');await page.locator('#agent-save').click();
  await page.waitForFunction(()=>document.querySelector('#agent-mode').textContent==='YOLO');
@@ -319,6 +335,28 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
  await page.locator('#agent-account').click();await page.waitForFunction(()=>document.querySelector('#agent-auth-status').textContent.includes('Signed in'));
  assert.equal(await page.locator('#agent-model-list option').getAttribute('value'),'gpt-5.6-sol');
  assert.equal(await page.locator('#agent-model').inputValue(),'gpt-6.1-sol','Refreshing suggestions must not replace the chosen model');
+ await page.waitForFunction(()=>document.querySelector('#agent-usage-summary').textContent.includes('75% left'));
+ assert.match(await page.locator('#agent-usage-summary').textContent(),/7d: 40% left/);
+ usage={total:{inputTokens:1000,cachedInputTokens:300,outputTokens:200,reasoningOutputTokens:100,totalTokens:1200},turns:[{tokens:{inputTokens:500,cachedInputTokens:100,outputTokens:50,reasoningOutputTokens:20,totalTokens:550}}]};
+ await page.waitForFunction(()=>document.querySelector('#agent-usage-detail').textContent.includes('This turn: 550'));
+ await page.locator('#agent-usage-summary').click();
+ assert.match(await page.locator('#agent-usage-detail').textContent(),/resets/);
+ assert.match(await page.locator('#agent-usage-detail').textContent(),/Account-wide/);
+ const activityBox=await page.locator('#agent-status-line').boundingBox(),usageBox=await page.locator('#agent-usage-summary').boundingBox();
+ assert.ok(usageBox.x>activityBox.x+activityBox.width/2 && usageBox.y>=activityBox.y && usageBox.y+usageBox.height<=activityBox.y+activityBox.height+1);
+ await page.locator('#agent-usage-refresh').click();
+ auth.allowance.unavailable=true;
+ await page.waitForFunction(()=>document.querySelector('#agent-usage-summary').textContent.includes('last known'));
+ await page.locator('#agent-usage-summary').click();await page.keyboard.press('Escape');
+ assert.equal(await page.locator('#agent-usage').getAttribute('open'),null);
+ await page.setViewportSize({width:390,height:844});
+ await page.locator('#agent-usage-summary').click();
+ await page.waitForFunction(()=>{const r=document.querySelector('#agent-usage .console-menu-list').getBoundingClientRect();return r.width>0 && r.x>=0 && r.right<=innerWidth && r.y>=0 && r.bottom<=innerHeight;});
+ await page.screenshot({path:'/tmp/agent-usage-mobile.png'});
+ const popup=await page.locator('#agent-usage .console-menu-list').boundingBox();
+ assert.ok(popup.x>=0 && popup.x+popup.width<=390 && popup.y>=0 && popup.y+popup.height<=844,JSON.stringify(popup));
+ await page.keyboard.press('Escape');await page.setViewportSize({width:1280,height:950});
+
  await page.locator('#agent-logout').click();await page.waitForFunction(()=>document.querySelector('#agent-auth-status').textContent.includes('signed-out'));
  await page.locator('#agent-provider').selectOption('ollama');
  assert.ok(await page.locator('#agent-model-recommendation').isHidden());

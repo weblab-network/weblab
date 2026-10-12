@@ -84,3 +84,10 @@ console commands and device output. The creation exercise intentionally leaves
 OSPF and RSTP tasks unfinished; the hosted restricted preview has no Agent login.
 Keep the video, thumbnail and full-size screenshot URLs stable: the README and
 Agent help page link to these assets.
+
+## Agent usage screenshot
+
+`/#agent-usage` explains allowance, tokens and completed-turn duration, with a
+native expandable screenshot and full-size link. The practice-lab hero and video
+players are unchanged. The three supplied usage/settings screenshots also support
+the Agent help/wiki; preserve originals and use display widths rather than cropping.

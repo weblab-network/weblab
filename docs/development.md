@@ -55,6 +55,7 @@ npx playwright install chromium
 cd ..
 node tests/console_open_mode.cjs
 node tests/topology_windows.cjs
+node tests/workspace_layouts.cjs
 node tests/topology_multiselect.cjs
 node tests/ll2s_ui.cjs
 node tests/junos_ui.cjs
@@ -363,6 +364,12 @@ image and requires that job before creating the GitHub release.
 python3 -m unittest discover -s tests -p test_agent.py -v
 node tests/agent_ui.cjs
 ```
+
+Allowance/token regressions use simulated app-server events: duplicate cumulative
+updates, per-turn deltas, history restoration, counter resets, redaction and failed
+quota reads. Browser fixtures cover the right-aligned allowance popup, reset
+details, stale readings and editable follow-up drafts during generation. These
+checks do not consume a real account allowance or validate paid inference.
 
 For actual Codex/Ollama calls, build the optional image and run this **opt-in** test
 with already installed models. It uses an empty disposable Weblab, no vendor
