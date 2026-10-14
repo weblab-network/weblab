@@ -1,6 +1,7 @@
 /* Weblab: no build step, all assets served locally. */
 "use strict";
 const $ = id => document.getElementById(id);
+const authCan = capability => window.weblabAuth?.can(capability) ?? true;
 const icons = {
   switch: '<svg viewBox="0 0 40 36" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="8" width="34" height="21" rx="4"/><path d="M8 15h11m-3-3 3 3-3 3m16 4H21m3-3-3 3 3 3"/><path d="M8 24h2m3 0h2m13-10h2m3 0h1"/></svg>',
   router: '<svg viewBox="0 0 40 36" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="20" cy="12" rx="16" ry="7"/><path d="M4 12v12c0 4 7 7 16 7s16-3 16-7V12M10 12h9m-3-3 3 3-3 3m14-3h-8m3-3-3 3 3 3"/></svg>',
@@ -155,6 +156,7 @@ function accept(result, updateForm = true) {
   render();
   if (updateForm) renderInspector(); else updateInspectorStatus();
   updateLinkActions();
+  applyRoleControls();
 }
 
 async function perform(label, operation) {
@@ -179,6 +181,7 @@ async function perform(label, operation) {
 }
 
 function edit(change) {
+  if (!authCan("admin")) return;
   return perform("Saving…", async () => { change(); return api("/api/topology", "PUT", topology); });
 }
 function structuralEdit(change) {
@@ -334,6 +337,24 @@ function placeLinkLabels(routes) {
   }
 }
 
+function applyRoleControls() {
+  const admin = authCan('admin'), writer = authCan('write');
+  // Unlike lab mutation controls, this local file picker has no busy/running state.
+  // Recompute both ways after the initial authentication lookup completes.
+  $('instructions-open').disabled = !admin;
+  const instructionsHint = $('instructions-empty-hint');
+  if (instructionsHint) instructionsHint.textContent = admin
+    ? 'Choose Open file to read a Markdown (.md) or text (.txt) exercise.'
+    : 'The administrator has not published an exercise yet.';
+  for (const id of ['upload-image','import','export','starter','link-tool','apply-node','delete-node','lab-name','link-actions-delete',
+                    'node-name','node-image','node-memory','node-ethernet','node-iol-l1','node-ipv4','node-gateway']) {
+    if (!admin && $(id)) $(id).disabled = true;
+  }
+  document.querySelectorAll('.device-template').forEach(el => { if (!admin) { el.disabled = true; el.draggable = false; } });
+  for (const id of ['start-all','stop-all','start-node','stop-node']) if (!writer) $(id).disabled = true;
+  document.querySelectorAll('[data-link-traffic],[data-link-carrier]').forEach(el => { if (!writer) el.disabled = true; });
+}
+
 function updateControls() {
   $("upload-image").disabled = busy || !loaded;
   for (const id of ["start-all", "stop-all", "import", "export", "starter", "link-tool", "select-tool", "multi-select-tool", "apply-node", "start-node", "stop-node", "open-console", "delete-node", "logs"]) $(id).disabled = busy || !loaded;
@@ -353,6 +374,7 @@ function updateControls() {
   const pc = nodeById(selected);
   for (const id of ["node-ipv4", "node-gateway"]) $(id).disabled = busy || !loaded || !pc || pc.type !== "pc" || state(pc.id) === "running";
   updateViewControls();
+  applyRoleControls();
 }
 
 function updateViewControls() {
@@ -533,6 +555,7 @@ function selectNode(id, open = true) {
 }
 
 function setMode(next) {
+  if (next === "link" && !authCan("admin")) return;
   if (busy) return;
   if (next === "link" && hasRunning()) return toast("Stop the lab before adding connections.", true);
   mode = next; linkSource = null;
@@ -572,6 +595,9 @@ $("nodes").addEventListener("pointerdown", e => {
   if (!target || e.button !== 0 || busy || dragging) return;
   e.preventDefault();
   const id = target.dataset.id;
+  // Keep the pressed element attached until release, even for view-only roles.
+  // Redrawing on pointerdown can retarget the subsequent click to the canvas.
+  const canMove = authCan("admin");
   if (mode === "link") { connectNode(id); return; }
   const additive = selectionGesture(e);
   const ids = selectedNodes.has(id) ? [...selectedNodes] : additive ? [...selectedNodes, id] : [id];
@@ -586,7 +612,7 @@ $("nodes").addEventListener("pointerdown", e => {
   dragging = true; target.setPointerCapture(e.pointerId);
   updateViewControls();
   const move = event => {
-    if (event.pointerId !== e.pointerId) return;
+    if (event.pointerId !== e.pointerId || !canMove) return;
     const dx = event.clientX - start.x, dy = event.clientY - start.y;
     if (Math.hypot(dx, dy) > 4) moved = true;
     if (!moved) return;
@@ -640,7 +666,7 @@ $("multi-select-tool").onclick = () => {
 };
 
 function requestDelete(kind, id) {
-  if (busy || !loaded) return;
+  if (!authCan("admin") || busy || !loaded) return;
   if (hasRunning()) return toast("Stop the lab before deleting devices or cables.", true);
   if (kind === "node") {
     const node = nodeById(id);
@@ -709,6 +735,7 @@ function updateLinkActions() {
     button.setAttribute('aria-label', `${button.textContent}${down ? ' (currently interrupted)' : ''}`);
   });
   $('link-actions-delete').disabled = busy || hasRunning();
+  applyRoleControls();
 }
 $('link-actions-close').onclick = () => $('link-actions-dialog').close();
 $('link-actions-dialog').addEventListener('close', () => { if (!$('link-actions-dialog').open) activeLinkAction = null; });
@@ -762,6 +789,7 @@ $("image-form").addEventListener("submit", async event => {
     const result = await new Promise((resolve, reject) => {
       const request = imageUpload = new XMLHttpRequest();
       request.open("POST", `/api/images/${encodeURIComponent(file.name)}`);
+      if (window.weblabAuth?.csrf) request.setRequestHeader('X-Weblab-CSRF', window.weblabAuth.csrf);
       request.setRequestHeader("Content-Type", "application/octet-stream");
       request.responseType = "json";
       request.upload.onprogress = e => {
@@ -927,6 +955,7 @@ $("confirm-import").onclick = async () => {
     const result = await new Promise((resolve, reject) => {
       const request = new XMLHttpRequest();
       request.open("POST", "/api/import");
+      if (window.weblabAuth?.csrf) request.setRequestHeader('X-Weblab-CSRF', window.weblabAuth.csrf);
       request.setRequestHeader("Content-Type", "application/zip"); request.responseType = "json";
       request.upload.onprogress = event => {
         if (event.lengthComputable) $("import-progress").value = event.loaded / event.total * 100;
@@ -957,6 +986,8 @@ function closeSocket(session) {
   session.reconnectTimer = null;
   const old = session.socket; session.socket = null;
   session.lockReady = false;
+  session.pendingTakeover = null;
+  updateConsoleApproval();
   if (old) old.close();
 }
 
@@ -968,9 +999,13 @@ function setConsoleStatusLabel(element, text, state = 'offline') {
 function consoleStatus(session, text) {
   session.status = text;
   const connected = session.socket?.readyState === WebSocket.OPEN && session.lockReady;
-  const observing = session.locked && !session.lockMine;
+  const readonly = !authCan("write") || session.readonly;
+  const borrowing = session.lockMine && session.agentBusy;
+  const observing = readonly || borrowing || (session.locked && !session.lockMine);
   session.terminal.options.disableStdin = !connected || observing;
-  const detail = observing ? "Read-only · locked elsewhere" : session.lockMine ? "Input locked · this station" : "Connected · shared";
+  const owner = session.lockOwnerRole ? `${session.lockOwnerRole} · station ${session.lockOwnerStation}` : 'another station';
+  const waiting = session.pendingTakeover?.direction === 'outgoing';
+  const detail = readonly ? "Read-only · reader" : borrowing ? "Agent using console · your lock" : waiting ? "Read-only · awaiting admin approval" : observing ? `Read-only · locked by ${owner}` : session.lockMine ? "Input locked · this station" : "Connected · shared";
   session.dot.className = `little-dot ${text === "Connected" ? "running" : text === "Stopped" ? "stopped" : "error"}`;
   session.tab.title = `${session.name} · ${text === "Connected" ? detail : text}`;
   session.label.textContent = session.name + (session.locked ? " 🔒" : "");
@@ -983,23 +1018,27 @@ function consoleStatus(session, text) {
     q("reconnect-console").disabled = !session.running;
     q("lock-console").checked = !!session.locked;
     q("lock-console").disabled = !connected || observing;
-    q("console-lock-label").title = observing ? "Another station holds the input lock" : session.lockMine ? "Release the lock so all stations can type" : "Allow only this station to type in this console";
+    q("console-lock-label").title = readonly ? "Reader consoles are view-only" : borrowing ? "The Agent is using your lock; take back control to type" : observing ? `Input locked by ${owner}` : session.lockMine ? "Release the lock so all stations can type" : "Allow only this station to type in this console";
     q("console-lock-label").dataset.lockOwner = session.lockMine ? 'mine' : observing ? 'other' : 'none';
-    q("takeover-console").hidden = !observing;
-    q("takeover-console").disabled = !connected;
+    q("takeover-console").hidden = readonly || !observing;
+    q("takeover-console").disabled = !connected || !authCan("write");
+    q("takeover-console").textContent = borrowing ? "Take back control" : waiting ? "Cancel request" : session.takeoverMode === 'request' ? "Request control" : "Take over";
+    q("takeover-console").title = borrowing ? "End the Agent's console access and keep your input lock; commands already sent are not undone" : waiting ? "Cancel the pending administrator approval request" : session.takeoverMode === 'request' ? "Ask the administrator holding this lock to approve control" : session.takeoverMode === 'immediate' ? "Take control immediately as administrator" : "Take over console input";
     q("console-toolbar").querySelectorAll('[data-console-key]').forEach(button => button.disabled = !connected || observing);
   }
 }
 
 function sendConsoleInput(session, data) {
+  if (!authCan("write") || session.readonly || session.agentBusy) return;
   if (session.socket?.readyState === WebSocket.OPEN && session.lockReady && (!session.locked || session.lockMine)) {
     session.socket.send(new TextEncoder().encode(data));
   }
 }
 
-function consoleControl(session, action, revision = session.lockRevision) {
+function consoleControl(session, action, revision = session.lockRevision, extra = {}) {
+  if (!authCan("write") || session.readonly) return;
   if (session.socket?.readyState !== WebSocket.OPEN || !session.lockReady) return;
-  session.socket.send(JSON.stringify({action, revision}));
+  session.socket.send(JSON.stringify({...extra, action, revision}));
 }
 
 $("lock-console").onchange = () => {
@@ -1011,7 +1050,19 @@ $("lock-console").onchange = () => {
 };
 let pendingTakeover = null;
 function requestConsoleTakeover(session) {
+  if (session?.lockMine && session.agentBusy) {
+    consoleControl(session, 'reclaim');
+    return;
+  }
   if (!session || !session.locked || session.lockMine) return;
+  if (session.pendingTakeover?.direction === 'outgoing') {
+    consoleControl(session, 'cancel-takeover', session.lockRevision, {request_id:session.pendingTakeover.id});
+    return;
+  }
+  if (session.takeoverMode === 'immediate' || session.takeoverMode === 'request') {
+    consoleControl(session, session.takeoverMode === 'request' ? 'request-takeover' : 'takeover');
+    return;
+  }
   pendingTakeover = {session, socket:session.socket, revision:session.lockRevision};
   $("takeover-description").textContent = `${session.name} is locked by another station. Take over to lock input to this station; the previous station will still see output but can no longer type.`;
   $("takeover-dialog").showModal();
@@ -1027,6 +1078,51 @@ $("takeover-form").onsubmit = event => {
   consoleControl(session, "takeover", revision);
 };
 $("takeover-dialog").addEventListener("close", () => { if (!$("takeover-dialog").open) pendingTakeover = null; });
+
+// Requests follow the owning connection, including background/detached consoles.
+// Queue different consoles locally; server owns expiry and the exact decision.
+let consoleApproval = null;
+function updateConsoleApproval() {
+  const dialog = $('console-approval-dialog');
+  if (consoleApproval) {
+    const {session, socket, request} = consoleApproval;
+    if (session.socket === socket && session.lockReady && session.lockMine &&
+        session.pendingTakeover?.id === request.id) return;
+    consoleApproval = null;
+    dialog.close();
+  }
+  if (document.querySelector('dialog[open]')) return;
+  for (const session of consoleSessions.values()) {
+    const request = session.pendingTakeover;
+    if (!session.lockReady || !session.lockMine || request?.direction !== 'incoming' ||
+        session.reviewedRequest === request.id) continue;
+    consoleApproval = {session, socket:session.socket, request};
+    $('console-approval-description').textContent = `${request.requester}, station ${request.station}, requests control of ${session.name}. Approving transfers the input lock; your console becomes read-only and continues showing output. This request expires after 60 seconds.`;
+    dialog.showModal();
+    return;
+  }
+}
+function decideConsoleApproval(approve) {
+  const current = consoleApproval;
+  consoleApproval = null;
+  if (current) {
+    const {session, socket, request} = current;
+    session.reviewedRequest = request.id;
+    if (session.socket === socket && session.lockReady && session.pendingTakeover?.id === request.id) {
+      consoleControl(session, approve ? 'approve-takeover' : 'deny-takeover', request.revision, {request_id:request.id});
+    }
+  }
+  $('console-approval-dialog').close();
+  updateConsoleApproval();
+}
+$('console-approval-form').onsubmit = event => {
+  event.preventDefault();
+  decideConsoleApproval(event.submitter?.value === 'approve');
+};
+$('console-approval-dialog').addEventListener('cancel', event => {
+  event.preventDefault(); decideConsoleApproval(false);
+});
+document.addEventListener('close', () => setTimeout(updateConsoleApproval, 0), true);
 
 function writeConsoleOutput(session, data, replay = false) {
   session.outputQueue.push({data, replay});
@@ -1062,10 +1158,18 @@ function connectConsole(session) {
       const message = JSON.parse(event.data);
       if (message.type === "console-lock") {
         const lost = session.lockMine && message.locked && !message.mine;
+        session.readonly = message.readonly === true;
         session.lockReady = true; session.locked = message.locked; session.lockMine = message.mine; session.lockRevision = message.revision;
         session.terminalResponder = message.terminal_responder ?? true;
+        session.agentBusy = message.agent_busy === true;
+        session.lockOwnerRole = message.owner_role || '';
+        session.lockOwnerStation = message.owner_station;
+        session.takeoverMode = message.takeover_mode || 'confirm';
+        session.pendingTakeover = message.pending_takeover || null;
+        updateConsoleApproval();
         consoleStatus(session, session.status);
         if (message.error) toast(message.error, true);
+        else if (message.notice) toast(`${session.name}: ${message.notice}`);
         else if (lost) toast(`${session.name}: another station took over input. This console is now read-only.`);
         return;
       }
@@ -1087,6 +1191,8 @@ function connectConsole(session) {
     if (session.socket !== ws) return;
     session.socket = null;
     session.lockReady = false;
+    session.pendingTakeover = null;
+    updateConsoleApproval();
     if (!session.running) return;
     consoleStatus(session, `Retry in ${session.reconnectDelay / 1000}s`);
     session.reconnectTimer = setTimeout(() => connectConsole(session), session.reconnectDelay);
@@ -1151,7 +1257,7 @@ function bindConsoleClipboard(session) {
   let pointerType = '';
   session.element.addEventListener('pointerdown', event => { pointerType = event.pointerType; }, true);
   const alive = () => consoleSessions.get(session.id) === session;
-  const writable = () => alive() && session.socket?.readyState === WebSocket.OPEN && session.lockReady && (!session.locked || session.lockMine);
+  const writable = () => alive() && !session.agentBusy && session.socket?.readyState === WebSocket.OPEN && session.lockReady && (!session.locked || session.lockMine);
   session.terminal.onSelectionChange(() => copyWorkspaceSelection(session.terminal.getSelection(), alive));
   const nativeMenu = event => !clipboardEnabled || event.shiftKey || event.pointerType === 'touch' || pointerType === 'touch' || event.sourceCapabilities?.firesTouchEvents;
   // Prevent xterm's right-button handling from altering the selection or sending
@@ -1871,8 +1977,10 @@ document.addEventListener("keydown", e => {
   if (e.key === "Escape") { multiSelect = false; setMode("select"); setSelection(null); renderInspector(); render(); }
 });
 async function refresh() {
+  if (window.weblabAuth?.enabled && !window.weblabAuth.role) { $("save-state").textContent = "Sign in to continue"; return; }
   if (busy || dragging) return;
   try { const result = await api("/api/state"); if (busy || dragging) return; accept(result, !loaded); $("save-state").textContent = "All changes saved"; }
   catch (e) { $("save-state").textContent = "Server unavailable"; if (!loaded) toast("Cannot reach the lab server. Start lab_server.py to use this page.", true); }
 }
-applyPanelLayout(); updateControls(); refresh(); setInterval(refresh, 2500);
+applyPanelLayout(); updateControls();
+(window.weblabAuth?.ready || Promise.resolve()).then(() => { updateControls(); refresh(); setInterval(refresh, 2500); }).catch(() => {});

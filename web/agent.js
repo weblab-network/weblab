@@ -1,6 +1,7 @@
 // Optional assistant with browser-approved lab operations. Session capability stays in this browser tab.
 (() => {
-  const button = $('open-agent'), KEY = 'weblab.agent.session.v1';
+  const button = $('open-agent');
+  let KEY = 'weblab.agent.session.v1';
   let token = '', info, state, polling = false, busy = false, signature = '', proposalSignature = '', approvalSignature = '', settingsDirty = false;
   let progressReceived = 0, connected = true, selectedTab = 'chat', historySignature = '';
   const drafts = new Map();
@@ -16,11 +17,13 @@
   markdown.renderer.rules.table_open = () => '<div class="agent-table" tabindex="0" role="region" aria-label="Response table"><table>';
   markdown.renderer.rules.table_close = () => '</table></div>';
   let remember = false;
-  try {
-    token = sessionStorage.getItem(KEY) || localStorage.getItem(KEY) || '';
-    remember = !!token && localStorage.getItem(KEY) === token;
-    if (token) sessionStorage.setItem(KEY,token);
-  } catch (_) {}
+  function loadToken() {
+    try {
+      token = sessionStorage.getItem(KEY) || localStorage.getItem(KEY) || '';
+      remember = !!token && localStorage.getItem(KEY) === token;
+      if (token) sessionStorage.setItem(KEY,token);
+    } catch (_) {}
+  }
   const panel = document.createElement('section');
   panel.id = 'agent-panel'; panel.className = 'agent-panel floating'; panel.hidden = true;
   panel.setAttribute('aria-label', 'Weblab Agent');
@@ -86,6 +89,7 @@
       <p class="agent-hint">Changing provider, endpoint, model or context size starts a new conversation. Deadline and permission changes keep the conversation; save them between turns. Context size must fit your model server. This is an owner-operated workspace, not a public multi-user service.</p>
       <label class="agent-permission"><input id="agent-remember" type="checkbox"> Remember this Agent session on this browser</label>
       <p class="agent-hint">Off by default. Remembering lets this browser profile reopen history after closing the tab. Anyone using this profile can access the session. Access expires after 24 hours of inactivity. Close session removes its history and sign-in storage.</p>
+      <p id="agent-auth-binding" class="agent-hint" hidden>This Agent belongs to your current Weblab admin login. Weblab logout or expiry ends its work and removes its history, attachments and OpenAI sign-in. Export conversations you want to retain first. Remembering does not extend your Weblab login.</p>
       <div class="agent-actions"><button class="primary" id="agent-save" type="submit">Save settings</button><button id="agent-check" type="button">Check model</button><button id="agent-end" type="button">Close session</button></div>
       <p id="agent-check-result" role="status"></p>
     </form>
@@ -679,6 +683,12 @@
   setInterval(()=>{syncApprovalDialog();if (!panel.hidden || ['starting','running','stopping'].includes(state?.status)) {progress();refresh();}},1000);
   api('info').then(result=>{
     info=result; button.hidden=!info.enabled;
+    if (info.enabled) {
+      if (info.session_scope) KEY += '.' + info.session_scope;
+      $('agent-auth-binding').hidden = !info.session_scope;
+      loadToken();
+      $('agent-remember').checked = remember;
+    }
     window.weblabLayout?.availability();
     if(info.enabled) providerControls();
   }).catch(()=>{});

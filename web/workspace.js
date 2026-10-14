@@ -52,7 +52,11 @@
     view.panel.classList.remove('maximized');
     view.panel.removeAttribute('style');
     const toolbar = $(kindFor(view.panel)+'-toolbar');
-    if (toolbar.parentElement !== $('workspace-tool-controls')) $('workspace-tool-controls').append(toolbar);
+    // Instructions has file/publication/font controls: give it its own row
+    // beneath the workspace tabs, including narrow and side-by-side layouts.
+    if (kindFor(view.panel) === 'instructions') {
+      if (toolbar.parentElement !== view.panel) view.panel.prepend(toolbar);
+    } else if (toolbar.parentElement !== $('workspace-tool-controls')) $('workspace-tool-controls').append(toolbar);
     toolbar.classList.add('workspace-docked-toolbar');
     return true;
   }

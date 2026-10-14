@@ -31,8 +31,9 @@ import link_fabric
 import qmp
 import iol_l1
 import lab_automation
+import web_auth
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
@@ -40,6 +41,10 @@ MAX_IMAGE_BYTES = 1024 * 1024 * 1024
 
 
 class LabError(Exception):
+    pass
+
+
+class LabConflict(LabError):
     pass
 
 
@@ -391,6 +396,64 @@ class Lab:
             self.errors = {key: value for key, value in self.errors.items() if key in {n["id"] for n in validated["nodes"]}}
             self.persist()
             return self.snapshot()
+
+    @staticmethod
+    def validate_instructions_file(file):
+        if file is None:
+            return None
+        if not isinstance(file, dict) or set(file) != {'name', 'text'}:
+            raise LabError('Instructions require a filename and UTF-8 text')
+        name, text = file['name'], file['text']
+        if (not isinstance(name, str) or not 1 <= len(name) <= 200 or
+                re.search(r'[/\\\x00-\x1f\x7f]', name) or
+                not re.search(r'\.(md|markdown|txt)$', name, re.I)):
+            raise LabError('Choose a .md, .markdown or .txt filename without paths')
+        if not isinstance(text, str) or re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', text):
+            raise LabError('Instructions must contain text, not binary/control data')
+        try:
+            size = len(text.encode('utf-8'))
+            name.encode('utf-8')
+        except UnicodeError as exc:
+            raise LabError('Instructions must be valid UTF-8 text') from exc
+        if size > 512 * 1024:
+            raise LabError('Instructions files can be up to 512 KiB')
+        return {'name': name, 'text': text}
+
+    def published_instructions(self, known_revision=None):
+        with self.lock:
+            path = self.directory / 'instructions.json'
+            result = {'revision': '0', 'file': None, 'updated_at': None}
+            if path.exists():
+                try:
+                    if path.stat().st_size > 4 * 1024 * 1024:
+                        raise ValueError('oversized document')
+                    result = json.loads(path.read_text(encoding='utf-8'))
+                    if (not isinstance(result, dict) or set(result) != {'revision', 'file', 'updated_at'} or
+                            not isinstance(result['revision'], str) or
+                            not re.fullmatch(r'[a-f0-9]{32}', result['revision']) or
+                            type(result['updated_at']) is not int):
+                        raise ValueError('invalid stored metadata')
+                    result['file'] = self.validate_instructions_file(result['file'])
+                except (OSError, ValueError, LabError) as exc:
+                    raise LabError('Cannot read published instructions; check instructions.json on the server') from exc
+            if known_revision == result['revision']:
+                return {'revision': result['revision'], 'unchanged': True}
+            return result
+
+    def publish_instructions(self, data):
+        if not isinstance(data, dict) or set(data) != {'revision', 'file'}:
+            raise LabError('Supply the current instructions revision and file (or null to unpublish)')
+        file = self.validate_instructions_file(data['file'])
+        with self.lock:
+            previous = self.published_instructions()
+            if data['revision'] != previous['revision']:
+                raise LabConflict('Published instructions changed. View the published version before publishing again.')
+            result = {'revision': uuid.uuid4().hex, 'file': file, 'updated_at': int(time.time())}
+            try:
+                lab_backup.write_json(self.directory / 'instructions.json', result)
+            except OSError as exc:
+                raise LabError('Could not save published instructions. Refresh to check the server version before retrying.') from exc
+            return result
 
     def link_states(self):
         faults = self.fabric.states() if self.fabric else {}
@@ -888,13 +951,90 @@ class Handler(BaseHTTPRequestHandler):
     def lab(self):
         return self.server.lab
 
-    def reply(self, status, value, content_type="application/json"):
+    @property
+    def auth(self):
+        return getattr(self.server, 'auth', None)
+
+    def auth_check(self, path):
+        if not self.auth:
+            return
+        self.same_origin()
+        self.auth_token = self.auth.cookie_token(self.headers)
+        self.principal = self.auth.session(self.auth_token)
+        if not self.principal:
+            raise web_auth.Denied('Sign in to Weblab', 401)
+        if self.command != 'GET':
+            import hmac
+            if not hmac.compare_digest(self.headers.get('X-Weblab-CSRF', ''), self.principal['csrf']):
+                raise web_auth.Denied('Invalid session request token; reload and sign in again')
+        if path == '/api/auth/logout':
+            return
+        if not web_auth.allowed(self.principal['role'], self.command, path):
+            raise web_auth.Denied('This operation is not available for your role')
+
+    def auth_status(self):
+        if not self.auth:
+            return {'enabled': False, 'role': 'admin'}
+        session = self.auth.session(self.auth.cookie_token(self.headers))
+        return {'enabled': True, **(session or {})}
+
+    def auth_mutate(self, path):
+        if not self.auth or self.command != 'POST':
+            raise web_auth.Denied('Authentication route unavailable', 404)
+        self.close_connection = True
+        if path == '/api/auth/logout':
+            self.auth_check(path)
+            self.auth.logout(self.auth_token)
+            if getattr(self.server, 'agent', None):
+                self.server.agent.revoke_owner(web_auth.digest(self.auth_token))
+            self.reply(200, {'ok': True}, cookie=self.auth.cookie('', 0))
+            return
+        if path != '/api/auth/login':
+            raise web_auth.Denied('Unknown authentication route', 404)
+        # Custom header + JSON prevents form CSRF even before a session exists.
+        if self.headers.get('X-Weblab-Login') != '1' or self.headers.get('Content-Type') != 'application/json':
+            raise web_auth.Denied('Invalid login request')
+        length = int(self.headers.get('Content-Length', '0'))
+        if not 0 < length <= 2048 or self.headers.get('Transfer-Encoding'):
+            raise web_auth.Denied('Invalid login request', 400)
+        self.connection.settimeout(10)
+        chunks = []
+        while length:
+            chunk = self.rfile.read(length)
+            if not chunk:
+                raise web_auth.Denied('Incomplete login request', 400)
+            chunks.append(chunk)
+            length -= len(chunk)
+        data = json.loads(b''.join(chunks))
+        if not isinstance(data, dict) or not isinstance(data.get('remember', False), bool):
+            raise web_auth.Denied('Invalid login request', 400)
+        self.activity_identity = (data.get('name'), None)  # Claimed account until login succeeds.
+        token, ttl = self.auth.login(data.get('name'), data.get('password'), self.client_address[0], data.get('remember', False))
+        self.activity_identity = (data.get('name'), web_auth.digest(token))
+        old = self.auth.cookie_token(self.headers)
+        if old:
+            self.auth.logout(old)
+            if getattr(self.server, 'agent', None):
+                self.server.agent.revoke_owner(web_auth.digest(old))
+        self.reply(200, {'enabled': True, **self.auth.session(token)},
+                   cookie=self.auth.cookie(token, ttl if data.get('remember') else None))
+
+    def reply(self, status, value, content_type="application/json", cookie=None):
         body = json.dumps(value).encode() if content_type == "application/json" else value
+        if getattr(self, 'activity_id', None) is not None:
+            result = 'http_ok' if status < 400 else 'denied' if status in (401, 403, 423, 429) else 'failed'
+            self.auth.activity_finish(self.activity_id, result, status, getattr(self, 'activity_identity', None))
+            self.activity_id = None
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        if self.auth:
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
 
@@ -940,20 +1080,41 @@ class Handler(BaseHTTPRequestHandler):
 
     def agent_api(self, action, data=None):
         self.same_origin()
+        if self.auth and self.principal['role'] != 'admin':
+            if action == 'info':
+                return {'enabled': False}
+            raise web_auth.Denied('Agent is available only to administrators')
         bridge = getattr(self.server, 'agent', None)
         if not bridge:
             if action == 'info':
                 return {'enabled': False}
             raise LabError('Agent is disabled. Start Weblab with the optional agent companion.')
-        return bridge.api(action, self.headers.get('X-Weblab-Agent-Session', ''), data)
+        return bridge.api(action, self.headers.get('X-Weblab-Agent-Session', ''), data,
+                          owner=web_auth.digest(self.auth_token) if self.auth else None)
 
     def do_GET(self):
         try:
             path = urlsplit(self.path).path
+            if path == '/api/auth/status':
+                self.same_origin()
+                self.reply(200, self.auth_status())
+                return
+            if path == '/health':
+                self.reply(200, {'ok': True})
+                return
+            if path.startswith(('/api/', '/ws/')) or path == '/iol-console.html':
+                self.auth_check('/api/state' if path == '/iol-console.html' else path)
             if path in ('/api/agent/info', '/api/agent/state'):
                 self.reply(200, self.agent_api(path.rsplit('/', 1)[1]))
             elif path == "/api/state":
                 self.reply(200, self.lab.snapshot())
+            elif path == '/api/instructions':
+                revision = parse_qs(urlsplit(self.path).query).get('revision', [None])[0]
+                self.reply(200, self.lab.published_instructions(revision))
+            elif path == '/api/activity':
+                if not self.auth:
+                    raise web_auth.Denied('Activity requires authentication', 404)
+                self.reply(200, self.auth.activity_page(parse_qs(urlsplit(self.path).query, keep_blank_values=True)))
             elif path.startswith('/api/automation/'):
                 self.automation_get(path)
             elif path == "/api/storage":
@@ -986,15 +1147,38 @@ class Handler(BaseHTTPRequestHandler):
                     self.reply(404, {"error": "Not found"})
                 else:
                     self.reply(200, target.read_bytes(), mimetypes.guess_type(target)[0] or "application/octet-stream")
+        except web_auth.Denied as exc:
+            self.close_connection = True
+            self.reply(exc.status, {"error": str(exc)})
         except (LabError, ValueError) as exc:
             self.reply(409, {"error": str(exc)})
         except (BrokenPipeError, ConnectionResetError):
             pass
 
     def mutate(self):
+        # Reset on every request: HTTP/1.1 reuses this handler for a connection.
+        self.activity_id = None
+        self.activity_identity = None
+        if self.auth:
+            operation = web_auth.activity_operation(self.command, urlsplit(self.path).path)
+            if operation:
+                action, target = operation
+                if target:
+                    with self.lab.lock:
+                        if target not in {item['id'] for item in self.lab.topology['nodes'] + self.lab.topology['links']}:
+                            target = ''
+                token = self.auth.cookie_token(self.headers)
+                principal = self.auth.session(token)
+                self.activity_id = self.auth.activity_begin(
+                    principal['name'] if principal else None,
+                    web_auth.digest(token) if principal else None, 'browser', action, target)
         try:
             self.same_origin()
             path = urlsplit(self.path).path
+            if path.startswith('/api/auth/'):
+                self.auth_mutate(path)
+                return
+            self.auth_check(path)
             if self.command == "POST" and path == "/api/import":
                 self.close_connection = True
                 if self.headers.get("Transfer-Encoding") or self.headers.get("Content-Type", "").split(";")[0] != "application/zip":
@@ -1031,7 +1215,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
                 raise LabError("Use Content-Type: application/json")
             length = int(self.headers.get("Content-Length", "0"))
-            body_limit = 4 * 1024 * 1024 if self.command == 'POST' and urlsplit(self.path).path == '/api/agent/turn' else 1_000_000
+            body_limit = 4 * 1024 * 1024 if path == '/api/instructions' or (self.command == 'POST' and path == '/api/agent/turn') else 1_000_000
             if not 0 < length <= body_limit:
                 raise LabError("Invalid request body size")
             chunks, remaining = [], length
@@ -1066,6 +1250,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = operation(**data)
             elif self.command == "PUT" and path == "/api/topology":
                 result = self.lab.save(data)
+            elif self.command == 'PUT' and path == '/api/instructions':
+                result = self.lab.publish_instructions(data)
             elif self.command == "POST" and re.fullmatch(r"/api/links/[\w-]+/carrier", path):
                 result = self.lab.set_link_carrier(path.split('/')[3], data)
             elif self.command == "POST" and re.fullmatch(r"/api/links/[\w-]+/traffic", path):
@@ -1092,6 +1278,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(404, {"error": "Not found"})
                 return
             self.reply(200, result)
+        except web_auth.Denied as exc:
+            self.close_connection = True
+            self.reply(exc.status, {"error": str(exc)})
+        except LabConflict as exc:
+            self.close_connection = True
+            self.reply(409, {"error": str(exc)})
         except (LabError, ValueError, TypeError) as exc:
             self.close_connection = True
             self.reply(400, {"error": str(exc)})
@@ -1100,6 +1292,10 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.log_error("Operation failed: %s", exc)
             self.reply(500, {"error": str(exc)})
+        finally:
+            # A lost connection before a response leaves an explicitly unfinished
+            # record; do not infer that a guest operation was rolled back.
+            self.activity_id = None
 
     do_POST = mutate
     do_PUT = mutate
@@ -1124,13 +1320,21 @@ class Handler(BaseHTTPRequestHandler):
             for name, value in self.headers.items():
                 if name.lower() in ("host", "upgrade", "connection", "sec-websocket-key", "sec-websocket-version", "sec-websocket-protocol"):
                     request += f"{name}: {value}\r\n"
+            if self.auth:
+                # Only this authenticated proxy supplies identity; client-supplied
+                # X-Weblab headers are deliberately absent from the allowlist.
+                request += f"X-Weblab-Role: {self.principal['role']}\r\n"
+                identity = web_auth.console_identity(web_auth.digest(self.auth_token))
+                request += f"X-Weblab-Console-Identity: {identity}\r\n"
+                if self.principal['role'] == 'reader':
+                    request += 'X-Weblab-Read-Only: 1\r\n'
             upstream.sendall((request + "\r\n").encode("latin-1"))
             upstream.settimeout(10)
             self.connection.settimeout(10)
             try:
                 while True:
                     ready, _, _ = select.select([self.connection, upstream], [], [], 1)
-                    if self.server.stopping.is_set():
+                    if self.server.stopping.is_set() or (self.auth and not self.auth.session(self.auth_token)):
                         break
                     for source in ready:
                         data = source.recv(65536)
@@ -1168,18 +1372,24 @@ def parse_args(argv=None):
 
 def main():
     args = parse_args()
+    auth_enabled = os.environ.get('WL_AUTH', '0') == '1'
     lab = Lab(args.data_dir, args.image_dir, allow_untested_frr=args.allow_untested_frr,
-              automation=args.automation)
+              automation=args.automation and not auth_enabled)
+    # Acquire exclusive lab ownership before changing persisted account state.
+    auth = web_auth.Auth.from_env(args.data_dir)
     server = ThreadingHTTPServer((args.bind, args.port), Handler)
     server.daemon_threads = True
     server.lab, server.stopping = lab, threading.Event()
+    server.auth = auth
     server.agent = None
+    if auth:
+        print('Weblab authentication enabled; optional Agent is admin-only; external automation is disabled.', flush=True)
     if os.environ.get('WL_AGENT_SOCKET_DIR'):
         import agent_bridge
         server.agent = agent_bridge.Bridge(
             lab, os.environ['WL_AGENT_SOCKET_DIR'],
             os.environ.get('WL_AGENT_STATE_DIR', str(lab.directory / '.agent')),
-            os.environ.get('WL_AGENT_PROVIDERS', 'http://127.0.0.1:11434/v1'))
+            os.environ.get('WL_AGENT_PROVIDERS', 'http://127.0.0.1:11434/v1'), auth=auth)
     def shutdown(signum, frame):
         server.stopping.set()
         threading.Thread(target=server.shutdown, daemon=True).start()

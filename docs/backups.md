@@ -16,6 +16,11 @@ licenses are not included. Instructions documents and window positions are not
 part of topology/ZIP exports. EXOS/Arista/Junos support topology JSON and saved ZIP,
 but not configuration-text export or initial snippets.
 
+Server-published instructions persist separately in `lab-data/instructions.json`.
+JSON/ZIP imports preserve that document; they do not install an exercise from
+the archive. Keep its original Markdown/text file and publish the matching
+document after importing a different lab. See [publishing instructions](instructions.md).
+
 ## Optional Agent conversation
 
 In **Export**, select **Include current Agent conversation (ZIP or JSON)** to

@@ -72,7 +72,7 @@ Use **Layout** in the topology toolbar to choose a browser-local workspace:
   grouped consoles below it.
 - **Side by side** keeps the topology on the left and a full-height tool pane on
   the right. Choose **Consoles**, **Agent** or **Instructions** in that pane.
-- **Agent workspace** keeps the topology full height on the left, with Agent or
+- **Split workspace** keeps the topology full height on the left, with Agent or
   Instructions above the grouped consoles on the right. Instructions remains
   available when the optional Agent is disabled.
 - **Free layout** returns to the existing floating-window controls. **Tile
@@ -84,7 +84,7 @@ working layouts, Devices and Inspector open as temporary drawers without taking
 width away from the map. Escape or the backdrop closes a drawer.
 
 Opening another console adds or selects its tab in the console area. In Side by
-side, this selects the Consoles tool; in Agent workspace, the upper tool remains
+side, this selects the Consoles tool; in Split workspace, the upper tool remains
 visible. Individual console tabs can still float, and Agent/Instructions have a
 **Float** control. Select the tool again to return it to its assigned pane.
 Choosing a preset brings existing console windows back into the grouped pane.

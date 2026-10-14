@@ -145,9 +145,26 @@ The wrapper keeps the latest 256 KiB of console output per running device, even 
 
 **Lock input** follows the active console tab. Check it to let only this browser connection type; every other station keeps receiving output and shows **Read-only · locked elsewhere**. A lock symbol on the tab also shows that input is locked. Uncheck it from the owning station to restore shared input.
 
+With authentication enabled, the admin Agent belonging to the same Weblab login
+can also send approved input through that lock. The browser keeps ownership;
+typing is temporarily disabled until the operation ends or you choose **Take back
+control**. This keeps your lock and ends the Agent's borrowed access, but cannot
+undo commands already delivered. A separate admin login does
+not share this permission. Console-input settings and approvals still apply.
+
 An observing station can choose **Take over**, then confirm. The previous owner immediately becomes read-only and receives a notice. Cancel or Escape leaves ownership unchanged. If ownership changes while the confirmation is open, the request is rejected and the station must try again against the current lock. Each device has its own lock; changing tabs or hiding the pane keeps it held. Closing the console tab, disconnecting/reconnecting, closing the page, or stopping the device releases it. A lost connection releases it once detected (heartbeat timeout is about 90 seconds). Reconnecting does not automatically reclaim a lock.
 
-This is coordination for a trusted lab, not authentication: any connected station can confirm a takeover. The wrapper enforces the lock for both current and legacy clients, so bypassing the disabled terminal input does not bypass ownership. Acquiring/taking over a lock discards input still waiting in the wrapper's PTY queue; commands already delivered to the device are not undone. All stations still share one device CLI session.
+With authentication disabled, this is coordination for a trusted lab: any connected
+station can confirm a takeover. With [authentication enabled](authentication.md#console-ownership-and-approval),
+admin can immediately take over a writer's lock; a writer must request approval
+from the admin holding the lock. Readers stay view-only. Writer-to-writer and
+admin-to-admin takeovers retain confirmation. Pending requests expire after
+60 seconds or when the connection/ownership changes.
+
+The wrapper enforces locks for both current and legacy clients, so bypassing the
+disabled terminal input does not bypass ownership. Acquiring/taking over a lock discards
+input still waiting in the wrapper's PTY queue; commands already delivered to the
+device are not undone. All stations still share one device CLI session.
 
 Each wrapper accepts up to 32 connections, with bounded output queues and heartbeat cleanup. Slow or unreachable stations are disconnected individually and can reconnect; other stations and the PTY continue running. Input is queued to preserve partial PTY writes. This applies to IOL, IOSv and Alpine consoles because they use the same wrapper. Raw WebSocket clients remain compatible; clients negotiating `netlab.console.v1` or `netlab.console.v2` use cursor-based resume. The workspace uses v2: binary frames carry keyboard input and text frames carry lock controls/state. Legacy clients remain viewable but cannot write while another connection holds a lock. Sharing does not create separate CLI logins or shells.
 

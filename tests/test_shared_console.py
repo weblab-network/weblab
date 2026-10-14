@@ -37,8 +37,16 @@ class SharedConsoleTests(unittest.TestCase):
             if opcode == 9:
                 client.send(data, opcode=10)
                 continue
+            if opcode == 1:
+                # Protocol metadata is not terminal output ("pending" contains
+                # "end", for example). Validate and skip console control frames.
+                message = json.loads(data)
+                self.assertIn(message['type'], ('console-start', 'console-lock'))
+                if message['type'] == 'console-start':
+                    client.offset = message['offset']
+                continue
             self.assertEqual(opcode, 2)
-            client.offset += len(data)
+            client.offset = getattr(client, 'offset', 0) + len(data)
             result += data
         return result
 
@@ -74,14 +82,14 @@ class SharedConsoleTests(unittest.TestCase):
             with self.subTest(protocol=protocol):
                 client = test_lab.WebSocket(self.fixture.port, 'r1', protocol)
                 self.clients.append(client)
-                client.until(b'BOOT READY')
+                self.until(client, b'BOOT READY')
                 client.send(b'begin\x03', opcode=2, fin=False)
                 client.send(b'end', opcode=0)
-                result = client.until(b'end')
+                result = self.until(client, b'end')
                 self.assertIn(b'begin\x1eend', result.replace(b'RX:', b''))
                 self.assertNotIn(b'\x03', result)
                 client.send(b'\x1a\x1eOK', opcode=2)
-                self.assertIn(b'\x1a\x1eOK', client.until(b'OK').replace(b'RX:', b''))
+                self.assertIn(b'\x1a\x1eOK', self.until(client, b'OK').replace(b'RX:', b''))
 
     def test_resume_only_missing_output_and_invalid_client_isolation(self):
         first = self.connect()

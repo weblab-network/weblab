@@ -26,14 +26,15 @@ import lab_server
 
 
 class WebSocket:
-    def __init__(self, port, node_id, protocol=None, cursor=None):
+    def __init__(self, port, node_id, protocol=None, cursor=None, headers=None):
         self.sock = socket.create_connection(("127.0.0.1", port), timeout=4)
         key = base64.b64encode(os.urandom(16)).decode()
         suffix = "?cursor=" + cursor if cursor else ""
         protocols = f"Sec-WebSocket-Protocol: {protocol}\r\n" if protocol else ""
+        extra = ''.join(f'{name}: {value}\r\n' for name, value in (headers or {}).items())
         self.sock.sendall((f"GET /ws/{node_id}{suffix} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
                            "Upgrade: websocket\r\nConnection: Upgrade\r\n"
-                           f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n{protocols}\r\n").encode())
+                           f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n{protocols}{extra}\r\n").encode())
         header = b""
         while not header.endswith(b"\r\n\r\n"):
             header += self.exact(1)

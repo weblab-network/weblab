@@ -56,6 +56,15 @@ Initial latest reads remain excerpts, with omitted history reported. OpenAI
 sessions keep the ordinary tool responses and capture budgets.
 
 
+Starting with v0.7.0, `WL_AUTH=1`
+makes the optional Agent **admin-only**, bound to the exact Weblab
+login that created it. Refresh/restart can resume that session; a different admin
+login cannot. Weblab logout or expiry revokes access and deletes that login's
+Agent history, attachments and OpenAI sign-in storage, so export conversations
+you want to retain first. Remembering an Agent session does not extend the Weblab
+login. Writer/reader Agent access and external MCP remain disabled. See
+[authentication and roles](authentication.md#optional-administrator-agent).
+
 ## Known model and console issues
 
 In testing with Ollama-hosted `gpt-oss:20b` and Qwen3.5 9B, local models could
@@ -113,8 +122,10 @@ For Cisco IOS/IOL consoles, before handing the task to the Agent:
 3. For long output, run `terminal length 0` and check that the command succeeded.
    Leave an empty EXEC prompt for the Agent; you do not need to pre-enter
    `configure terminal`.
-4. Release any console input lock you hold, then ask the Agent to use the MCP
-   tools and verify the result from fresh console output. Enable **Allow console
+4. With authentication enabled, the admin Agent can use a console lock held by
+   the same Weblab login without releasing it. Otherwise release the input lock
+   before handing off to the Agent. Ask it to use the MCP tools and verify the
+   result from fresh console output. Enable **Allow console
    input** if the task requires commands; privilege mode does not replace the
    Agent's permission/approval settings.
 
@@ -170,8 +181,8 @@ image/data mounts and project name when adding the companion.
 
 ```sh
 mkdir -p images lab-data
-export WL_IMAGE=ghcr.io/weblab-network/weblab:0.6.0
-export WL_AGENT_IMAGE=ghcr.io/weblab-network/weblab-agent:0.6.0
+export WL_IMAGE=ghcr.io/weblab-network/weblab:0.7.0
+export WL_AGENT_IMAGE=ghcr.io/weblab-network/weblab-agent:0.7.0
 # For Ollama, use the /v1 URL reachable from the Weblab service:
 export WL_AGENT_PROVIDERS=http://YOUR_OLLAMA_HOST:11434/v1
 docker compose -f compose.prebuilt.yaml -f compose.agent.prebuilt.yaml pull
@@ -613,7 +624,7 @@ The pinned app-server protocol is experimental. Upgrade Codex only after running
 
 ## Docked workspace layouts
 
-Choose **Layout → Agent workspace** in the topology toolbar to keep the map
+Choose **Layout → Split workspace** in the topology toolbar to keep the map
 full height beside Agent and consoles. Switch the upper pane to Instructions
 when following an exercise. **Side by side** gives the selected tool the full
 right column. Layout changes preserve the conversation and draft; **Float**
@@ -670,7 +681,8 @@ speed or quality comparison.
 
 </details>
 
-In docked layouts, Agent/Instructions and window controls share a header row.
+In docked layouts, Agent window controls share the workspace tab row.
+Instructions has its own toolbar below the workspace tabs.
 The smaller message box grows as you type. You can draft a follow-up and prepare
 attachments during generation, but **Send** stays disabled until the current turn
 ends. Drafts are never automatically submitted. Attachment limits are under

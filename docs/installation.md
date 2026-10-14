@@ -9,7 +9,12 @@ For QEMU images, enable KVM (including nested virtualization if this host is a V
 Budget RAM for the sum of the guest allocations plus the host and Weblab; see
 [device defaults](devices.md#supported-profiles).
 
-Weblab has **no login or user authorization**. It controls the host Docker daemon,
+Weblab defaults to **no login or user authorization**. Optional
+[authentication and roles](authentication.md) can be enabled with `WL_AUTH=1`;
+the optional Agent is admin-only and external MCP remains disabled in that mode.
+These features require [v0.7.0](releases/v0.7.0.md) or later. Earlier images do
+not implement authentication.
+Weblab controls the host Docker daemon,
 executes supplied device images, and exposes device consoles. Keep it on a trusted
 machine. The default listener is loopback; an SSH tunnel is the simplest remote
 access method:

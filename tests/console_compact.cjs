@@ -112,7 +112,10 @@ fixture.stderr.on('data', data => { fixtureLog += data; });
     await pane.locator('#console-tab-r1').tap();
     await hasText('r1','HEX:09');
     assert.equal(await page.evaluate(()=>consoleSessions.get('r1').terminal.textarea===document.activeElement),true,'Tab keeps terminal focus');
-    await page.locator('#lock-console-r1').check();await page.waitForFunction(()=>consoleSessions.get('r1').lockMine);
+    // The checkbox reflects acknowledged server ownership, not optimistic input.
+    await page.locator('#lock-console-r1').click();
+    await page.waitForFunction(()=>consoleSessions.get('r1').lockMine);
+    assert.equal(await page.locator('#lock-console-r1').isChecked(),true);
     assert.match(await pane.locator('.console-connection').getAttribute('aria-label'),/Input locked/);
     await page.evaluate(()=>activateConsole('r1'));
     await page.evaluate(()=>{window.menuBlurs=0;consoleSessions.get('r1').terminal.textarea.addEventListener('blur',()=>menuBlurs++);});

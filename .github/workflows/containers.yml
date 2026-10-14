@@ -41,6 +41,11 @@ jobs:
           node tests/agent_ui.cjs
           node tests/workspace_layouts.cjs
           node tests/instructions.cjs
+          node tests/auth_ui.cjs
+          node tests/auth_console_locks.cjs
+          node tests/auth_agent.cjs
+          node tests/shared_instructions.cjs
+          node tests/activity.cjs
           node tests/console_open_mode.cjs
           node tests/workspace_features.cjs
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4

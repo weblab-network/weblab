@@ -47,3 +47,6 @@ playwright-report/
 
 # Optional local MCP SDK environment.
 /.venv-mcp/
+
+# Authentication runtime state (never source or lab archives).
+.auth/

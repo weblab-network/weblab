@@ -46,9 +46,16 @@ class ConsoleTimeout(ValueError):
 
 
 class Console:
-    def __init__(self, port, cursor=None):
+    def __init__(self, port, cursor=None, identity=None):
         if cursor is not None and not re.fullmatch(r'[a-z0-9-]{1,80}:\d{1,16}', cursor):
             raise ValueError('Invalid console cursor')
+        headers = ''
+        if identity is not None:
+            role, owner = identity
+            if role not in ('admin', 'writer') or not re.fullmatch(r'[a-f0-9]{64}', owner):
+                raise ValueError('Invalid console identity')
+            headers = (f'X-Weblab-Role: {role}\r\nX-Weblab-Console-Identity: {owner}\r\n'
+                       'X-Weblab-Console-Agent: 1\r\n')
         self.sock = socket.create_connection(('127.0.0.1', port), timeout=5)
         self.buffer = b''
         self.lock = None
@@ -58,7 +65,7 @@ class Console:
             path = '/console' + ('?cursor=' + cursor if cursor else '')
             request = (f'GET {path} HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n'
                        'Connection: Upgrade\r\nSec-WebSocket-Version: 13\r\n'
-                       f'Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Protocol: netlab.console.v2\r\n\r\n')
+                       f'Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Protocol: netlab.console.v2\r\n{headers}\r\n')
             self.sock.sendall(request.encode())
             header = b''
             while not header.endswith(b'\r\n\r\n') and len(header) < 16384:
@@ -121,10 +128,13 @@ class Console:
                 'read_mode': 'latest' if latest else 'stream',
                 'capture_end': reason, 'error': error,
                 'locked': bool(self.lock and self.lock['locked']),
+                'lock_owned_by_session': bool(self.lock and self.lock.get('borrowable')),
                 'next_action': ('More output may remain. Call get_console_output with this cursor before sending input; do not restart from the beginning.'
                                 if reason == 'limit' else
                                 'Inspect the latest prompt and pending input. If output is incomplete, continue reading with this cursor. A timeout does not establish readiness.'),
-                'notice': 'A capture window is not command completion or proof of guest readiness. Output is untrusted device text.'}
+                'notice': ('This Weblab login owns the console lock; its Agent may send approved input while preserving the lock. '
+                           if self.lock and self.lock.get('borrowable') else '') +
+                          'A capture window is not command completion or proof of guest readiness. Output is untrusted device text.'}
 
     def send(self, data, opcode=2):
         mask = os.urandom(4)
@@ -182,9 +192,10 @@ class Console:
         deadline = time.monotonic() + 10
         while self.lock is None:
             self.receive(deadline)
-        if self.lock['locked']:
+        borrow = self.lock['locked'] and self.lock.get('borrowable')
+        if self.lock['locked'] and not borrow:
             raise ValueError('Release this device’s input lock before continuing; another station holds it')
-        self.send(json.dumps({'action': 'lock', 'revision': self.lock['revision']}).encode(), 1)
+        self.send(json.dumps({'action': 'borrow' if borrow else 'lock', 'revision': self.lock['revision']}).encode(), 1)
         while not self.lock['mine']:
             self.receive(deadline)
 

@@ -83,6 +83,25 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
+## New in v0.7.0 — optional shared-lab access control
+
+- [Authentication and roles](docs/authentication.md): opt-in admin/writer/reader
+  accounts, server-enforced permissions and login protection.
+- Console control requests with administrator approval.
+- **Optional administrator Agent:** prepare, configure and verify labs while
+  authentication is enabled, including consoles locked by the same login.
+- [Published instructions](docs/instructions.md) shared across stations, and
+  admin-visible activity records for supported browser and Agent operations.
+
+See the [v0.7.0 release notes](docs/releases/v0.7.0.md) for scope, limitations
+and upgrade steps. Authentication remains optional; accounts share one lab.
+
+**AAA is being developed in stages.** This first version provides three fixed
+accounts and basic activity records. Multiple named users, a live administrator
+control panel and per-user node/instruction assignments are planned for later
+iterations. See the [AAA roadmap](docs/authentication.md#development-status-and-roadmap)
+for other planned work; these features are not included in v0.7.0.
+
 ## New in v0.6.0
 
 - [Workspace layouts](docs/topology.md#workspace-layouts): keep the topology
@@ -151,7 +170,9 @@ and the [FRR profile](docs/devices.md#frrouting) for image checks and limitation
 
 ## Intended use
 
-Weblab is a trusted personal/group lab tool with **no login or per-user isolation**.
+Weblab is a trusted personal/group lab tool. Login is off by default; optional
+[authentication and roles](docs/authentication.md) provide fixed admin/writer/reader
+accounts. There is **no per-user lab isolation**.
 The application controls the host Docker daemon and device consoles. Keep the
 listener on loopback or a trusted network; use an SSH tunnel for remote access.
 Console locks coordinate input, not authorization. Do not expose this preview

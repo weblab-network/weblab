@@ -4,10 +4,13 @@
 
 ## Deployment scope
 
-Weblab is a self-hosted personal/trusted-group lab workspace. It has no accounts,
-authentication, roles or per-user lab isolation. All stations accessing a data
-directory control the same topology; input locks are cooperative controls that
-another station can take over after confirmation. Public internet exposure and
+Weblab is a self-hosted personal/trusted-group lab workspace. Optional
+[fixed-account authentication and roles](authentication.md) are available with `WL_AUTH=1`; authentication is off by default. There is no per-user
+lab isolation. All stations accessing a data directory share the same topology.
+With authentication enabled, admin can immediately take over writer-held locks;
+writers need the owning admin's approval for admin-held locks. Same-role
+takeovers retain confirmation. See [console ownership](authentication.md#console-ownership-and-approval).
+Public internet exposure and
 untrusted multi-tenant hosting are outside this preview's scope.
 
 The supplied deployment targets x86-64 Linux with rootful Docker. QEMU devices
@@ -43,8 +46,9 @@ See [installation](installation.md).
 
 Window positions and terminal scrollback belong to the current browser page;
 reloading does not synchronize another station's window layout. Shared consoles
-are one CLI session. Instructions are local to the browser tab and are not
-embedded in topology/ZIP exports. Relative files in Instructions must be opened
+are one CLI session. Instructions can be local previews or explicitly
+[published to all stations](instructions.md); neither is embedded in topology/ZIP
+exports. Relative files in Instructions must be opened
 manually, and HTML and images are not rendered as active content.
 
 Phone keyboard/fullscreen behavior depends on the browser and available viewport.

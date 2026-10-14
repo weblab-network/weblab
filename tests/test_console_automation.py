@@ -218,6 +218,7 @@ class ConsoleAutomationTests(unittest.TestCase):
             worker.join(2)
             self.assertFalse(worker.is_alive())
         self.assertEqual(result['capture_end'], 'lock_lost')
+        self.assertEqual(result['input_status'], 'unknown')
         self.assertTrue(human.lock['mine'])
 
 

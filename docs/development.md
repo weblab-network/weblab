@@ -444,3 +444,70 @@ history reads, lossless cursor continuation, bounded scans and stale-input refus
 The Ollama test checks real previews, unchanged topology, duplicate-submit handling, Stop,
 container recreation and continued conversation. It does not establish exercise
 correctness or guest boot/forwarding. See [setup and limitations](agent.md).
+
+
+## Authentication regression checks
+
+```sh
+python3 -m unittest discover -s tests -p 'test_web_auth.py' -v
+python3 -m unittest discover -s tests -p 'test_auth_console_lock.py' -v
+node tests/auth_ui.cjs
+node tests/auth_console_locks.cjs
+```
+
+These use a disposable lab and fake PTY device. They check fixed-account login,
+role/API denials, password policy and legacy credentials, backend delay before
+verification, persistent lockout/reset, session expiry/revocation, CSRF, console reader input and lock
+blocking (including legacy/fragmented frames), browser controls and auth-off
+compatibility. Run alongside the full backend and shared-console/browser suites;
+never enable auth on an active lab solely to test it. See [authentication](authentication.md).
+
+Role-aware lock regressions cover immediate admin takeover, exact owning-station
+approval, forged roles/decisions, deny/cancel/expiry, competing requests, stale
+decisions, reconnect and logout. Browser checks cover background-console approval,
+modal queuing and mobile controls with real authenticated proxy/PTY fixtures.
+
+For server-published instructions, run
+`python3 -m unittest discover -s tests -p test_instructions.py -v` and
+`node tests/shared_instructions.cjs`, alongside `node tests/instructions.cjs` for
+local-only compatibility. These use disposable data and independent browser
+logins. Coverage includes role/CSRF enforcement, atomic writes, conflicting
+updates, persisted versions, import/export isolation, safe Markdown,
+synchronization, unchanged scroll position and account changes.
+
+For authenticated admin Agent access, run
+`python3 -m unittest discover -s tests -p test_auth_agent.py -v` and
+`node tests/auth_agent.cjs`. These use real local HTTP/socket transports,
+disposable authentication/history state and deterministic inference. They cover
+role/CSRF enforcement, exact-login ownership, independent admin browsers,
+gateway revocation, pending approval cancellation, provider-stream cancellation,
+history/login-storage cleanup with retry, restart/reload, and human console locks.
+Also run `test_agent.py`, `test_web_auth.py`, `agent_ui.cjs` and `auth_ui.cjs` for
+authentication-off compatibility, optional startup and existing controls. This
+does not establish live model quality or test a real OpenAI account.
+
+For activity metadata, run
+`python3 -m unittest discover -s tests -p test_activity.py -v`,
+`python3 -m unittest discover -s tests -p test_auth_agent.py -v` and
+`node tests/activity.cjs`. Disposable fixtures check role/origin enforcement,
+secret exclusion, login-session correlation, Agent delivery outcomes, restart,
+concurrent pagination, retention, archive isolation and recording failures.
+The browser test checks filtering, paging, refresh and the narrow-screen viewer.
+
+For a release candidate, build separately tagged core and Agent images, then run
+the packaged matrix (requires Docker, Node and the browser test dependencies):
+
+```sh
+python3 tests/auth_packaging.py --core weblab-candidate:local --agent weblab-agent-candidate:local
+```
+
+This creates and removes its own containers and named volumes. It tests fresh
+installs with authentication off/on and Agent absent/present, then upgrades from
+the locally available v0.6.0 core/Agent images (override with `--old-core` and
+`--old-agent`). Topology, opaque saved-device bytes, Agent drafts, remembered
+logins, published instructions and activity records are checked across container
+recreation. Independent Chromium contexts test console handoff/approval, reader
+restrictions, logout closing another tab's live connection, and admin Agent
+isolation. Credentials are random test values. A PTY echo fixture replaces vendor
+devices; this does not test device forwarding, real provider sign-in or inference.
+No host network, Docker socket, real images or existing lab data are mounted.

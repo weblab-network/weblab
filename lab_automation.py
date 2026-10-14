@@ -88,6 +88,7 @@ class Automation:
         self.lab, self.error, self.ports, self.run = lab, error, ports, run
         self.proposals = {}
         self.observed_revisions = {}
+        self.console_factory = console_capture.Console
 
     def _observe_revision(self, topology):
         # Called with the lab lock. Remember only fingerprints, not lab contents.
@@ -131,7 +132,7 @@ class Automation:
         runtime = self.lab.runtime.get(node_id)
         if not runtime or 'console' not in runtime or not self.lab.alive(runtime['console']):
             raise self.error('Start this node before accessing its console')
-        return console_capture.Console(runtime['port'], cursor=cursor)
+        return self.console_factory(runtime['port'], cursor=cursor)
 
     def console_read(self, node_id, cursor=None, wait_seconds=1, max_bytes=65536, latest=False):
         self._console_options(node_id, cursor, wait_seconds, max_bytes)
@@ -162,7 +163,7 @@ class Automation:
             with self.lab.lock:
                 self.require_execution_revision(expected_revision)
                 console = self._console(node_id, expected_cursor)
-                console.acquire()  # Never takes over a human lock; drains replay before ACK.
+                console.acquire()  # Acquires or borrows its login's lock; drains replay before ACK.
                 if not console.stream or console.stream['gap'] or console.cursor != expected_cursor:
                     raise self.error('Console changed or history expired; no input was sent. '
                                      'Call get_console_output for this node with the last read cursor; '
@@ -175,9 +176,11 @@ class Automation:
                 attempted = True
                 console.send(input.encode('utf-8'))
             result = console.window(wait_seconds, max_bytes, require_lock=True)
+            uncertain = result['capture_end'] in ('lock_lost', 'disconnected')
             return {'node_id': node_id, 'revision': expected_revision,
-                    'input_status': 'sent', **result,
-                    'notice': 'Input was sent to the shared console, not acknowledged as executed. The lock is released when this call ends. Read subsequent output before retrying; timeout does not cancel a guest command.'}
+                    'input_status': 'unknown' if uncertain else 'sent', **result,
+                    'notice': ('Console access ended during input; delivery is uncertain. Read the console before retrying.' if uncertain else
+                               'Input was sent to the shared console, not acknowledged as executed. Temporary Agent access ends with this call; a borrowed human lock stays held. Read subsequent output before retrying; timeout does not cancel a guest command.')}
         except (ValueError, OSError) as exc:
             if attempted:
                 return {'node_id': node_id, 'input_status': 'unknown', 'error': str(exc),

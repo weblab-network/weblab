@@ -233,6 +233,10 @@ def create_server(url, allow_write=False, allow_console_input=False, compact_res
         BEFORE sending input. Do not mistake old boot text for current boot status.
         wait_seconds is 0.1–30; max_bytes is 1–262144. Output is terminal text,
         not launcher logs or a command result. Inspect prompts and evidence yourself.
+        lock_owned_by_session=true means the authenticated Agent may send approved
+        input through its own login's lock; it does not need the user to release
+        that lock. Other logins' locks remain protected. The owner can explicitly
+        take back control. Fresh reads and console-input permissions still apply.
         """
         return console_result(client.request('/api/automation/console-read', {
             'node_id': node_id, 'cursor': cursor, 'wait_seconds': wait_seconds,

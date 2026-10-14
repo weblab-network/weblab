@@ -728,6 +728,19 @@ class Manager:
         if not isinstance(ident, str) or not re.fullmatch(r'[a-f0-9]{32}', ident):
             raise ValueError('Invalid session')
         with self.lock:
+            if action == 'delete':
+                # Cleanup must work when the companion has restarted or reached
+                # its session limit, without recreating relays/login state.
+                session = self.sessions.get(ident)
+                if session:
+                    session.close()
+                    del self.sessions[ident]
+                try:
+                    shutil.rmtree(self.state/ident)
+                except FileNotFoundError:
+                    if (self.state/ident).exists():
+                        raise
+                return {'closed': True}
             # Bound resident relays and persistent state; expire only idle sessions.
             for key, session in list(self.sessions.items()):
                 if time.time()-session.touched > 24*3600 and session.status not in ACTIVE:
@@ -767,11 +780,6 @@ class Manager:
                     raise ValueError('Finish or cancel sign-in before changing settings')
                 session.reset()
                 return session.snapshot()
-            if action == 'delete':
-                session.close()
-                del self.sessions[ident]
-                shutil.rmtree(self.state/ident, ignore_errors=True)
-                return {'closed': True}
             raise ValueError('Unknown companion operation')
 
 

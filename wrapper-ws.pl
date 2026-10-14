@@ -267,7 +267,14 @@ sub parse_http_upgrade {
                    "Upgrade: websocket\r\n" .
                    "Connection: Upgrade\r\n" .
                    "Sec-WebSocket-Accept: $accept\r\n${protocol}\r\n";
-    return (1, $response, $versioned, $cursor);
+    my $role = $headers{'x-weblab-role'} // '';
+    return (-1, 'invalid console role') unless $role =~ /^(admin|writer|reader|)$/;
+    my $identity = $headers{'x-weblab-console-identity'} // '';
+    return (-1, 'invalid console identity') unless $identity eq '' || $identity =~ /^[a-f0-9]{64}$/;
+    my $agent = ($headers{'x-weblab-console-agent'} // '') eq '1';
+    return (-1, 'invalid Agent identity') if $agent && ($identity eq '' || $role !~ /^(admin|writer)$/);
+    return (1, $response, $versioned, $cursor,
+        ($headers{'x-weblab-read-only'} // '') eq '1' || $role eq 'reader', $role, $identity, $agent);
 }
 
 # Return (status, events...). status: 0=need data, 1=events, -1=protocol error.
@@ -394,6 +401,10 @@ sub main {
     my $lock_owner;
     my $lock_revision = 0;
     my $lock_dirty = 0;
+    my $pending_takeover;
+    my $request_sequence = 0;
+    my $takeover_timeout = 60;
+    my $clear_takeover;
     my $backlog = '';
     my $output_offset = 0;
     my $epoch = sprintf('%x-%x-%x', time, $$, int(rand(0xffffffff)));
@@ -408,6 +419,9 @@ sub main {
         my ($state) = @_;
         return unless exists $clients{$state->{id}};
         delete $clients{$state->{id}};
+        $clear_takeover->('Console control request cancelled: a station disconnected.')
+            if $pending_takeover && ($pending_takeover->{requester} == $state->{id} ||
+                                    $pending_takeover->{owner} == $state->{id});
         $lock_dirty = 1; # The terminal-response station may have disconnected.
         if (defined $lock_owner && $lock_owner == $state->{id}) {
             undef $lock_owner;
@@ -438,19 +452,82 @@ sub main {
         $disconnect->($state) if $state->{output} eq '';
     };
 
+    # Only the loopback proxy/Agent transport supplies these identities. A
+    # borrowed lease is bound to this exact human lock revision, not the role
+    # or shared account name. It never transfers or releases the human lock.
+    my $borrowable = sub {
+        my ($state) = @_;
+        my $owner = defined($lock_owner) ? $clients{$lock_owner} : undef;
+        return $state->{agent} && $owner && !$owner->{agent} && !$owner->{close_after_write} &&
+            ($state->{identity} // '') ne '' && $state->{identity} eq ($owner->{identity} // '') &&
+            $state->{role} eq $owner->{role};
+    };
+    my $borrowed = sub {
+        my ($state) = @_;
+        return defined($state->{borrow_revision}) && $state->{borrow_revision} == $lock_revision &&
+            $borrowable->($state);
+    };
+    my $agent_busy = sub { scalar grep { $borrowed->($_) } values %clients };
     my $send_lock = sub {
         my ($state, $error) = @_;
         return unless ($state->{versioned} // 0) == 2 && !$state->{close_after_write};
         my @terminals = sort { $a <=> $b } map { $_->{id} }
-            grep { !$_->{handshake} && !$_->{close_after_write} && ($_->{versioned} // 0) == 2 } values %clients;
+            grep { !$_->{readonly} && !$_->{handshake} && !$_->{close_after_write} && ($_->{versioned} // 0) == 2 } values %clients;
         my $responder = defined($lock_owner) ? $lock_owner : $terminals[0];
+        my $owner = defined($lock_owner) ? $clients{$lock_owner} : undef;
+        my $owner_role = $owner ? ($owner->{role} // '') : '';
+        my $mode = $state->{readonly} ? 'none' :
+            ($state->{role} // '') eq 'writer' && $owner_role eq 'admin' ? 'request' :
+            ($state->{role} // '') eq 'admin' && $owner_role ne 'admin' ? 'immediate' : 'confirm';
+        my $pending;
+        if ($pending_takeover && ($pending_takeover->{owner} == $state->{id} ||
+                                  $pending_takeover->{requester} == $state->{id})) {
+            $pending = { id => $pending_takeover->{id}, revision => $pending_takeover->{revision},
+                expires_at => $pending_takeover->{expires},
+                direction => $pending_takeover->{owner} == $state->{id} ? 'incoming' : 'outgoing',
+                requester => 'user (writer)', station => $pending_takeover->{requester} };
+        }
         $queue_client->($state, websocket_frame(WS_TEXT, encode_json({
             type => 'console-lock', revision => $lock_revision,
+            readonly => $state->{readonly} ? JSON::PP::true : JSON::PP::false,
             locked => defined($lock_owner) ? JSON::PP::true : JSON::PP::false,
-            mine => defined($lock_owner) && $lock_owner == $state->{id} ? JSON::PP::true : JSON::PP::false,
+            mine => (defined($lock_owner) && $lock_owner == $state->{id}) || $borrowed->($state) ? JSON::PP::true : JSON::PP::false,
+            borrowable => $borrowable->($state) ? JSON::PP::true : JSON::PP::false,
+            agent_busy => $agent_busy->() ? JSON::PP::true : JSON::PP::false,
             terminal_responder => defined($responder) && $responder == $state->{id} ? JSON::PP::true : JSON::PP::false,
+            owner_role => $owner_role, owner_station => $owner ? $owner->{id} : undef,
+            takeover_mode => $mode, pending_takeover => $pending,
+            notice => delete($state->{lock_notice}) // '',
             error => $error // '',
         })));
+    };
+
+    $clear_takeover = sub {
+        my ($notice) = @_;
+        my $old = $pending_takeover;
+        undef $pending_takeover;
+        return unless $old;
+        my $requester = $clients{$old->{requester}};
+        $requester->{lock_notice} = $notice if $requester && $notice;
+        $lock_dirty = 1;
+    };
+    my $change_owner = sub {
+        my ($next_owner) = @_;
+        return if (defined($next_owner) ? $next_owner : -1) == (defined($lock_owner) ? $lock_owner : -1);
+        $clear_takeover->('Console control request cancelled: ownership changed.');
+        $lock_owner = $next_owner;
+        ++$lock_revision;
+        $lock_dirty = 1;
+        # Preserve the existing queue policy: acquiring/transferring a lock
+        # discards input queued before that ownership; unlock remains unchanged.
+        if (defined $lock_owner) {
+            $pty_input = '';
+            $writable->remove($master);
+        }
+    };
+    my $expire_takeover = sub {
+        $clear_takeover->('Console control request expired. You can request again.')
+            if $pending_takeover && time >= $pending_takeover->{expires};
     };
 
     $SIG{PIPE} = 'IGNORE';
@@ -474,6 +551,7 @@ sub main {
             last;
         }
         my $now = time;
+        $expire_takeover->();
         for my $state (values %clients) {
             if (($state->{handshake} && $now - $state->{created} > 10) ||
                 $now - $state->{last_seen} > 90) {
@@ -542,7 +620,7 @@ sub main {
                         $close_after_output->($state);
                         next;
                     }
-                    my ($status, $response, $versioned, $cursor) = parse_http_upgrade(\$state->{input}, $path);
+                    my ($status, $response, $versioned, $cursor, $readonly, $role, $identity, $agent) = parse_http_upgrade(\$state->{input}, $path);
                     next if $status == 0;
                     if ($status < 0) {
                         my $body = "$response\n";
@@ -553,6 +631,10 @@ sub main {
                     }
                     $state->{handshake} = 0;
                     $state->{versioned} = $versioned;
+                    $state->{readonly} = $readonly;
+                    $state->{role} = $role;
+                    $state->{identity} = $identity;
+                    $state->{agent} = $agent;
                     $lock_dirty = 1;
                     $queue_client->($state, $response);
                     my $start = $output_offset - length($backlog);
@@ -585,19 +667,96 @@ sub main {
                 }
                 for my $event (@events) {
                     my ($opcode, $payload) = @$event;
+                    # Set only by the trusted loopback HTTP proxy. Applies to all
+                    # protocols, fragmented frames, locks and terminal responses.
+                    next if $state->{readonly} && ($opcode == WS_TEXT || $opcode == WS_BINARY);
                     if ($opcode == WS_TEXT && ($state->{versioned} // 0) == 2) {
                         # In v2 text frames are controls, binary frames are PTY input.
                         # Never interpret a pasted CLI command as a lock request.
                         my $control = eval { decode_json($payload) };
                         my $action = ref($control) eq 'HASH' ? ($control->{action} // '') : '';
                         my $error = '';
-                        if ($action !~ /^(lock|unlock|takeover)$/ ||
+                        $expire_takeover->();
+                        my $owner = defined($lock_owner) ? $clients{$lock_owner} : undef;
+                        my $needs_approval = ($state->{role} // '') eq 'writer' &&
+                            $owner && ($owner->{role} // '') eq 'admin';
+                        if ($action !~ /^(lock|borrow|reclaim|unlock|takeover|request-takeover|cancel-takeover|approve-takeover|deny-takeover)$/ ||
                             ref($control->{revision}) || !defined($control->{revision}) ||
                             $control->{revision} !~ /^\d{1,15}$/) {
                             $error = 'Invalid console lock request';
                         }
                         elsif ($control->{revision} != $lock_revision) {
                             $error = 'The console lock changed. Please try again.';
+                        }
+                        elsif ($action eq 'borrow') {
+                            if (!$borrowable->($state)) {
+                                $error = 'Only the Agent belonging to the lock owner login can borrow this console.';
+                            } elsif (grep { $_->{id} != $state->{id} && $borrowed->($_) } values %clients) {
+                                $error = 'Another Agent operation is using this console lock. Read again before retrying.';
+                            } else {
+                                $clear_takeover->('Console control request cancelled: Agent access started.');
+                                ++$lock_revision;
+                                $state->{borrow_revision} = $lock_revision;
+                                $lock_dirty = 1;
+                                $pty_input = '';
+                                $writable->remove($master);
+                            }
+                        }
+                        elsif ($action eq 'reclaim') {
+                            if (!defined($lock_owner) || $lock_owner != $state->{id} || !$agent_busy->()) {
+                                $error = 'Only the lock owner can take back control from its Agent.';
+                            } else {
+                                $clear_takeover->('Console control request cancelled: owner took back control.');
+                                ++$lock_revision; # Invalidates borrowed access while retaining the owner.
+                                $lock_dirty = 1;
+                                $pty_input = '';
+                                $writable->remove($master);
+                            }
+                        }
+                        elsif ($action =~ /^(approve|deny|cancel)-takeover$/) {
+                            if (!$pending_takeover || ref($control->{request_id}) ||
+                                ($control->{request_id} // '') ne $pending_takeover->{id} ||
+                                $pending_takeover->{revision} != $lock_revision) {
+                                $error = 'The console control request expired or changed.';
+                            }
+                            elsif ($action eq 'cancel-takeover') {
+                                if ($state->{id} != $pending_takeover->{requester}) {
+                                    $error = 'Only the requesting station can cancel this request.';
+                                } else { $clear_takeover->('Console control request cancelled.'); }
+                            }
+                            elsif (($state->{role} // '') ne 'admin' ||
+                                   $state->{id} != $pending_takeover->{owner} ||
+                                   !defined($lock_owner) || $lock_owner != $state->{id}) {
+                                $error = 'Only the administrator holding this console lock can decide.';
+                            }
+                            elsif ($action eq 'deny-takeover') {
+                                $clear_takeover->('The administrator denied your console control request.');
+                            }
+                            elsif (!$clients{$pending_takeover->{requester}} ||
+                                   $clients{$pending_takeover->{requester}}->{close_after_write}) {
+                                $clear_takeover->('Console control request cancelled: the requester disconnected.');
+                                $error = 'The requesting station is no longer connected.';
+                            }
+                            else {
+                                my $requester = $pending_takeover->{requester};
+                                $clear_takeover->('The administrator approved your console control request.');
+                                $change_owner->($requester);
+                            }
+                        }
+                        elsif ($action eq 'request-takeover' || ($action eq 'takeover' && $needs_approval)) {
+                            if (!$needs_approval) {
+                                $error = 'This console does not require an administrator control request.';
+                            }
+                            elsif ($pending_takeover && $pending_takeover->{requester} != $state->{id}) {
+                                $error = 'Another station is already awaiting approval. Please try again later.';
+                            }
+                            elsif (!$pending_takeover) {
+                                # IDs never repeat even when socket descriptors are reused.
+                                $pending_takeover = { id => $epoch . '-' . ++$request_sequence,
+                                    requester => $state->{id}, owner => $lock_owner,
+                                    revision => $lock_revision, expires => time + $takeover_timeout };
+                                $lock_dirty = 1;
+                            }
                         }
                         elsif ($action eq 'unlock' && defined($lock_owner) && $lock_owner != $state->{id}) {
                             $error = 'Only the station holding the lock can release it. Use Take over instead.';
@@ -607,22 +766,20 @@ sub main {
                         }
                         else {
                             my $next_owner = $action eq 'unlock' ? undef : $state->{id};
-                            if ((defined($next_owner) ? $next_owner : -1) != (defined($lock_owner) ? $lock_owner : -1)) {
-                                $lock_owner = $next_owner;
-                                ++$lock_revision;
-                                $lock_dirty = 1;
-                                # A takeover also stops buffered input from the previous writer.
-                                if (defined $lock_owner) {
-                                    $pty_input = '';
-                                    $writable->remove($master);
-                                }
-                            }
+                            $change_owner->($next_owner);
                         }
                         $send_lock->($state, $error);
                     }
                     elsif ($opcode == WS_TEXT || $opcode == WS_BINARY) {
                         # Enforce exclusivity for every client, including legacy clients.
-                        next if defined($lock_owner) && $lock_owner != $state->{id};
+                        if ($state->{agent} && !(defined($lock_owner) && $lock_owner == $state->{id}) && !$borrowed->($state)) {
+                            $send_lock->($state, 'Console access changed; read again before sending input.');
+                            next;
+                        }
+                        next if defined($lock_owner) && $lock_owner != $state->{id} && !$borrowed->($state);
+                        # Borrowing is exclusive even against the owning browser,
+                        # including old/malicious clients ignoring the UI state.
+                        next if !$state->{agent} && $agent_busy->();
                         if (length($pty_input) + length($payload) > 2 * $max_frame_bytes) {
                             $queue_client->($state, websocket_close_frame(1013, 'Console input queue is full'));
                             $close_after_output->($state);

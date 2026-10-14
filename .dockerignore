@@ -2,6 +2,7 @@
 **
 !Dockerfile
 !lab_server.py
+!web_auth.py
 !storage.py
 !container_console.py
 !link_fabric.py

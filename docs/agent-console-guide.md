@@ -9,8 +9,10 @@ With local models that struggle to reach the initial prompt, the user can prepar
 the console before requesting a task. On Cisco IOS/IOL, obtain a live prompt,
 enter `enable` when the requested configuration or inspection needs privileged
 EXEC, and run `terminal length 0` for long output. Basic commands permitted in
-user EXEC may not need elevation. Leave an empty EXEC prompt and release any
-human input lock; do not pre-enter configuration mode just for the Agent.
+user EXEC may not need elevation. Leave an empty EXEC prompt; do not pre-enter
+configuration mode just for the Agent. With authentication enabled, the admin
+Agent may borrow its own Weblab login's lock. Other human locks must be released
+before handing off to the Agent.
 
 This preparation has helped in maintainer testing, but is not guaranteed or
 mandatory for every model. The Agent must still read the current console, verify
@@ -174,6 +176,11 @@ If input is rejected for a stale cursor, no command was sent. Read from the last
 cursor, drain remaining output and inspect the new prompt before sending again.
 If `input_status` is `unknown`, delivery may have occurred: inspect output before
 any retry. Respect human input locks and stop when another operator takes over.
+`lock_owned_by_session=true` means the authenticated Agent may use its login's
+lock for approved input without taking it over. It still needs a fresh read and
+the ordinary console-input permission/approval. The browser cannot type during
+borrowed access; its owner can explicitly take back control, which ends that
+access without undoing already delivered commands. Read fresh state before retrying.
 YOLO changes approval handling; it does not bypass these checks.
 
 In your final answer distinguish what you read, what you executed, what the

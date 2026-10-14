@@ -6,13 +6,19 @@ Start with [installation](installation.md), then build a small lab using the
 [starter exercise](../examples/starter.md). These pages describe the current
 workspace and its supported profiles.
 
+Release notes: [v0.7.0](releases/v0.7.0.md), [v0.6.0](releases/v0.6.0.md),
+[v0.5.1](releases/v0.5.1.md). Authentication and shared instructions are available starting with v0.7.0.
+
 ## User guide
+
+[Optional authentication and roles](authentication.md) — fixed accounts, login,
+writer/reader permissions, admin activity records and current integration limits.
 
 1. [Installation and upgrades](installation.md) — Docker, native Linux, KVM and remote access.
 2. [Images and device profiles](devices.md) — supported releases, ports, boot and saving.
 3. [Topology and window arrangement](topology.md) — cabling, panels, zoom, fullscreen and tiling.
 4. [Consoles](consoles.md) — tabs, floating windows, mobile keys, clipboard and shared input locks.
-5. [Instructions viewer](instructions.md) — read Markdown/text exercises inside the workspace.
+5. [Instructions viewer](instructions.md) — preview Markdown/text exercises and publish them to all stations.
 6. [Link failures](link-actions.md) — directional frame loss and supported carrier controls.
 7. [Saving and restoring labs](backups.md) — JSON, configuration snippets, ZIP, logs and state precedence.
 8. [Creating practice labs](practice-labs.md) — topology JSON contract and authoring guidance.

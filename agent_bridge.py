@@ -1,5 +1,6 @@
 """Opt-in browser/session bridge and restricted companion gateway. No SDK needed."""
 import copy
+import functools
 import hashlib
 import http.client
 import json
@@ -16,6 +17,8 @@ from urllib.parse import urlsplit
 from agent_transport import JSONHandler, UnixServer, request, save_json, OPENAI_HOSTS, tunnel
 import lab_automation
 import agent_attachments
+import console_capture
+import web_auth
 
 ROOT = Path(__file__).resolve().parent
 MAX_SESSIONS = 8
@@ -37,8 +40,9 @@ def endpoint(value):
 
 
 class Bridge:
-    def __init__(self, lab, sockets, state_dir, providers):
+    def __init__(self, lab, sockets, state_dir, providers, auth=None):
         self.lab = lab
+        self.auth = auth
         self.sockets = Path(sockets)
         self.path = Path(state_dir) / 'sessions.json'
         self.providers = [endpoint(p.strip()) for p in providers.split(',') if p.strip()]
@@ -47,6 +51,7 @@ class Bridge:
         self.lock = threading.RLock()
         self.turns, self.approvals, self.observations = {}, {}, {}
         self.tool_errors = {}
+        self.streams = {}
         self.touch_flushed = time.monotonic()
         self.sessions = json.loads(self.path.read_text()) if self.path.exists() else {}
         # Independent automation service: enabling Agent does not enable write-capable public MCP routes.
@@ -62,8 +67,13 @@ class Bridge:
         self.gateway.bridge = self
         self.thread = threading.Thread(target=self.gateway.serve_forever, daemon=True)
         self.thread.start()
+        self.stopping = threading.Event()
+        self.janitor = threading.Thread(target=self.maintain_owners, daemon=True)
+        self.janitor.start()
 
     def close(self):
+        self.stopping.set()
+        self.janitor.join(timeout=12)
         with self.lock:
             for session in self.sessions.values():
                 self.revoke(session)
@@ -74,6 +84,72 @@ class Bridge:
     def persist(self):
         save_json(self.path, self.sessions)
 
+    def owner_allowed(self, owner):
+        if self.auth:
+            principal = self.auth.session_digest(owner) if owner else None
+            return bool(principal and principal['role'] == 'admin')
+        return owner is None
+
+    def available(self, session):
+        return (not session.get('retired') and time.time() - session['touched'] < TTL
+                and self.owner_allowed(session.get('owner')))
+
+    def require_owner(self, session):
+        if not self.available(session):
+            raise ValueError('Agent session expired. Open a new session.')
+
+    def retire(self, session):
+        """Revoke first, then let maintenance delete companion state out of lock."""
+        session['retired'] = True
+        self.revoke(session)
+        for connection in self.streams.get(session['id'], set()):
+            sock = connection.sock
+            if sock:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+
+    def revoke_owner(self, owner):
+        with self.lock:
+            for session in self.sessions.values():
+                if session.get('owner') == owner:
+                    self.retire(session)
+            self.persist()
+
+    def maintain_owners(self):
+        while not self.stopping.wait(0.5):
+            try:
+                self.clean_retired()
+            except Exception:
+                # Capability validation remains fail-closed if storage/companion
+                # is unavailable. Retry deletion without logging private content.
+                continue
+
+    def clean_retired(self):
+        with self.lock:
+            changed = False
+            for session in self.sessions.values():
+                if (self.auth or session.get('owner')) and not self.available(session) and not session.get('retired'):
+                    self.retire(session)
+                    changed = True
+            if changed:
+                self.persist()
+            retired = [(key, session) for key, session in self.sessions.items() if session.get('retired')]
+        for key, session in retired:
+            if self.stopping.is_set():
+                return
+            try:
+                self.companion('delete', session)
+            except (ValueError, OSError):
+                continue  # Persisted tombstone prevents reuse, including after restart.
+            with self.lock:
+                self.sessions.pop(key, None)
+                self.approvals.pop(session['id'], None)
+                self.tool_errors.pop(session['id'], None)
+                self.streams.pop(session['id'], None)
+                self.persist()
+
     def companion(self, action, session, data=None):
         payload = {'session': session['id'], 'gateway_token': session['gate'],
                    'settings': session['settings'], **(data or {})}
@@ -82,11 +158,11 @@ class Bridge:
         except (OSError, http.client.HTTPException) as exc:
             raise ValueError('Agent companion is unavailable. Start the optional companion service and reconnect.') from exc
 
-    def resolve(self, token):
+    def resolve(self, token, owner=None):
         digest = hashlib.sha256(token.encode()).hexdigest()
         with self.lock:
             session = self.sessions.get(digest)
-            if not session or time.time() - session['touched'] > TTL:
+            if not session or session.get('owner') != owner or not self.available(session):
                 raise ValueError('Agent session expired. Open a new session.')
             session['touched'] = time.time()
             # Keep remembered sessions usable across core restarts without writing
@@ -124,26 +200,29 @@ class Bridge:
                     lab_changes=data['lab_changes'], console_input=data['console_input'],
                     auto_approve=data['auto_approve'])
 
-    def api(self, action, token='', data=None):
+    def api(self, action, token='', data=None, owner=None):
         with self.lock:
-            return self._api(action, token, data)
+            if not self.owner_allowed(owner):
+                raise ValueError('Agent requires an active administrator login')
+            return self._api(action, token, data, owner)
 
-    def _api(self, action, token='', data=None):
+    def _api(self, action, token='', data=None, owner=None):
         data = data or {}
         if action == 'info':
-            return {'enabled': True, 'providers': self.providers, 'openai_endpoint': OPENAI_ENDPOINT, 'mode': 'approval'}
+            return {'enabled': True, 'providers': self.providers, 'openai_endpoint': OPENAI_ENDPOINT, 'mode': 'approval',
+                    **({'session_scope': hashlib.sha256(owner.encode()).hexdigest()} if owner else {})}
         if action == 'session':
             with self.lock:
                 for key, stale in list(self.sessions.items()):
-                    if time.time() - stale['touched'] >= TTL:
+                    if time.time() - stale['touched'] >= TTL and not stale.get('owner') and not stale.get('retired'):
                         self.revoke(stale)
                         self.approvals.pop(stale['id'], None)
                         self.tool_errors.pop(stale['id'], None)
                         del self.sessions[key]
-                if len(self.sessions) >= MAX_SESSIONS:
+                if sum(not s.get('retired') for s in self.sessions.values()) >= MAX_SESSIONS:
                     raise ValueError('Agent session limit reached. Close an existing session or wait for expiry.')
                 token = secrets.token_urlsafe(32)
-                session = {'id': secrets.token_hex(16), 'gate': secrets.token_urlsafe(32),
+                session = {'id': secrets.token_hex(16), 'gate': secrets.token_urlsafe(32), 'owner': owner,
                            'touched': time.time(), 'proposals': [], 'settings': {
                                'provider': 'ollama', 'endpoint': self.providers[0], 'model': 'gpt-oss:20b',
                                'context_window': 32768, 'turn_timeout': 900,
@@ -151,7 +230,7 @@ class Bridge:
                 self.sessions[hashlib.sha256(token.encode()).hexdigest()] = session
                 self.persist()
             return {'token': token, 'settings': session['settings']}
-        session = self.resolve(token)
+        session = self.resolve(token, owner)
         if action == 'attachment':
             if set(data) != {'conversation_id', 'id'}:
                 raise ValueError('Unexpected attachment arguments')
@@ -269,11 +348,13 @@ class Bridge:
                     self.persist()
             return result
         if action == 'close':
-            self.revoke(session)
+            self.retire(session)
+            self.persist()
             self.companion('delete', session)
             with self.lock:
                 self.approvals.pop(session['id'], None)
                 self.tool_errors.pop(session['id'], None)
+                self.streams.pop(session['id'], None)
                 del self.sessions[hashlib.sha256(token.encode()).hexdigest()]
                 self.persist()
             return {'closed': True}
@@ -293,6 +374,7 @@ class Bridge:
                 item['event'].set()
 
     def active_turn(self, session, turn_id):
+        self.require_owner(session)
         turn = self.turns.get(session['id'])
         if not turn or turn['id'] != turn_id or time.monotonic() >= turn['expires']:
             raise ValueError('Agent turn ended or expired; no action was performed')
@@ -345,8 +427,22 @@ class Bridge:
         item['event'].set()
         return {'id': item['id'], 'status': item['status']}
 
+    def console_service(self, session):
+        if not self.auth:
+            return self.automation
+        self.require_owner(session)
+        principal = self.auth.session_digest(session['owner'])
+        if not principal or principal['role'] != 'admin':
+            raise ValueError('Administrator login required')
+        # Per-call copy shares proposal/revision stores, never mutable authority.
+        # Identity is server-derived and absent from the tool argument schema.
+        service = copy.copy(self.automation)
+        service.console_factory = functools.partial(console_capture.Console,
+            identity=(principal['role'], web_auth.console_identity(session['owner'])))
+        return service
+
     def guarded_tool(self, session, operation, data, turn_id):
-        service = self.automation
+        service = self.console_service(session) if operation == 'console-send' else self.automation
         permission = 'console_input' if operation == 'console-send' else 'lab_changes'
         handler = {'apply': service.apply, 'start-node': service.start_node,
                    'console-send': service.console_send}[operation]
@@ -439,7 +535,7 @@ class Bridge:
                 item['status'], item['error'] = 'failed', result.get('error', '')
         return result
 
-    def provider(self, settings, method, suffix, body=None, handler=None):
+    def provider(self, settings, method, suffix, body=None, handler=None, session=None):
         # The destination comes exclusively from operator-allowlisted browser settings.
         if settings.get('provider', 'ollama') != 'ollama' or settings['endpoint'] not in self.providers:
             raise ValueError('Ollama relay is not available for this provider')
@@ -447,6 +543,13 @@ class Bridge:
         cls = http.client.HTTPSConnection if url.scheme == 'https' else http.client.HTTPConnection
         connection = cls(url.hostname, url.port, timeout=settings['turn_timeout'] if handler else 10)
         try:
+            if session:
+                # Establish first, then register under the revocation lock. A
+                # revoked stream is shut down even while waiting for its first byte.
+                connection.connect()
+                with self.lock:
+                    self.require_owner(session)
+                    self.streams.setdefault(session['id'], set()).add(connection)
             connection.request(method, url.path + suffix, body,
                                {'Content-Type': 'application/json', 'Accept': 'text/event-stream, application/json'})
             response = connection.getresponse()
@@ -464,6 +567,8 @@ class Bridge:
             handler.end_headers()
             deadline, count = time.monotonic() + settings['turn_timeout'], 0
             while time.monotonic() < deadline:
+                if session:
+                    self.require_owner(session)
                 chunk = response.read1(65536)
                 if not chunk:
                     break
@@ -474,15 +579,40 @@ class Bridge:
                 handler.wfile.flush()
         finally:
             connection.close()
+            if session:
+                with self.lock:
+                    self.streams.get(session['id'], set()).discard(connection)
 
     def tool(self, session, method, path, data, turn_id=''):
+        audit = None
+        if self.auth and method == 'POST' and path in (
+                '/api/automation/preview', '/api/automation/apply',
+                '/api/automation/start-node', '/api/automation/console-send'):
+            principal = self.auth.session_digest(session.get('owner'))
+            node = data.get('node_id', '') if isinstance(data, dict) else ''
+            target = node if isinstance(node, str) and re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', node) else ''
+            with self.lab.lock:
+                if target not in {item['id'] for item in self.lab.topology['nodes']}:
+                    target = ''
+            audit = self.auth.activity_begin(principal['name'] if principal else None, session.get('owner'),
+                                            'agent', 'tool.' + path.rsplit('/', 1)[1], target)
         try:
+            self.require_owner(session)
             result = self._tool(session, method, path, data, turn_id)
         except Exception as exc:
+            if audit is not None:
+                self.auth.activity_finish(audit, 'failed')
             with self.lock:
                 self.tool_errors[session['id']] = {'operation': path.rsplit('/', 1)[-1],
                                                    'message': str(exc)[:1500]}
             raise
+        if audit is not None:
+            outcome = 'tool_ok'
+            if path.endswith('/console-send'):
+                outcome = 'input_sent' if result.get('input_status') == 'sent' else 'uncertain'
+            elif path.endswith('/start-node') and not result.get('started'):
+                outcome = 'failed'
+            self.auth.activity_finish(audit, outcome)
         with self.lock:
             if self.tool_errors.get(session['id'], {}).get('operation') == path.rsplit('/', 1)[-1]:
                 self.tool_errors.pop(session['id'], None)
@@ -508,7 +638,7 @@ class Bridge:
             if match and match[1] in session['proposals']:
                 return service.proposal(match[1])
         if method == 'POST' and path == '/api/automation/console-read':
-            result = service.console_read(**data)
+            result = self.console_service(session).console_read(**data)
             with self.lock:
                 self.observations.setdefault(session['id'], {})[data['node_id']] = copy.deepcopy(result)
             return result
@@ -529,7 +659,7 @@ class Gateway(JSONHandler):
             token = self.headers.get('Authorization', '').removeprefix('Bearer ')
             with bridge.lock:
                 session = next((s for s in bridge.sessions.values()
-                                if secrets.compare_digest(s['gate'], token) and time.time()-s['touched'] < TTL), None)
+                                if secrets.compare_digest(s['gate'], token) and bridge.available(s)), None)
             if not session:
                 self.reply({'error': 'Unknown companion capability'}, 403)
                 return
@@ -539,7 +669,7 @@ class Gateway(JSONHandler):
             if self.command == 'POST' and self.path == '/provider/responses':
                 # Never honor a model-selected alternate endpoint or model.
                 data['model'] = session['settings']['model']
-                bridge.provider(session['settings'], 'POST', '/responses', json.dumps(data).encode(), self)
+                bridge.provider(session['settings'], 'POST', '/responses', json.dumps(data).encode(), self, session=session)
             elif self.path.startswith('/tools/'):
                 self.reply(bridge.tool(session, self.command, self.path[len('/tools'):], data,
                                        self.headers.get('X-Weblab-Agent-Turn', '')))
@@ -563,7 +693,7 @@ class Gateway(JSONHandler):
             token = self.headers.get('Authorization', '').removeprefix('Bearer ')
             with bridge.lock:
                 session = next((s for s in bridge.sessions.values()
-                                if secrets.compare_digest(s['gate'], token) and time.time()-s['touched'] < TTL), None)
+                                if secrets.compare_digest(s['gate'], token) and bridge.available(s)), None)
                 if not session or session['settings'].get('provider') != 'openai' or self.path not in OPENAI_HOSTS:
                     self.reply({'error': 'OpenAI connection is not permitted'}, 403)
                     return
@@ -574,7 +704,7 @@ class Gateway(JSONHandler):
             def enabled():
                 with bridge.lock:
                     return (session in bridge.sessions.values() and session['settings'].get('provider') == 'openai'
-                            and time.time()-session['touched'] < TTL)
+                            and bridge.available(session))
             tunnel(self.connection, upstream, enabled)
         except OSError:
             self.close_connection = True
