@@ -75,7 +75,7 @@ const agentChoices = [...document.querySelectorAll('.agent-video-picker a')];
 if (agentPanels.length) {
   const selectAgentVideo = () => {
     const linkedPanel = agentPanels.find(panel => '#' + panel.id === location.hash);
-    const selected = linkedPanel || agentPanels[0];
+    const selected = linkedPanel || agentPanels.find(panel => !panel.hidden) || agentPanels[0];
     agentPanels.forEach(panel => {
       panel.hidden = panel !== selected;
       if (panel.hidden) panel.querySelector('video').pause();
@@ -89,3 +89,16 @@ if (agentPanels.length) {
   selectAgentVideo();
   window.addEventListener('hashchange', selectAgentVideo);
 }
+
+// Preserve deep links when supplementary material is folded into the page.
+const revealLinkedDetails = () => {
+  const target = document.getElementById(location.hash.slice(1));
+  if (!target) return;
+  let element = target;
+  while (element) {
+    if (element instanceof HTMLDetailsElement) element.open = true;
+    element = element.parentElement;
+  }
+};
+revealLinkedDetails();
+window.addEventListener('hashchange', revealLinkedDetails);

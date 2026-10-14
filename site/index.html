@@ -3,52 +3,148 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Build, run and troubleshoot network labs in one browser workspace. Bring topology, consoles and an optional AI Agent together to create, configure and check practice labs.">
-  <meta name="theme-color" content="#10171c">
-  <title>Weblab.Network — Your network lab. All in one view.</title>
+  <meta name="description" content="A self-hosted workbench for network engineering. Run device images, connect real consoles, test failures and build exercises with an optional Agent. Open source, on your Linux host.">
+  <meta name="theme-color" content="#f5f4ef">
+  <title>Weblab.Network — A workbench for network engineering</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css?v=6f07b11178de">
-  <script src="page.js?v=778109763495" defer></script>
+  <link rel="stylesheet" href="style.css?v=3badf3d742fd">
+  <script src="page.js?v=286240326c71" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
-    <a class="brand" href="#" aria-label="Weblab home"><span class="brand-mark" aria-hidden="true">w<span>e</span>b</span><span class="brand-label">LAB<span>NETWORK WORKSPACE</span></span></a>
-    <nav aria-label="Main navigation">
-      <a href="#features">Explore</a>
-      <a href="https://github.com/weblab-network/weblab/wiki">Documentation <span aria-hidden="true">↗</span></a>
-      <a class="nav-github" href="https://github.com/weblab-network/weblab">GitHub <span aria-hidden="true">↗</span></a>
-    </nav>
+    <a class="brand" href="#" title="Weblab home"><span class="brand-mark">w<span>e</span>b</span> <span class="brand-label">LAB <span>NETWORK WORKSPACE</span></span></a>
+    <nav aria-label="Main navigation"><a href="https://github.com/weblab-network/weblab/wiki">Documentation ↗</a><a class="nav-github" href="https://github.com/weblab-network/weblab">GitHub ↗</a></nav>
   </header>
-
+  <nav class="section-index" aria-label="On this page"><div class="container"><a href="#features"><span>01</span> Workspace</a><a href="#agent-videos"><span>02</span> Agent</a><a href="#access"><span>03</span> Shared access</a><a href="#watch"><span>04</span> In action</a><a href="#start"><span>05</span> Installation</a></div></nav>
   <main id="main">
     <section class="hero container" aria-labelledby="hero-title">
-      <div class="hero-copy">
-        <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> OPEN SOURCE. SELF-HOSTED. YOUR LAB.</p>
-        <h1 id="hero-title">Your network lab.<br><span>All in one view.</span></h1>
-        <p class="hero-description">Build topologies, open consoles and run exercises.<br class="desktop-break"> Keep your network in one browser workspace.</p>
-        <p class="hero-agent"><strong>Now with an optional AI Agent.</strong> Create labs, configure devices and check connectivity<br class="desktop-break"> using Ollama or OpenAI. You decide what it can change.</p>
-        <div class="hero-actions">
-          <a class="button primary" href="https://github.com/weblab-network/weblab/wiki/Installation">Build your first lab <span aria-hidden="true">→</span></a>
-          <a class="button secondary agent-cta" href="#agent-create-exercise">Watch the Agent build a lab <span aria-hidden="true">▶</span></a>
-          <a class="button secondary" href="#watch">Watch the overview <span aria-hidden="true">▶</span></a>
+      <div class="hero-intro">
+        <div class="hero-copy">
+          <p class="eyebrow">OPEN SOURCE / SELF-HOSTED / NETWORK ENGINEERING</p>
+          <h1 id="hero-title">Your network.<br>Your workbench.</h1>
+          <p class="hero-description">Wire the topology. Work the console.<br>Understand what happens between them.</p>
+          <p class="hero-detail">Run real networking software and virtual network operating systems on your own Linux host. Build topologies, access live consoles, and automate your lab with AI.</p>
+          <div class="hero-actions"><a class="button primary" href="#start">Set up Weblab <span aria-hidden="true">→</span></a><a class="button secondary" href="#agent-create-exercise">Watch the Agent work <span aria-hidden="true">↘</span></a></div>
         </div>
-        <p class="hero-note">Runs on your Linux host. Works from your desktop, tablet or phone.</p>
+        <figure class="network-sheet">
+          <a class="network-snapshot" href="assets/multi-vendor.png" target="_blank" rel="noopener" aria-label="Open full-size multi-vendor test topology in a new tab">
+            <img src="assets/multi-vendor.png" width="1338" height="977" fetchpriority="high" alt="Weblab workspace showing 16 running devices in a test topology connecting Cisco IOL and IOSv routers and switches, Juniper vJunos devices, an Extreme EXOS switch, an Arista vEOS switch, an FRR router and seven Alpine PCs.">
+          </a>
+          <figcaption><strong>Real multi-vendor test topology.</strong><span class="snapshot-families">Cisco · Juniper · Extreme · Arista · FRR · Alpine</span><a class="text-link" href="assets/multi-vendor.png" target="_blank" rel="noopener">View full size ↗</a></figcaption>
+        </figure>
       </div>
-      <figure class="workspace-shot">
-        <div class="shot-bar"><span><i aria-hidden="true"></i> THE WORKSPACE</span><span>TOPOLOGY + CONSOLES + AGENT</span></div>
-        <a href="assets/weblab-agent-create-exercise.png" target="_blank" rel="noopener" aria-label="Open full-size Agent workspace screenshot in a new tab">
-          <img src="assets/weblab-agent-create-exercise.png" width="1920" height="1200" alt="An Agent-created practice lab with two FRR routers, three LL2S switches, Linux PCs, a live console and OSPF/RSTP student tasks." fetchpriority="high">
-          <span class="image-hint">View full size ↗</span>
-        </a>
-        <figcaption>A practice lab built with the Agent: FRR routers, LL2S switches and OSPF/RSTP tasks for the student.</figcaption>
+      <div class="release-strip"><a href="https://github.com/weblab-network/weblab/releases/tag/v0.7.0"><strong>v0.7.0</strong> Authentication, shared instructions &amp; admin Agent <span aria-hidden="true">↗</span></a><span>Runs locally · Opens in your browser</span></div>
+      <figure class="workspace-shot hero-shot">
+        <div class="shot-bar"><span>WEBLAB / WORKSPACE</span><span>TOPOLOGY · CONSOLES · AGENT</span></div>
+        <a href="assets/weblab-agent-create-exercise.png" target="_blank" rel="noopener" aria-label="Inspect full size: practice-lab workspace, opens in a new tab"><img src="assets/weblab-agent-create-exercise.png" width="1920" height="1200" alt="Agent-created practice lab with FRR routers, LL2S switches, Linux PCs, live consoles and OSPF/RSTP student tasks." fetchpriority="high"><span class="image-hint">Inspect full size ↗</span></a>
+        <figcaption><span>FIELD VIEW / 01</span> A practice lab built with the Agent. Device consoles and student tasks stay beside the topology.</figcaption>
       </figure>
     </section>
+    <section id="features" class="container chapter" aria-labelledby="features-title">
+      <div class="section-heading"><p class="eyebrow">01 / THE WORKSPACE</p><h2 id="features-title">Keep the network in view.</h2><p>The map explains the connections. The consoles show what the devices are doing. Arrange both around the task at hand.</p></div>
+      <div class="workspace-editorial">
+        <figure class="workspace-shot"><a href="assets/floating-windows.png" target="_blank" rel="noopener" aria-label="Inspect full size: arranged workspace, opens in a new tab"><img src="assets/floating-windows.png" width="1920" height="1080" loading="lazy" alt="A topology, four device consoles and instructions arranged in one Weblab browser tab."><span class="image-hint">Inspect full size ↗</span></a><figcaption>One browser tab. Your choice of split, tabbed or floating views.</figcaption></figure>
+        <dl class="workspace-notes"><div><dt>A layout for the job</dt><dd>Keep the topology full height beside consoles, instructions and Agent. Switch layouts without closing your consoles or drafts.</dd></div><div><dt>Shared console, coordinated input</dt><dd>Multiple stations see the same output. Input locks keep operators from typing over each other.</dd></div><div><dt>The exercise at your elbow</dt><dd>Open Markdown or text beside the CLI. An admin can publish instructions to every station.</dd></div></dl>
+      </div>
+      <div class="lab-methods">
+        <article><p class="eyebrow">TEST A FAILURE</p><h3>Change a link. Watch the response.</h3><p>Introduce directional frame loss or use supported carrier controls. Inspect the consoles as the network reacts, then restore the link.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Link-failures">Link controls and supported profiles ↗</a></article>
+        <article><p class="eyebrow">KEEP THE EXPERIMENT</p><h3>Save the state you need.</h3><p>Share topology JSON or export supported saved device storage as a ZIP after stopping the lab. Keep exercise files separately; images and licenses stay with you.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Saving-and-restoring-labs">Choose an export format ↗</a></article>
+      </div>
+      <details id="mobile" class="video-summary mobile-section"><summary>At another desk? See the tablet and phone workspaces.</summary><p>Console key shortcuts and movable panes also work on smaller screens. These captures show the restricted hosted preview.</p>
+      <div class="mobile-gallery">
+        <figure class="workspace-shot">
+          <a href="assets/mobile-tablet-fullscreen.png" target="_blank" rel="noopener" aria-label="View full size: tablet workspace, opens in a new tab">
+            <img src="assets/mobile-tablet-fullscreen.png" width="722" height="1153" alt="Fullscreen tablet workspace with a floating topology above a tabbed Junos console and the onscreen keyboard." loading="lazy">
+            <span class="image-hint">View full size ↗</span>
+          </a>
+          <figcaption>Tablet · Fullscreen topology and tabbed consoles, arranged above the keyboard.</figcaption>
+        </figure>
+        <figure class="workspace-shot">
+          <a href="assets/mobile-phone-fullscreen.png" target="_blank" rel="noopener" aria-label="View full size: phone workspace, opens in a new tab">
+            <img src="assets/mobile-phone-fullscreen.png" width="482" height="801" alt="Phone workspace with manually arranged topology and Junos console windows above the onscreen keyboard." loading="lazy">
+            <span class="image-hint">View full size ↗</span>
+          </a>
+          <figcaption>Phone · Manually position windows to keep the topology and active console in view.</figcaption>
+        </figure>
+      </div>
+      <p class="watch-note">Screenshots of the shared live preview, which has restricted controls.</p>
+      <a class="text-link" href="https://demo.weblab.network/">Try it in your browser ↗</a>
+      </details>
+    </section>
+      <section id="agent-videos" class="agent-media container chapter" aria-labelledby="agent-title">
+        <p class="eyebrow">02 / OPTIONAL AGENT</p>
+        <h2 id="agent-title">An assistant at the console.<br>You set the permissions.</h2>
+        <p>Build a practice lab or configure an existing one with Ollama or OpenAI. The Agent issues the console commands; devices produce the output. In these recordings, the user navigates the workspace and grants permissions without manually typing console commands.</p>
+        <nav class="agent-video-picker" aria-label="Choose an Agent video">
+          <a href="#agent-create-exercise" aria-controls="agent-create-exercise"><img src="assets/weblab-agent-create-exercise-thumb.jpg" width="640" height="400" alt="" loading="lazy"><span><strong>Build a practice lab</strong><span>Topology + student exercise · 1:13</span></span></a>
+          <a href="#agent-configure-verify" aria-controls="agent-configure-verify"><img src="assets/weblab-agent-configure-verify-thumb.jpg" width="640" height="400" alt="" loading="lazy"><span><strong>Configure and verify</strong><span>Permissions + console checks · 1:16</span></span></a>
+        </nav>
+        <div class="agent-video-panels">
+        <article id="agent-create-exercise" aria-labelledby="agent-create-title">
+          <h3 id="agent-create-title">Build a practice lab</h3>
+          <figure class="workspace-shot overview-video">
+            <div class="video-stage">
+              <video controls playsinline preload="none" width="1920" height="1080" poster="assets/weblab-agent-create-exercise.png" data-status="create-exercise-status" aria-label="Build a practice lab with the Agent" aria-describedby="create-exercise-caption">
+                <source src="assets/weblab-agent-create-exercise.mp4" type="video/mp4">
+                <p><a href="https://youtu.be/7zKUZNZRGXA">Watch on YouTube</a>.</p>
+              </video>
+              <button class="video-play" type="button" hidden aria-label="Play · 1:13 — build a practice lab"><img src="assets/weblab-agent-create-exercise.png" alt="" width="1920" height="1200" loading="lazy"><span class="video-play-label"><span aria-hidden="true">▶</span> Play · 1:13</span></button>
+            </div>
+            <figcaption id="create-exercise-caption">1:13 · Silent with captions · Edited / waits shortened. Use fullscreen for a closer look at the consoles.</figcaption>
+          </figure>
+          <p id="create-exercise-status" class="watch-note" role="status" hidden></p>
+          <p>FRR routers, an LL2S switch triangle and Linux PCs. Two OSPF/RSTP tasks are intentionally left for the student. Session YOLO is enabled.</p>
+          <div class="watch-actions"><a class="text-link" href="https://youtu.be/7zKUZNZRGXA">YouTube ↗</a><a class="text-link" href="assets/weblab-agent-create-exercise.mp4" download>Download MP4</a><a class="text-link" href="assets/weblab-agent-create-exercise.png" target="_blank" rel="noopener">Full-size screenshot ↗</a></div>
+        </article>
+<article id="agent-configure-verify" aria-labelledby="agent-verify-title">
+          <h3 id="agent-verify-title">Configure and verify</h3>
+          <figure class="workspace-shot overview-video">
+            <div class="video-stage">
+              <video controls playsinline preload="none" width="1920" height="1080" poster="assets/weblab-agent-configure-verify.png" data-status="configure-verify-status" aria-label="Configure and verify with the Agent" aria-describedby="configure-verify-caption">
+                <source src="assets/weblab-agent-configure-verify.mp4" type="video/mp4">
+                <p><a href="https://youtu.be/m5IsoAnklPo">Watch on YouTube</a>.</p>
+              </video>
+              <button class="video-play" type="button" hidden aria-label="Play · 1:16 — configure and verify"><img src="assets/weblab-agent-configure-verify.png" alt="" width="1920" height="1200" loading="lazy"><span class="video-play-label"><span aria-hidden="true">▶</span> Play · 1:16</span></button>
+            </div>
+            <figcaption id="configure-verify-caption">1:16 · Silent with captions · Edited / waits shortened. Use fullscreen for a closer look at the consoles.</figcaption>
+          </figure>
+          <p id="configure-verify-status" class="watch-note" role="status" hidden></p>
+          <p>Attach an exercise, review console access, then inspect switch configuration and the Agent’s explanation. The approval dialog offers optional session YOLO.</p>
+          <div class="watch-actions"><a class="text-link" href="https://youtu.be/m5IsoAnklPo">YouTube ↗</a><a class="text-link" href="assets/weblab-agent-configure-verify.mp4" download>Download MP4</a><a class="text-link" href="assets/weblab-agent-configure-verify.png" target="_blank" rel="noopener">Full-size screenshot ↗</a></div>
+        </article>
+</div>
+        <p class="watch-note">The Agent is an optional companion for your self-hosted workspace; it is not enabled in the restricted hosted preview. Individual approvals are the default. Agent output needs verification.</p>
+        <p class="agent-usage"><strong>Bring your provider.</strong> Use an allowlisted Ollama endpoint or sign in to OpenAI. OpenAI requests consume your account’s existing allowance; Weblab supplies no additional quota. <a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Agent-window">Check setup and plan requirements ↗</a></p>
+        <div id="agent-usage" class="agent-usage-feature">
+          <h3>Track allowance, tokens and turn duration.</h3>
+          <p>Keep the topology full height beside Agent and consoles. The activity line shows remaining OpenAI account allowance and elapsed time; open its details for provider-reported tokens and reset times. Local-model tokens appear when the provider supplies them.</p>
+          <details class="video-summary">
+            <summary>See the workspace and usage details</summary>
+            <figure class="workspace-shot">
+              <a href="assets/codex-allowance-after-turn.png" target="_blank" rel="noopener" aria-label="Open full-size Agent usage screenshot in a new tab"><img src="assets/codex-allowance-after-turn.png" width="1920" height="1200" loading="lazy" alt="Topology beside Agent and console, with a completed turn's duration, OpenAI allowance and token details"></a>
+              <figcaption>Example completed turn. Allowance is shared across the signed-in account; tokens can include repeated and cached input across several model requests. These are usage indicators, not monetary cost estimates. Open the image for full-size text.</figcaption>
+            </figure>
+          </details>
+          <a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Agent-window#allowance-and-token-usage">Understand allowance and token counts ↗</a>
+        </div>
+        <a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Agent-window">Agent installation, permissions and history ↗</a>
+    </section>
 
+
+    <section id="access" class="container chapter access-section" aria-labelledby="access-title">
+      <div class="section-heading"><p class="eyebrow">03 / SHARED ACCESS</p><h2 id="access-title">One lab. Defined responsibilities.</h2><p>Enable optional authentication for a trusted group. Publish the exercise once, coordinate console ownership, and let each role do its work.</p></div>
+      <div class="access-layout">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Account permissions"><table><caption>Available in v0.7.0 · three fixed accounts</caption><thead><tr><th scope="col">Account / role</th><th scope="col">Access to the shared lab</th></tr></thead><tbody><tr><th scope="row"><code>admin</code><span>Administrator</span></th><td>Prepare topologies, publish instructions, manage the lab, review activity and use the optional Agent.</td></tr><tr><th scope="row"><code>user</code><span>Writer</span></th><td>Type in consoles, start or stop nodes and operate link faults. Topology structure and instructions stay under admin control.</td></tr><tr><th scope="row"><code>guest</code><span>Reader</span></th><td>Observe the topology and shared console output. No console input or lab operations.</td></tr></tbody></table></div>
+        <aside class="access-note"><p class="eyebrow">OPTIONAL / ADMIN AGENT</p><h3>Prepare. Publish. Verify.</h3><p>With authentication enabled, Agent access belongs to admin. Lab changes and console input still follow the Agent’s permissions and approval settings.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Authentication-and-roles">Read the permissions guide ↗</a></aside>
+      </div>
+      <p class="scope-note">Authentication is off by default. These are shared accounts in a shared lab, with common console output. They do not provide isolated user environments.</p>
+      <details id="roadmap" class="video-summary"><summary>In development: individual users and teaching controls</summary><p>AAA is an initial implementation. Named users, a live admin panel, per-user node and instruction assignments, and delegated writer Agent access are planned. They are not part of v0.7.0; no delivery date is set.</p><a class="text-link" href="https://github.com/weblab-network/weblab/issues">Discuss a teaching or team-lab use case ↗</a></details>
+    </section>
     <section id="watch" class="watch-section container" aria-labelledby="watch-title">
       <div class="section-heading">
-        <p class="eyebrow">SEE IT IN ACTION</p>
-        <h2 id="watch-title">A working lab. One workspace.</h2>
+        <p class="eyebrow">04 / LAB RECORDINGS</p>
+        <h2 id="watch-title">From setup to a working network.</h2>
         <p>See Weblab.Network go from installation to a running multi-vendor lab, with floating consoles and a link-failure exercise, in under two minutes.</p>
       </div>
       <figure class="workspace-shot overview-video">
@@ -93,7 +189,7 @@
               <source src="assets/weblab-walkthrough.mp4" type="video/mp4">
               <p><a href="https://youtu.be/fv2eDcvB_s0">Watch the full walkthrough on YouTube</a> or <a href="assets/weblab-walkthrough.mp4">download the MP4</a>.</p>
             </video>
-            <button class="video-play" type="button" hidden aria-label="Play full walkthrough, 9 minutes 8 seconds">
+            <button class="video-play" type="button" hidden aria-label="Play walkthrough, 9 minutes 8 seconds">
               <img src="assets/overview-poster.png" alt="" width="1920" height="1080" loading="lazy">
               <span class="video-play-label"><span aria-hidden="true">▶</span> Play walkthrough</span>
             </button>
@@ -107,152 +203,18 @@
         </div>
       </details>
 
-      <div id="agent-videos" class="agent-media">
-        <p class="eyebrow">FROM A REQUEST TO A RUNNING LAB</p>
-        <h3>Build and check your lab with an Agent.</h3>
-        <p>Build a practice lab or configure an existing one with Ollama or OpenAI. The Agent issues the console commands; devices produce the output. In these recordings, the user navigates the workspace and grants permissions without manually typing console commands.</p>
-        <nav class="agent-video-picker" aria-label="Choose an Agent video">
-          <a href="#agent-create-exercise" aria-controls="agent-create-exercise"><img src="assets/weblab-agent-create-exercise-thumb.jpg" width="640" height="400" alt="" loading="lazy"><span><strong>Build a practice lab</strong><span>Topology + student exercise · 1:13</span></span></a>
-          <a href="#agent-configure-verify" aria-controls="agent-configure-verify"><img src="assets/weblab-agent-configure-verify-thumb.jpg" width="640" height="400" alt="" loading="lazy"><span><strong>Configure and verify</strong><span>Permissions + console checks · 1:16</span></span></a>
-        </nav>
-        <div class="agent-video-panels">
-        <article id="agent-create-exercise" aria-labelledby="agent-create-title">
-          <h4 id="agent-create-title">Build a practice lab</h4>
-          <figure class="workspace-shot overview-video">
-            <div class="video-stage">
-              <video controls playsinline preload="none" width="1920" height="1080" poster="assets/weblab-agent-create-exercise.png" data-status="create-exercise-status" aria-label="Build a practice lab with the Agent" aria-describedby="create-exercise-caption">
-                <source src="assets/weblab-agent-create-exercise.mp4" type="video/mp4">
-                <p><a href="https://youtu.be/7zKUZNZRGXA">Watch on YouTube</a>.</p>
-              </video>
-              <button class="video-play" type="button" hidden aria-label="Play build a practice lab, 1:13"><img src="assets/weblab-agent-create-exercise.png" alt="" width="1920" height="1200" loading="lazy"><span class="video-play-label"><span aria-hidden="true">▶</span> Play · 1:13</span></button>
-            </div>
-            <figcaption id="create-exercise-caption">1:13 · Silent with captions · Edited / waits shortened. Use fullscreen for a closer look at the consoles.</figcaption>
-          </figure>
-          <p id="create-exercise-status" class="watch-note" role="status" hidden></p>
-          <p>FRR routers, an LL2S switch triangle and Linux PCs. Two OSPF/RSTP tasks are intentionally left for the student. Session YOLO is enabled.</p>
-          <div class="watch-actions"><a class="text-link" href="https://youtu.be/7zKUZNZRGXA">YouTube ↗</a><a class="text-link" href="assets/weblab-agent-create-exercise.mp4" download>Download MP4</a><a class="text-link" href="assets/weblab-agent-create-exercise.png" target="_blank" rel="noopener">Full-size screenshot ↗</a></div>
-        </article>
-<article id="agent-configure-verify" aria-labelledby="agent-verify-title">
-          <h4 id="agent-verify-title">Configure and verify</h4>
-          <figure class="workspace-shot overview-video">
-            <div class="video-stage">
-              <video controls playsinline preload="none" width="1920" height="1080" poster="assets/weblab-agent-configure-verify.png" data-status="configure-verify-status" aria-label="Configure and verify with the Agent" aria-describedby="configure-verify-caption">
-                <source src="assets/weblab-agent-configure-verify.mp4" type="video/mp4">
-                <p><a href="https://youtu.be/m5IsoAnklPo">Watch on YouTube</a>.</p>
-              </video>
-              <button class="video-play" type="button" hidden aria-label="Play configure and verify, 1:16"><img src="assets/weblab-agent-configure-verify.png" alt="" width="1920" height="1200" loading="lazy"><span class="video-play-label"><span aria-hidden="true">▶</span> Play · 1:16</span></button>
-            </div>
-            <figcaption id="configure-verify-caption">1:16 · Silent with captions · Edited / waits shortened. Use fullscreen for a closer look at the consoles.</figcaption>
-          </figure>
-          <p id="configure-verify-status" class="watch-note" role="status" hidden></p>
-          <p>Attach an exercise, review console access, then inspect switch configuration and the Agent’s explanation. The approval dialog offers optional session YOLO.</p>
-          <div class="watch-actions"><a class="text-link" href="https://youtu.be/m5IsoAnklPo">YouTube ↗</a><a class="text-link" href="assets/weblab-agent-configure-verify.mp4" download>Download MP4</a><a class="text-link" href="assets/weblab-agent-configure-verify.png" target="_blank" rel="noopener">Full-size screenshot ↗</a></div>
-        </article>
-</div>
-        <p class="watch-note">The Agent is an optional companion for your self-hosted workspace; it is not enabled in the restricted hosted preview. Individual approvals are the default. Agent output needs verification.</p>
-        <p class="agent-usage"><strong>OpenAI usage:</strong> Agent requests use your signed-in account’s existing Codex / ChatGPT Work allowance, shared with your other usage. Weblab adds no separate quota. You need a plan with Codex CLI access, such as Plus, Pro or an eligible organizational plan. <a class="text-link" href="https://learn.chatgpt.com/docs/pricing">Current plans and limits ↗</a></p>
-        <div id="agent-usage" class="agent-usage-feature">
-          <h4>Track allowance, tokens and turn duration.</h4>
-          <p>Keep the topology full height beside Agent and consoles. The activity line shows remaining OpenAI account allowance and elapsed time; open its details for provider-reported tokens and reset times. Local-model tokens appear when the provider supplies them.</p>
-          <details class="video-summary">
-            <summary>See the workspace and usage details</summary>
-            <figure class="workspace-shot">
-              <a href="assets/codex-allowance-after-turn.png" target="_blank" rel="noopener" aria-label="Open full-size Agent usage screenshot in a new tab"><img src="assets/codex-allowance-after-turn.png" width="1920" height="1200" loading="lazy" alt="Topology beside Agent and console, with a completed turn's duration, OpenAI allowance and token details"></a>
-              <figcaption>Example completed turn. Allowance is shared across the signed-in account; tokens can include repeated and cached input across several model requests. These are usage indicators, not monetary cost estimates. Open the image for full-size text.</figcaption>
-            </figure>
-          </details>
-          <a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Agent-window#allowance-and-token-usage">Understand allowance and token counts ↗</a>
-        </div>
-        <a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Agent-window">Agent installation, permissions and history ↗</a>
+    </section>
+    <section id="start" class="container chapter start-section" aria-labelledby="start-title">
+      <div class="section-heading"><p class="eyebrow">05 / INSTALLATION</p><h2 id="start-title">Put a lab on your host.</h2><p>Start with containers for routing and switching, or bring supported vendor images. Weblab runs the devices on your machine and the workspace in your browser.</p></div>
+      <div class="installation-layout">
+        <div class="host-spec"><p class="eyebrow">HOST REQUIREMENTS</p><dl><div><dt>Platform</dt><dd>x86-64 Linux host or VM</dd></div><div><dt>Runtime</dt><dd>Rootful Docker + Compose</dd></div><div><dt>Virtual devices</dt><dd>KVM for QEMU profiles; vJunos-switch requires bare-metal Intel</dd></div><div><dt>Optional</dt><dd>Agent companion · authentication</dd></div></dl><a class="button primary" href="https://github.com/weblab-network/weblab/wiki/Installation">Open installation guide <span aria-hidden="true">↗</span></a></div>
+        <ol class="steps"><li><span>01</span><div><h3>Install the workspace</h3><p>Follow the guide for host permissions, persistent storage and remote access. The Agent is a separate Compose option.</p></div></li><li><span>02</span><div><h3>Choose your devices</h3><p>Use FRR routers, LL2S switches and Alpine PCs without KVM, or supply supported vendor images and licenses.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Device-profiles">Device profiles ↗</a></div></li><li><span>03</span><div><h3>Run an exercise</h3><p>Build a topology or import an example. Check device state from the consoles, and save configurations before stopping.</p><a class="text-link" href="https://github.com/weblab-network/weblab/blob/main/examples/frr-ospf.md">Start with FRR OSPF ↗</a></div></li></ol>
       </div>
+      <div class="device-index"><span>SUPPORTED FAMILIES</span><p>Cisco IOL / IOSv · Arista vEOS · Virtual EXOS · Juniper vJunos · FRRouting · LL2S · Alpine</p></div>
+      <div class="install-command"><div><span class="eyebrow">SOURCE / MIT LICENSE</span><code id="clone-command">git clone https://github.com/weblab-network/weblab.git</code></div><button type="button" id="copy-command" hidden>Copy command</button></div><p id="copy-status" role="status" aria-live="polite"></p>
+      <p class="deployment-note">For your host or a trusted group. Review the installation guide before allowing remote access. Vendor images and required licenses are user-supplied, except for the separately documented optional EXOS sample distribution.</p>
     </section>
-
-    <section class="platforms container" aria-labelledby="platforms-title">
-      <p id="platforms-title" class="eyebrow">BRING YOUR OWN IMAGES</p>
-      <ul><li>Cisco <span>IOL / IOSv / IOSvL2</span></li><li>Arista <span>vEOS-lab</span></li><li>Extreme <span>Virtual EXOS</span></li><li>Alpine <span>Linux PCs</span></li><li>FRRouting <span>Container routers</span></li><li>Juniper <span>vJunos</span></li></ul>
-      <a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Device-profiles">See supported profiles and requirements <span aria-hidden="true">↗</span></a>
-    </section>
-
-    <section id="features" class="container feature-section" aria-labelledby="features-title">
-      <div class="section-heading"><p class="eyebrow">LESS WINDOW SWITCHING. MORE NETWORKING.</p><h2 id="features-title">A workspace that<br>works the way you do.</h2><p>From your first VLAN to a multi-vendor troubleshooting lab, keep the tools you need within reach.</p></div>
-      <div class="feature-grid">
-        <article><span class="feature-number">01 / WORKSPACE</span><h3>Make room for the whole lab.</h3><p>Choose a layout with a full-height topology beside consoles, Agent and instructions. Adjust the splits, use floating windows, or return to the familiar build view. Your consoles and drafts stay open as you switch.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Topology">Explore the workspace ↗</a></article>
-        <article><span class="feature-number">02 / CONSOLES</span><h3>Pick up where you left off.</h3><p>View the same device console from multiple workstations. Input locks and confirmed takeover keep typing coordinated. On a tablet, Ctrl+C, Tab and arrow keys are within reach.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Consoles">Meet the console tools ↗</a></article>
-        <article><span class="feature-number">03 / PRACTICE</span><h3>Keep the exercise beside the CLI.</h3><p>Open Markdown or text instructions in a floating window. Copy commands into a console and work through the lab without leaving the page.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Instructions">Read about instructions ↗</a></article>
-      </div>
-      <figure class="workspace-shot floating-shot">
-        <div class="shot-bar"><span><i aria-hidden="true"></i> YOUR LAYOUT, YOUR FOCUS</span><span>FLOAT · RESIZE · ARRANGE</span></div>
-        <a href="assets/floating-windows.png" target="_blank" rel="noopener" aria-label="Open full-size floating-window screenshot in a new tab">
-          <img src="assets/floating-windows.png" width="1920" height="1080" alt="Six arranged windows show a topology, four device consoles and Markdown instructions together in Weblab." loading="lazy">
-          <span class="image-hint">View full size ↗</span>
-        </a>
-        <figcaption>The map, four consoles and instructions, arranged side by side in one browser tab.</figcaption>
-      </figure>
-    </section>
-
-    <section id="mobile" class="mobile-section container" aria-labelledby="mobile-title">
-      <div class="section-heading">
-        <p class="eyebrow">TABLETS AND PHONES</p>
-        <h2 id="mobile-title">Your lab, on a smaller screen.</h2>
-        <p>Arrange topology and consoles on tablets and phones, with shortcuts for keys missing from onscreen keyboards. Keep the map and CLI visible while you type.</p>
-      </div>
-      <div class="mobile-gallery">
-        <figure class="workspace-shot">
-          <a href="assets/mobile-tablet-fullscreen.png" target="_blank" rel="noopener" aria-label="Open full-size tablet workspace screenshot in a new tab">
-            <img src="assets/mobile-tablet-fullscreen.png" width="722" height="1153" alt="Fullscreen tablet workspace with a floating topology above a tabbed Junos console and the onscreen keyboard." loading="lazy">
-            <span class="image-hint">View full size ↗</span>
-          </a>
-          <figcaption>Tablet · Fullscreen topology and tabbed consoles, arranged above the keyboard.</figcaption>
-        </figure>
-        <figure class="workspace-shot">
-          <a href="assets/mobile-phone-fullscreen.png" target="_blank" rel="noopener" aria-label="Open full-size phone workspace screenshot in a new tab">
-            <img src="assets/mobile-phone-fullscreen.png" width="482" height="801" alt="Phone workspace with manually arranged topology and Junos console windows above the onscreen keyboard." loading="lazy">
-            <span class="image-hint">View full size ↗</span>
-          </a>
-          <figcaption>Phone · Manually position windows to keep the topology and active console in view.</figcaption>
-        </figure>
-      </div>
-      <p class="watch-note">Screenshots of the shared live preview, which has restricted controls.</p>
-      <a class="text-link" href="https://demo.weblab.network/">Try it in your browser ↗</a>
-    </section>
-
-    <section class="spotlight container" aria-labelledby="fault-title">
-      <div class="spotlight-copy"><p class="eyebrow">BREAK IT. UNDERSTAND IT. FIX IT.</p><h2 id="fault-title">See how your<br>network reacts.</h2><p>Block traffic in one direction or both while a lab is running. Model a silent link failure, watch a protocol converge, and restore traffic when you’re ready.</p><p>For supported IOSv, IOL and FRR profiles, cable controls also request a link-down state at the selected endpoint.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Link-failures">Explore link failure controls <span aria-hidden="true">↗</span></a><div class="inline-note"><span aria-hidden="true">↔</span><p>Frame loss and carrier state are separate controls, so you can practice different kinds of failure.</p></div></div>
-      <figure class="detail-shot"><img src="assets/link-actions.png" alt="Link actions with separate controls for directional frame loss and unplugging each endpoint." width="713" height="840" loading="lazy"><figcaption>Change link behavior without rebuilding your topology.</figcaption></figure>
-    </section>
-
-    <section class="spotlight reverse container" aria-labelledby="images-title">
-      <div class="spotlight-copy"><p class="eyebrow">YOUR IMAGES. YOUR TOPOLOGIES.</p><h2 id="images-title">Build once.<br>Practice, save, share.</h2><p>Upload supported device images, connect the interfaces and start your lab. Mix device families in the same topology to explore how they work together.</p><p>Share a topology as JSON, seed fresh Cisco or FRR devices with initial configurations, or export a stopped lab’s saved device storage as a ZIP. Compact vEOS backups preserve the exact disk while reducing repeated data.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Saving-and-restoring-labs">Find the right export for your lab <span aria-hidden="true">↗</span></a><p class="small-note">Device images and required licenses are supplied by you. Save device configurations before stopping; Alpine PC filesystems are temporary.</p></div>
-      <figure class="detail-shot upload-shot"><img src="assets/upload-image.png" alt="Weblab image upload dialog with a file picker for supported device images." width="602" height="447" loading="lazy"><figcaption>Add your images directly from the device library.</figcaption></figure>
-    </section>
-
-    <section id="start" class="start-section container" aria-labelledby="start-title">
-      <div class="section-heading"><p class="eyebrow">FROM SOURCE TO YOUR FIRST LAB</p><h2 id="start-title">Start small. Connect more.</h2><p>Use an x86-64 Linux host or VM with rootful Docker and Compose. Enable KVM for QEMU devices; vJunos-switch requires a bare-metal Intel host.</p></div>
-      <ol class="steps"><li><span>01</span><h3>Set up Weblab</h3><p>Follow the installation guide for Docker, host permissions and remote access.</p><a href="https://github.com/weblab-network/weblab/wiki/Installation">Installation guide ↗</a></li><li><span>02</span><h3>Add your devices</h3><p>Supply your images, then build a topology or import the starter example.</p><a href="https://github.com/weblab-network/weblab/blob/main/examples/starter.md">Try the starter lab ↗</a></li><li><span>03</span><h3>Make it your own</h3><p>Practice routing, switching and failure scenarios. Save your work and share an exercise.</p><a href="https://github.com/weblab-network/weblab/blob/main/examples/ospf-practice.md">Explore an OSPF exercise ↗</a></li></ol>
-      <div class="install-command"><div><span class="eyebrow">GET THE SOURCE</span><code id="clone-command">git clone https://github.com/weblab-network/weblab.git</code></div><button type="button" id="copy-command" hidden>Copy command</button></div><p id="copy-status" role="status" aria-live="polite"></p>
-      <p class="deployment-note">Designed for your own host or a trusted group. Weblab currently has no authentication or per-user isolation; keep the lab service on a trusted network or behind an SSH tunnel.</p>
-    </section>
-    <section id="roadmap" class="roadmap-section container" aria-labelledby="roadmap-title">
-      <div class="section-heading">
-        <p class="eyebrow">LOOKING AHEAD</p>
-        <h2 id="roadmap-title">Automation today. Teaching tools ahead.</h2>
-        <p>Agent and MCP integration are available now. Classroom accounts and teacher/student roles remain planned, with no delivery date set.</p>
-      </div>
-      <div class="roadmap-grid">
-        <article>
-          <span class="feature-number">AVAILABLE / AGENT &amp; MCP</span>
-          <h3>Connect your agent to the lab.</h3>
-          <p>Use the optional Agent window with Ollama or OpenAI, or connect an external assistant through MCP. Create practice topologies, inspect live consoles and approve configuration work. Conversation history, attachments and reference transcript exports keep the work together.</p>
-        </article>
-        <article>
-          <span class="feature-number">PLANNED / EDUCATION KIT</span>
-          <h3>A shared workspace for teaching.</h3>
-          <p>Instructor-led labs with user accounts and roles: teachers control the lab and decide what students can observe or change. Limited student permissions and shared demonstrations would support practice without giving every participant full control.</p>
-        </article>
-      </div>
-      <a class="text-link" href="https://github.com/weblab-network/weblab/issues">Share a teaching or automation use case ↗</a>
-    </section>
-    <section class="closing container"><div><p class="eyebrow">BUILT TO BE SHARED</p><h2>Your next lab<br>starts here.</h2></div><div><p>Free, open-source tools for hands-on networking.<br>Try a lab, report an issue, or help improve the project.</p><a class="button primary" href="https://github.com/weblab-network/weblab">Find Weblab on GitHub <span aria-hidden="true">↗</span></a></div></section>
+    <section class="closing container" aria-labelledby="closing-title"><div><p class="eyebrow">WEBLAB / OPEN DEVELOPMENT</p><h2 id="closing-title">Built for the work<br>between diagrams and devices.</h2></div><div><p>Try the workspace, bring a real lab problem,<br>or contribute a fix.</p><a class="text-link" href="https://demo.weblab.network/">Explore the restricted live preview ↗</a><a class="text-link" href="https://github.com/weblab-network/weblab">Source, issues and releases ↗</a></div></section>
   </main>
   <footer class="container"><a class="footer-brand" href="#">weblab</a><p>© 2026 weblab.network · Weblab code: <a href="https://github.com/weblab-network/weblab/blob/main/LICENSE">MIT</a> · <a href="https://github.com/weblab-network/weblab/blob/main/THIRD_PARTY.md">Third-party licenses</a></p><span id="contact" class="email-contact"><button id="show-email" type="button" aria-controls="contact-email" hidden>Show email</button><a id="contact-email" hidden></a><noscript>Email contact requires JavaScript. You can also use GitHub issues.</noscript></span><a href="https://github.com/weblab-network/weblab/issues">Feedback &amp; issues ↗</a></footer>
 </body>

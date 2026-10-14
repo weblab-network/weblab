@@ -74,8 +74,8 @@ linked to this section rather than duplicating the address in Markdown.
 
 ## Agent demonstrations
 
-`/#agent-videos` contains two captioned, silent MP4 highlights alongside the
-existing overview, with YouTube alternatives. A selector shows one full-width
+`/#agent-videos` contains two captioned, silent MP4 highlights in the Agent
+section, with YouTube alternatives. A selector shows one full-width
 recording at a time. `/#agent-create-exercise` and `/#agent-configure-verify` select
 the respective recording directly; switching pauses the hidden player. Without
 JavaScript, both recordings remain visible at full width. Both preserve the full source
@@ -88,6 +88,42 @@ Agent help page link to these assets.
 ## Agent usage screenshot
 
 `/#agent-usage` explains allowance, tokens and completed-turn duration, with a
-native expandable screenshot and full-size link. The practice-lab hero and video
-players are unchanged. The three supplied usage/settings screenshots also support
+native expandable screenshot and full-size link. The practice-lab screenshot and
+video players retain their approved assets. The supplied usage screenshots support
 the Agent help/wiki; preserve originals and use display widths rather than cropping.
+
+## Visual identity
+
+The website defaults to a light theme, independent of the lab application's
+current dark interface. Use the application's actual screenshots without
+recoloring them. The opening image is the supplied full-window multi-vendor screenshot,
+kept unchanged in `assets/multi-vendor.png` with a caption and full-size link. Its
+application header supplies the context; do not add a duplicate figure header.
+Future application themes should
+change colors only, preserving icons, controls and layout; that work is separate.
+
+The visual reference is a network engineer's annotated drawing and lab notebook:
+
+- Warm paper (`#f5f4ef`) and white surfaces (`#fffefa`), ink blue (`#203342`)
+  for structure, and copper (`#a13f20`) for links and small annotations.
+- Keep the recognizable `web LAB` wordmark, without a trailing dot. The favicon
+  draws a W as a path with two connection points.
+- Use system sans-serif for reading and monospace for interface labels, figure
+  references and metadata. No external fonts or design framework.
+- The opening network is a real captured Weblab test topology, not a live view.
+  Preserve the screenshot and its device icons. Avoid fabricated live status,
+  terminal output, metrics or customer endorsements.
+- Organize around Workspace → Agent → Shared access → In action → Installation.
+  Use annotated screenshots, a permissions table and host specifications rather
+  than repeating interchangeable feature cards.
+- Use full-width video players, native controls and full-size screenshot links.
+  Supplementary phone captures, usage captures and the longer recording expand
+  in place. Preserve existing README/wiki anchors and asset URLs.
+- Keep release-specific claims accurate: v0.7.0 has optional fixed accounts and
+  admin Agent access. Named users, an admin panel and delegated writer Agent
+  access remain planned.
+
+CSS variables define the palette. Keep text contrast, visible keyboard focus,
+reduced-motion behavior and a usable no-JavaScript page when extending the design.
+The section index scrolls horizontally on narrow screens; the page itself should
+not. Additional themes are not part of this website change.
