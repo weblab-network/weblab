@@ -72,6 +72,20 @@ R2's loopback so PC1 can reach it. Inspect `show snmp` and routing before pollin
 R3's loopback is not enabled in OSPF; a router ID alone does not advertise a
 loopback. SW1, SW3 and R3 have no enabled SNMP polling baseline.
 
+For polling tools, follow [Add tools to Alpine PCs](../docs/devices.md#add-tools-to-alpine-pcs)
+and set PC1's image to `alpine:lab-tools` in a copy of this JSON before import.
+The supplied JSON uses stock Alpine, which does not include these tools.
+From PC1, after verifying reachability:
+
+```sh
+snmpget -v 2c -c labMonitor 10.255.0.1 .1.3.6.1.2.1.1.1.0
+snmpget -v 2c -c labMonitor 10.255.0.2 .1.3.6.1.2.1.1.1.0
+snmpwalk -v 2c -c labMonitor 10.0.20.20 .1.0.8802.1.1.2
+```
+
+These query the routers' system descriptions and SW2's LLDP-MIB. Numeric OIDs
+avoid requiring optional MIB name files on the polling PC.
+
 ## Recovery exercise
 
 With continuous pings from a VLAN 200 PC to PC3, unplug the R2–SW2 link using

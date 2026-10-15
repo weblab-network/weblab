@@ -181,6 +181,68 @@ PC containers are disposable. Files, installed packages and shell-made network
 changes are lost on stop/start. Topology address/gateway settings are reapplied.
 PC resource fields do not enforce a Docker memory limit or add interfaces.
 
+### Add tools to Alpine PCs
+
+For `snmpget` and `snmpwalk`, install only `net-snmp-tools`. Build a small reusable
+image on the same Docker host that Weblab controls:
+
+```sh
+docker build --pull -t alpine:lab-tools - <<'EOF'
+FROM alpine:latest
+RUN apk add --no-cache net-snmp-tools
+EOF
+docker run --rm alpine:lab-tools sh -c 'command -v snmpget && command -v snmpwalk'
+```
+
+If needed, extend the `RUN` line to
+`apk add --no-cache net-snmp-tools tcpdump iperf3 nano`. Omitting tools you do
+not need keeps the image smaller; `--no-cache` avoids retaining the APK cache.
+For repeatable builds, pin the Alpine base version or digest instead of `latest`.
+See the [Alpine package contents](https://pkgs.alpinelinux.org/contents?name=net-snmp-tools&arch=x86_64&branch=edge&repo=main)
+and [Dockerfile reference](https://docs.docker.com/reference/dockerfile/).
+
+In a copy of the topology JSON, set the desired PC nodes' `image` to
+`"alpine:lab-tools"` before importing. The current inspector does not enumerate
+custom Alpine tags; newly added PCs default to `alpine:latest`. Keep the custom
+image installed on each Docker host where you use that topology. Lab exports do
+not include Docker images. Import replaces the topology and requires stopped
+devices; use a separate workspace when trying an example.
+
+Building a separate tag preserves stock `alpine:latest`. Tools baked into the
+image survive PC stop/start; packages installed interactively in a running PC
+do not. An interactive `apk add` also needs repository/DNS access from that PC,
+which an isolated lab may not provide.
+
+#### Optionally use the tools image as the default Alpine image
+
+To use the tools in PCs that select `alpine:latest`, including newly added PCs,
+you can point that local tag at the tools image. On the Docker host, first save
+the current image ID and give the original image a backup tag:
+
+```sh
+original_alpine_id=$(docker image inspect alpine:latest --format '{{.Id}}')
+printf '%s\n' "$original_alpine_id"
+docker image tag "$original_alpine_id" alpine:before-lab-tools
+docker image tag alpine:lab-tools alpine:latest
+```
+
+Record the printed ID if you will restore it from another shell. The backup tag
+keeps the original image named locally. To restore it in the same shell:
+
+```sh
+docker image tag "$original_alpine_id" alpine:latest
+```
+
+From another shell, use `docker image tag sha256:RECORDED_IMAGE_ID alpine:latest`
+with the full recorded ID, or `docker image tag alpine:before-lab-tools alpine:latest`.
+Restoration requires that the original image has not been deleted.
+
+Retagging changes the local default for all future containers using that tag,
+not already running PCs. Save any PC work before stop/start to recreate them.
+A later `docker pull alpine:latest` (including a build with `--pull`) restores
+the upstream tag and may select a newer upstream image; it does not restore a
+specific old image. The separate `alpine:lab-tools` tag remains available.
+
 
 ## FRRouting
 
