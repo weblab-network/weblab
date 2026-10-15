@@ -98,20 +98,68 @@ host Docker Engine that Weblab controls. No retagging or LL2S build is required.
 
 ## Run the prebuilt image without Compose
 
-For the same Linux/KVM setup, with persistent named volumes:
+For a new Linux installation with persistent named volumes, LL2S switches,
+Weblab FRR routers, Alpine PCs and the optional Agent, run the following on the
+Docker host. Core and Agent use matching release tags; node images have their
+own versions. These commands do not start any lab devices.
 
 ```sh
+sudo modprobe openvswitch
 docker pull alpine:latest
-docker pull ghcr.io/weblab-network/weblab:latest
-docker run -d --name weblab --init --stop-timeout 120 \
+docker pull ghcr.io/weblab-network/ll2s:0.2.0
+docker pull ghcr.io/weblab-network/weblab-frr:10.7.1-wl1
+docker pull ghcr.io/weblab-network/weblab:0.8.1
+docker pull ghcr.io/weblab-network/weblab-agent:0.8.1
+
+# Start the isolated companion first, as in the Compose setup.
+docker run -d --name weblab-agent --platform linux/amd64 \
+  --init --stop-timeout 20 --network none --user 10001:10001 \
+  --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+  --pids-limit 128 --memory 1g --cpus 1 \
+  --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+  --tmpfs /workspace:rw,nosuid,nodev,uid=10001,gid=10001,size=32m \
+  -v weblab-agent-sockets:/run/weblab-agent \
+  -v weblab-agent-conversations:/home/agent \
+  ghcr.io/weblab-network/weblab-agent:0.8.1
+
+docker run -d --name weblab --platform linux/amd64 --init --stop-timeout 120 \
   --hostname weblab --add-host weblab:127.0.0.1 \
   --network host --cap-add NET_ADMIN \
-  --device /dev/net/tun --device /dev/kvm \
+  --device /dev/net/tun \
   -e WL_BIND=127.0.0.1 \
+  -e WL_AGENT_SOCKET_DIR=/run/weblab-agent \
+  -e WL_AGENT_STATE_DIR=/agent-state \
+  -e WL_AGENT_PROVIDERS=http://127.0.0.1:11434/v1 \
   -v weblab-images:/iou -v weblab-data:/data \
+  -v weblab-agent-sockets:/run/weblab-agent \
+  -v weblab-agent-bridge-state:/agent-state \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/weblab-network/weblab:latest
+  ghcr.io/weblab-network/weblab:0.8.1
 ```
+
+Open **http://127.0.0.1:8080/**. Add a Switch with the LL2S image, a Router with
+`ghcr.io/weblab-network/weblab-frr:10.7.1-wl1`, or an Alpine PC. Existing examples
+that select stock FRR also need `docker pull quay.io/frrouting/frr:10.7.1`.
+Load the host `openvswitch` module after reboot or configure normal module loading.
+
+For a preconfigured example, see the [LL2S/FRR test lab](../examples/ll2s-frr-vrrp-test.md)
+and its [importable JSON](../examples/ll2s-frr-vrrp-test.json): VLAN trunks, OSPF,
+RSTP and redundant VRRP gateways, with notes on the supplied monitoring settings.
+Import into a fresh workspace; it replaces the current topology.
+
+Select **Agent → Settings** to choose a provider. The example allows Ollama on
+the Docker host at port 11434; replace `WL_AGENT_PROVIDERS` with your Ollama
+server's complete `/v1` URL when it runs elsewhere. For OpenAI-only use, omit
+that environment variable and choose OpenAI in Settings; no Ollama server is
+needed. See [Agent setup](agent.md#enable-with-prebuilt-images) for sign-in and
+permissions. The companion stays on `--network none`: provider access goes
+through the core's restricted gateway. Only the core receives the Docker socket
+and lab image/data volumes.
+
+To run without the Agent, skip its pull and `docker run` command, and omit the
+three `WL_AGENT_*` environment variables and the two `weblab-agent-*` volume
+mounts from the core command. For QEMU devices, add `--device /dev/kvm` to the
+core command; the container-only setup above does not need KVM.
 
 For an optional non-resolving DNS setting, add `--dns 127.0.0.199` after
 `-e WL_BIND=127.0.0.1`. With host networking this uses the host loopback;
@@ -119,12 +167,19 @@ it only fails to resolve names if no DNS service answers at that address.
 It does not block internet access or change the host Docker daemon’s DNS
 for image pulls. See [Docker DNS services](https://docs.docker.com/engine/network/#dns-services).
 
-Omit `--device /dev/kvm` for IOL/FRR/LL2S/Alpine-only labs. Use `docker logs -f weblab` to inspect
-startup and `docker stop weblab` to stop gracefully. Keep the same named volumes
-when recreating the container to upgrade it. Uploaded images live in `/iou` and
+Use `docker logs -f weblab` or `docker logs -f weblab-agent` to inspect startup.
+After saving guest configurations and following any guest shutdown requirements,
+stop the core first with `docker stop weblab`, then the companion with
+`docker stop weblab-agent`. For upgrades, export a stopped-lab ZIP, remove the
+stopped containers, pull matching core/Agent versions and recreate them with the
+same options and named volumes. Docker does not replace an existing container
+when you repeat `docker run`. Uploaded images live in `/iou` and
 saved lab state in `/data`; without these mounts, removing a container also
-removes those files. Alpine PCs use the host's Docker image store, which is why
-`docker pull alpine:latest` is a separate step.
+removes those files. The Agent's three dedicated volumes retain socket sharing,
+bridge metadata and conversations/sign-in state; preserve them during upgrades
+and do not share them between independent deployments. They are not included in
+lab ZIP exports. Node images use the host's Docker image store, which is why their
+pulls are separate steps.
 
 The tested Linux setup needs the listed devices and NET_ADMIN, without
 `--privileged`. Change `WL_BIND` to a trusted LAN address when remote access is

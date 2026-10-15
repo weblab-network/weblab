@@ -1,0 +1,290 @@
+{
+  "version": 1,
+  "name": "LL2S + FRR (VRRP - OSPF - STP - GH)",
+  "nodes": [
+    {
+      "id": "frrtest-sw1",
+      "type": "switch",
+      "name": "SW1",
+      "x": 574,
+      "y": 294,
+      "memory": 256,
+      "ethernet": 8,
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "startup_config": "hostname SW1\nspanning-tree mode rstp\nspanning-tree priority 4096\nvlan 1,100,200\nlldp run\nmanagement vlan 1\nsnmp-server source 0.0.0.0/0\ninterface eth0\n switchport mode trunk\n switchport access vlan 1\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n no spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth1\n switchport mode trunk\n switchport access vlan 1\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n no spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth2\n switchport mode trunk\n switchport access vlan 100\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\n",
+      "ipv4": "",
+      "gateway": ""
+    },
+    {
+      "id": "frrtest-r1",
+      "type": "router",
+      "name": "R1",
+      "x": 586,
+      "y": 72,
+      "memory": 256,
+      "ethernet": 4,
+      "image": "ghcr.io/weblab-network/weblab-frr:10.7.1-wl1",
+      "startup_config": "lldp run\nsnmp-server community labMonitor ro\nsnmp-server listen 10.255.0.1\nsnmp-server source 0.0.0.0/0\nsnmp-server contact Lab Operations\nsnmp-server location Rack A\nsnmp-server enable\nvlan interface eth0.100\nvlan interface eth0.200\nfrr version 10.7.1_weblab_lldp_snmp_vlan_vrrp1\nfrr defaults traditional\nhostname R1\nservice integrated-vtysh-config\n!\ninterface eth0\n description Trunk to SW1\nexit\n!\ninterface eth0.100\n description OSPF transit through LL2S VLAN 100\n ip address 10.0.30.1/24 label secondary\n ip address 10.100.0.1/24\n ip ospf area 0\n ip ospf dead-interval 4\n ip ospf hello-interval 1\n ip ospf priority 100\n no ip ospf passive\nexit\n!\ninterface eth0.200\n ip address 10.0.20.2/24\n ip ospf area 0\n ip ospf passive\n vrrp 20 version 3\n vrrp 20 priority 200\n vrrp 20 ip 10.0.20.1\nexit\n!\ninterface eth1\n description PC1\n ip address 10.0.1.1/24\n ip ospf area 0\n ip ospf passive\nexit\n!\ninterface lo\n ip address 10.255.0.1/32\n ip ospf area 0\n ip ospf passive\nexit\n!\nrouter ospf\n ospf router-id 10.255.0.1\n passive-interface default\nexit\n!\n",
+      "ipv4": "",
+      "gateway": ""
+    },
+    {
+      "id": "frrtest-sw2",
+      "type": "switch",
+      "name": "SW2",
+      "x": 300,
+      "y": 500,
+      "memory": 256,
+      "ethernet": 8,
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "startup_config": "hostname SW2\nspanning-tree mode rstp\nspanning-tree priority 8192\nvlan 1,100,200\nlldp run\nvlan 100 name TRANSPORT\nvlan 200 name SW-PCs\nmanagement vlan 200\nmanagement ip address 10.0.20.20/24\nip default-gateway 10.0.20.1\nsnmp-server community labMonitor ro\nsnmp-server source 0.0.0.0/0\nsnmp-server contact 'Lab Operations'\nsnmp-server location 'Rack A'\ninterface eth0\n switchport mode trunk\n switchport access vlan 1\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n no spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth1\n switchport mode trunk\n switchport access vlan 1\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n no spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth2\n switchport mode trunk\n switchport access vlan 100\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth3\n switchport mode access\n switchport access vlan 200\n switchport trunk native vlan 1\n switchport trunk allowed vlan 1\n spanning-tree cost 0\n lldp transmit\n lldp receive\n spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\n",
+      "ipv4": "",
+      "gateway": ""
+    },
+    {
+      "id": "frrtest-r2",
+      "type": "router",
+      "name": "R2",
+      "x": 120,
+      "y": 660,
+      "memory": 256,
+      "ethernet": 4,
+      "image": "ghcr.io/weblab-network/weblab-frr:10.7.1-wl1",
+      "startup_config": "lldp run\nsnmp-server community labMonitor ro\nsnmp-server listen 10.255.0.2\nsnmp-server source 10.0.1.10/32\nsnmp-server contact Lab Operations\nsnmp-server location Rack A\nsnmp-server enable\nvlan interface eth0.100\nvlan interface eth0.200\nfrr version 10.7.1_weblab_lldp_snmp_vlan_vrrp1\nfrr defaults traditional\nhostname R2\nservice integrated-vtysh-config\n!\ninterface eth0\n description Trunk to SW2\nexit\n!\ninterface eth0.100\n description OSPF transit through LL2S VLAN 100\n ip address 10.100.0.2/24\n ip ospf area 0\n ip ospf dead-interval 4\n ip ospf hello-interval 1\n ip ospf priority 50\n no ip ospf passive\nexit\n!\ninterface eth0.200\n ip address 10.0.20.3/24\n ip ospf area 0\n ip ospf passive\n vrrp 20 version 3\n vrrp 20 priority 250\n vrrp 20 ip 10.0.20.1\nexit\n!\ninterface eth1\n description PC2\n ip address 10.0.2.1/24\n ip ospf area 0\n ip ospf passive\nexit\n!\ninterface lo\n ip address 10.255.0.2/32\n ip ospf area 0\n ip ospf passive\nexit\n!\nrouter ospf\n ospf router-id 10.255.0.2\n passive-interface default\nexit\n!\n",
+      "ipv4": "",
+      "gateway": ""
+    },
+    {
+      "id": "frrtest-sw3",
+      "type": "switch",
+      "name": "SW3",
+      "x": 860,
+      "y": 500,
+      "memory": 256,
+      "ethernet": 8,
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "startup_config": "hostname SW3\nspanning-tree mode rstp\nspanning-tree priority 12288\nvlan 1,100,200\nlldp run\nvlan 100 name TRANSPORT\nvlan 200 name SW-PCs\nmanagement vlan 1\nsnmp-server source 0.0.0.0/0\ninterface eth0\n switchport mode trunk\n switchport access vlan 1\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n no spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth1\n switchport mode trunk\n switchport access vlan 1\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n no spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth2\n switchport mode access\n switchport access vlan 100\n switchport trunk native vlan 1\n switchport trunk allowed vlan 1\n spanning-tree cost 0\n lldp transmit\n lldp receive\n spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth3\n switchport mode access\n switchport access vlan 100\n switchport trunk native vlan 1\n switchport trunk allowed vlan 1\n spanning-tree cost 0\n lldp transmit\n lldp receive\n spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth4\n switchport mode access\n switchport access vlan 200\n switchport trunk native vlan 1\n switchport trunk allowed vlan 1\n spanning-tree cost 0\n lldp transmit\n lldp receive\n spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\n",
+      "ipv4": "",
+      "gateway": ""
+    },
+    {
+      "id": "frrtest-r3",
+      "type": "router",
+      "name": "R3",
+      "x": 1040,
+      "y": 660,
+      "memory": 256,
+      "ethernet": 4,
+      "image": "ghcr.io/weblab-network/weblab-frr:10.7.1-wl1",
+      "startup_config": "frr version 10.7.1_weblab_lldp_snmp_vlan_vrrp1\nfrr defaults traditional\nhostname R3\nservice integrated-vtysh-config\n!\ninterface eth0\n description OSPF transit through LL2S VLAN 100\n ip address 10.100.0.3/24\n ip ospf area 0\n ip ospf dead-interval 4\n ip ospf hello-interval 1\n ip ospf priority 0\n no ip ospf passive\nexit\n!\ninterface eth1\n description PC3\n ip address 10.0.3.1/24\n ip ospf area 0\n ip ospf passive\nexit\n!\ninterface lo\n ip address 10.255.0.3/32\nexit\n!\nrouter ospf\n ospf router-id 10.255.0.3\n passive-interface default\nexit\n!\n",
+      "ipv4": "",
+      "gateway": ""
+    },
+    {
+      "id": "frrtest-pc1",
+      "type": "pc",
+      "name": "PC1",
+      "x": 1015,
+      "y": 73,
+      "memory": 1024,
+      "ethernet": 2,
+      "image": "alpine:latest",
+      "ipv4": "10.0.1.10/24",
+      "gateway": "10.0.1.1"
+    },
+    {
+      "id": "frrtest-pc2",
+      "type": "pc",
+      "name": "PC2",
+      "x": 117,
+      "y": 367,
+      "memory": 1024,
+      "ethernet": 2,
+      "image": "alpine:latest",
+      "ipv4": "10.0.2.10/24",
+      "gateway": "10.0.2.1"
+    },
+    {
+      "id": "frrtest-pc3",
+      "type": "pc",
+      "name": "PC3",
+      "x": 1035,
+      "y": 414,
+      "memory": 1024,
+      "ethernet": 2,
+      "image": "alpine:latest",
+      "ipv4": "10.0.3.10/24",
+      "gateway": "10.0.3.1"
+    },
+    {
+      "id": "frrtest-pc4",
+      "type": "pc",
+      "name": "PC4",
+      "x": 314,
+      "y": 255,
+      "memory": 1024,
+      "ethernet": 2,
+      "image": "alpine:latest",
+      "ipv4": "10.0.20.10/24",
+      "gateway": "10.0.20.1"
+    },
+    {
+      "id": "frrtest-pc5",
+      "type": "pc",
+      "name": "PC5",
+      "x": 863,
+      "y": 241,
+      "memory": 1024,
+      "ethernet": 2,
+      "image": "alpine:latest",
+      "ipv4": "10.0.30.10/24",
+      "gateway": "10.0.30.1"
+    },
+    {
+      "id": "frrtest-pc6",
+      "type": "pc",
+      "name": "PC6",
+      "x": 629,
+      "y": 674,
+      "memory": 1024,
+      "ethernet": 2,
+      "image": "alpine:latest",
+      "ipv4": "10.0.20.60/24",
+      "gateway": "10.0.20.1"
+    }
+  ],
+  "links": [
+    {
+      "id": "frrtest-link-01",
+      "a": {
+        "node": "frrtest-sw1",
+        "port": "eth0"
+      },
+      "b": {
+        "node": "frrtest-sw2",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "frrtest-link-02",
+      "a": {
+        "node": "frrtest-sw2",
+        "port": "eth1"
+      },
+      "b": {
+        "node": "frrtest-sw3",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "frrtest-link-03",
+      "a": {
+        "node": "frrtest-sw1",
+        "port": "eth1"
+      },
+      "b": {
+        "node": "frrtest-sw3",
+        "port": "eth1"
+      }
+    },
+    {
+      "id": "frrtest-link-04",
+      "a": {
+        "node": "frrtest-sw1",
+        "port": "eth2"
+      },
+      "b": {
+        "node": "frrtest-r1",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "frrtest-link-05",
+      "a": {
+        "node": "frrtest-sw2",
+        "port": "eth2"
+      },
+      "b": {
+        "node": "frrtest-r2",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "frrtest-link-06",
+      "a": {
+        "node": "frrtest-sw3",
+        "port": "eth2"
+      },
+      "b": {
+        "node": "frrtest-r3",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "frrtest-link-07",
+      "a": {
+        "node": "frrtest-r1",
+        "port": "eth1"
+      },
+      "b": {
+        "node": "frrtest-pc1",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "frrtest-link-08",
+      "a": {
+        "node": "frrtest-r2",
+        "port": "eth1"
+      },
+      "b": {
+        "node": "frrtest-pc2",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "frrtest-link-09",
+      "a": {
+        "node": "frrtest-r3",
+        "port": "eth1"
+      },
+      "b": {
+        "node": "frrtest-pc3",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "frrtest-link-10",
+      "a": {
+        "node": "frrtest-sw2",
+        "port": "eth3"
+      },
+      "b": {
+        "node": "frrtest-pc4",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "frrtest-link-11",
+      "a": {
+        "node": "frrtest-sw3",
+        "port": "eth3"
+      },
+      "b": {
+        "node": "frrtest-pc5",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "frrtest-link-12",
+      "a": {
+        "node": "frrtest-sw3",
+        "port": "eth4"
+      },
+      "b": {
+        "node": "frrtest-pc6",
+        "port": "eth0"
+      }
+    }
+  ]
+}

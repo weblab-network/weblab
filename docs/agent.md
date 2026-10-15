@@ -181,8 +181,8 @@ image/data mounts and project name when adding the companion.
 
 ```sh
 mkdir -p images lab-data
-export WL_IMAGE=ghcr.io/weblab-network/weblab:0.7.0
-export WL_AGENT_IMAGE=ghcr.io/weblab-network/weblab-agent:0.7.0
+export WL_IMAGE=ghcr.io/weblab-network/weblab:0.8.1
+export WL_AGENT_IMAGE=ghcr.io/weblab-network/weblab-agent:0.8.1
 # For Ollama, use the /v1 URL reachable from the Weblab service:
 export WL_AGENT_PROVIDERS=http://YOUR_OLLAMA_HOST:11434/v1
 docker compose -f compose.prebuilt.yaml -f compose.agent.prebuilt.yaml pull
@@ -206,6 +206,9 @@ companion conversations/login state. Keep these volumes during upgrades; do not
 use `down -v` unless you intend to remove that state. These volumes are separate
 from lab ZIP exports. Do not mount host Codex credentials or share the volumes
 between independent Weblab workspaces.
+
+For equivalent standalone `docker run` commands, see
+[installation without Compose](installation.md#run-the-prebuilt-image-without-compose).
 
 ## Enable from source
 
