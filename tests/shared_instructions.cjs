@@ -36,7 +36,7 @@ let logs=''; fixture.stderr.on('data', d=>logs+=d);
    await page.goto(base);await page.locator('#auth-dialog[open]').waitFor();
    await page.selectOption('#auth-form select',name);
    await page.fill('#auth-form input[type=password]','test-unique-password1-'+name);
-   await page.click('#auth-form button');await page.waitForFunction(()=>loaded);
+   await page.click('#auth-form button');await page.waitForFunction(()=>typeof loaded !== 'undefined' && loaded);
    await page.waitForFunction(()=>$('instructions-source').textContent==='No published exercise');
    return page;
   }

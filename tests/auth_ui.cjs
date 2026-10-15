@@ -57,7 +57,7 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
    assert.ok(await page.locator('#auth-form button').isDisabled());
    assert.ok(await page.locator('#auth-form input[type=password]').isDisabled());
   }
-  await page.waitForFunction(()=>loaded);
+  await page.waitForFunction(()=>typeof loaded !== 'undefined' && loaded);
   assert.ok(await page.locator('#auth-dialog').isHidden());
   assert.ok((await page.locator('#auth-logout').boundingBox()).width <= 40);
   assert.match(await page.locator('#auth-logout').getAttribute('aria-label'),new RegExp('Log out.*'+name));
@@ -67,7 +67,7 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
   assert.equal(await page.locator('#instructions-open').isEnabled(),name==='admin','Instructions picker follows the authenticated role after startup');
   assert.equal(await page.locator('#start-all').isEnabled(),name!=='guest');
   assert.ok(await page.locator('#open-agent').isHidden());
-  await page.reload();await page.waitForFunction(()=>loaded);
+  await page.reload();await page.waitForFunction(()=>typeof loaded !== 'undefined' && loaded);
   assert.ok(await page.locator('#auth-dialog').isHidden());
   // Stopped cables offer deletion only to administrators.
   await clickCable();

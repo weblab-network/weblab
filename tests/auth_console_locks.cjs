@@ -50,7 +50,7 @@ fixture.stderr.on('data', data => logs += data);
    await page.selectOption('#auth-form select', name);
    await page.fill('#auth-form input[type=password]', 'test-unique-password1-' + name);
    await page.click('#auth-form button');
-   await page.waitForFunction(() => loaded);
+   await page.waitForFunction(() => typeof loaded !== 'undefined' && loaded);
    await page.evaluate(() => openConsole('r1'));
    await page.waitForFunction(() => consoleSessions.get('r1')?.lockReady);
    return page;

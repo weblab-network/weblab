@@ -34,7 +34,7 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
   await page.locator('#auth-dialog[open]').waitFor();
   await page.selectOption('#auth-form select',name);
   await page.fill('#auth-form input[type=password]','test-unique-password1-'+name);
-  await page.click('#auth-form button');await page.waitForFunction(()=>loaded);
+  await page.click('#auth-form button');await page.waitForFunction(()=>typeof loaded !== 'undefined' && loaded);
  };
  const ready=async()=>page.waitForFunction(()=>document.querySelector('#activity-status').textContent.includes('Newest first'));
  await page.goto(base);await login('admin');

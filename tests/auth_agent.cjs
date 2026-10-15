@@ -48,7 +48,7 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
    await page.selectOption('#auth-form select',name);
    await page.fill('#auth-form input[type=password]','test-unique-password1-'+name);
    await page.click('#auth-form button');
-   await page.waitForFunction(()=>loaded);
+   await page.waitForFunction(()=>typeof loaded !== 'undefined' && loaded);
   };
   await page.goto(base); await login('admin');
   await page.locator('#open-agent').waitFor(); await page.click('#open-agent');
@@ -61,13 +61,13 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
   assert.match(await page.locator('#agent-messages').textContent(),/Private administrator answer/);
   const old=await page.evaluate(()=>Object.entries(sessionStorage).find(([key])=>key.startsWith('weblab.agent.session.v1.')));
   assert.ok(old && old[1]);
-  await page.reload(); await page.waitForFunction(()=>loaded); await page.click('#open-agent');
+  await page.reload(); await page.waitForFunction(()=>typeof loaded !== 'undefined' && loaded); await page.click('#open-agent');
   await page.waitForFunction(()=>document.querySelector('#agent-messages').textContent.includes('Private administrator answer'));
   // Another admin login has its own scope and cannot reopen this capability.
   const second=await browser.newContext(), other=await second.newPage();
   await other.goto(base); await other.locator('#auth-dialog[open]').waitFor();
   await other.fill('#auth-form input[type=password]','test-unique-password1-admin');
-  await other.click('#auth-form button'); await other.waitForFunction(()=>loaded);
+  await other.click('#auth-form button'); await other.waitForFunction(()=>typeof loaded !== 'undefined' && loaded);
   const response=await other.evaluate(async token=>{
    const r=await fetch('/api/agent/state',{headers:{'X-Weblab-Agent-Session':token}});return r.status;
   },old[1]);

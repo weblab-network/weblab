@@ -17,7 +17,7 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
    await page.selectOption('#auth-form select', name);
    await page.fill('#auth-form input[type=password]', config.passwords[name]);
    await page.click('#auth-form button');
-   await page.waitForFunction(() => loaded);
+   await page.waitForFunction(() => typeof loaded !== 'undefined' && loaded);
    await page.evaluate(() => openConsole('r1'));
    await page.waitForFunction(() => consoleSessions.get('r1')?.lockReady);
    return page;
@@ -48,7 +48,7 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
   const socketClosed = new Promise(resolve => sibling.on('websocket', socket => {
    if (new URL(socket.url()).pathname === '/ws/r1') socket.on('close', resolve);
   }));
-  await sibling.goto(config.base); await sibling.waitForFunction(() => loaded);
+  await sibling.goto(config.base); await sibling.waitForFunction(() => typeof loaded !== 'undefined' && loaded);
   await sibling.evaluate(() => openConsole('r1'));
   await sibling.waitForFunction(() => consoleSessions.get('r1')?.lockReady);
   await writer.click('#auth-logout');
