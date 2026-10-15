@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -101,6 +102,28 @@ class InitialConfigTests(unittest.TestCase):
         result=subprocess.run(['python3',str(root/'tools/validate_topology.py'),str(path)],capture_output=True,text=True)
         self.assertNotEqual(result.returncode,0)
         self.assertIn('interface',result.stderr)
+
+
+class OfflineImageValidationTests(unittest.TestCase):
+    def test_exos_example_with_installed_and_missing_image(self):
+        root = Path(lab_server.__file__).parent
+        with tempfile.TemporaryDirectory() as directory:
+            image = Path(directory) / 'EXOS-VM_33.1.1.31.qcow2'
+            # The offline CLI checks filenames, not disk contents or device boot.
+            image.write_bytes(b'placeholder')
+            command = ['python3', str(root / 'tools/validate_topology.py'),
+                       str(root / 'examples/exos-demo.json'), '--image-dir', directory]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('installed VM/IOL image names checked', result.stdout)
+            self.assertEqual(list(Path(directory).iterdir()), [image])
+            self.assertEqual(image.read_bytes(), b'placeholder')
+            image.unlink()
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn('Invalid topology:', result.stderr)
+            self.assertNotIn('Traceback', result.stderr)
+            self.assertEqual(list(Path(directory).iterdir()), [])
 
 
 if __name__=='__main__': unittest.main()

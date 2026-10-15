@@ -85,6 +85,9 @@ three-switch/two-PC topology with a companion exercise.
 
 ## New in v0.8.0 — Weblab FRR
 
+Use [v0.8.1](docs/releases/v0.8.1.md) for the current core, Agent and EXOS edition;
+it fixes offline image validation that blocked the v0.8.0 EXOS release workflow.
+
 An optional FRR 10.7.1 package adds native CLI controls for **LLDP**, **read-only
 SNMPv2c**, **routed 802.1Q VLAN interfaces** and **IPv4 VRRP interface provisioning**.
 Use it with LL2S trunks for router-on-a-stick and redundant virtual gateways.

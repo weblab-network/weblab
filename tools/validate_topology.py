@@ -12,6 +12,7 @@ from lab_server import Lab, LabError
 class FileValidator:
     def __init__(self, data, image_dir=None):
         self.topology = {'nodes': []}
+        self.allow_untested_frr = False
         self.image_dir = image_dir
         self.data = data
 
