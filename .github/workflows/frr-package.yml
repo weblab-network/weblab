@@ -35,7 +35,8 @@ jobs:
       - name: Test the exact release image
         run: |
           sudo apt-get update
-          sudo apt-get install -y perl openvswitch-switch
+          sudo apt-get install -y perl libnet-pcap-perl iproute2 openvswitch-switch
+          perl -c iou2net.pl
           sudo modprobe openvswitch
           docker pull ghcr.io/weblab-network/ll2s:0.2.0
           docker pull alpine:latest
