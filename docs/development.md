@@ -215,6 +215,19 @@ repository.
 
 ## FRR integration tests
 
+The optional LLDP/SNMP extension is built from a pinned upstream source revision;
+see [its build guide](../packaging/frr/README.md). `test_frr_lldp.py` exercises
+intent/replay, socket framing and output sanitization without Docker.
+`python3 tests/frr_lldp_native.py` uses disposable real routers for LLDP,
+OSPF, save/reload failure handling and ZIP restoration. After building the image,
+`python3 tests/frr_native.py --snmp` runs the routing, forwarding, console-lock
+and recovery checks below against the current LLDP/SNMP image.
+`python3 tests/frr_lldp_native.py --snmp` runs the LLDP regression against it;
+`python3 tests/frr_snmp_native.py` checks real v2c polling, source/community
+restrictions, write/v1 rejection, LLDP-MIB/AgentX, recovery and saved SNMP state.
+`test_frr_snmp.py` covers policy validation and replay ordering without Docker.
+Run native suites sequentially.
+
 The default backend suite tests FRR validation, archive integrity and partial
 startup rollback without Docker or root. `node tests/frr_ui.cjs` tests the image
 selector, ports and export options without starting routers.
@@ -249,7 +262,8 @@ python3 tests/frr_vrrp_native.py
 ```
 
 This isolated test checks VRRPv3 election, failover and virtual-IP reachability
-across VLAN 10; vtysh/shell transitions and logout recovery; and a temporary
+by routing to the VIP across VLAN 10 (not client ARP to the virtual MAC);
+vtysh/shell transitions and logout recovery; and a temporary
 committed image with default denial, explicit opt-in, warning and ZIP identity.
 It creates and removes its own tag without replacing the installed FRR tag.
 Linux interfaces are configured by the test, not automatically restored by Weblab.
@@ -511,3 +525,59 @@ restrictions, logout closing another tab's live connection, and admin Agent
 isolation. Credentials are random test values. A PTY echo fixture replaces vendor
 devices; this does not test device forwarding, real provider sign-in or inference.
 No host network, Docker socket, real images or existing lab data are mounted.
+
+### FRR routed VLAN regression
+
+Build the experimental image with `python3 tools/build_frr_lldp.py --source /path/to/frr`.
+Run `python3 tests/frr_vlan_native.py` for tagged IPv4/IPv6, inter-VLAN routing,
+isolation, ownership protection, SNMP on VLAN addresses, reload and ZIP restore.
+Use `--vlan` with `tests/frr_native.py`, `tests/frr_lldp_native.py` and
+`tests/frr_snmp_native.py` to run their regressions against the new image.
+Run these node-launching suites sequentially, using their disposable lab directories.
+
+### FRR native IPv4 VRRP provisioning
+
+Build the latest enhanced image with `tools/build_frr_lldp.py`, then run
+`python3 tests/frr_vrrp_cli_native.py`. It uses a disposable two-router/LL2S lab
+with clients, testing VRRPv2 on physical parents and VRRPv3 on VLAN parents,
+actual virtual-gateway forwarding,
+failover/preemption, CLI removals, ownership conflicts and ZIP reconstruction.
+The existing `tests/frr_vrrp_native.py` remains the stock/manual-shell test.
+Add `--vrrp` to `tests/frr_native.py`, `tests/frr_vlan_native.py`,
+`tests/frr_lldp_native.py` and `tests/frr_snmp_native.py` for regressions against
+the VRRP image. Run node-launching suites sequentially.
+
+
+## Weblab FRR release bundle
+
+Build the exact pinned source using `tools/build_frr_lldp.py`. Use a separate
+candidate tag so existing local lab images keep their identity. The builder's
+`--context-dir` option retains inputs in a new directory when needed.
+
+`tools/bundle_frr_release.py --output /path/to/new-bundle` snapshots that image,
+collects verified corresponding dependency sources in a disposable container,
+and writes binary/source archives, image metadata and checksums. It needs network
+access, several GiB of scratch space and does not touch an active lab. Optional
+`--work-dir` chooses the scratch filesystem. Failed/interrupted output has no
+completed `SHA256SUMS`; remove only that failed output before retrying.
+
+Review the image ID and bundle checksums into `packaging/frr/release.json` and
+`frr.PUBLIC_IMAGE_ID`. `tools/verify_frr_bundle.py /path/to/bundle` checks artifacts
+against that lock and compares bundled build files with the release tree.
+Test the pinned public selector, without the untested-image opt-in:
+
+```sh
+python3 -m unittest discover -s tests -p 'test_frr*.py' -v
+python3 tests/frr_vrrp_cli_native.py --release
+python3 tests/frr_lldp_native.py --release
+python3 tests/frr_snmp_native.py --release
+python3 tests/frr_vlan_native.py --release
+python3 tests/frr_native.py --release
+```
+
+Run native suites sequentially with disposable data. They require rootful Docker,
+LL2S and its host OVS module, and Alpine PCs. Never retag an image being used by
+an active lab to satisfy a test. The manual FRR package workflow loads and tests
+the published release archive and pushes that same image to GHCR; it does not
+rebuild or silently update a pinned package. Publish corresponding sources with
+the binary. See [source distribution](../packaging/frr/SOURCES.md).

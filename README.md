@@ -83,7 +83,18 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
-## New in v0.7.0 — optional shared-lab access control
+## New in v0.8.0 — Weblab FRR
+
+An optional FRR 10.7.1 package adds native CLI controls for **LLDP**, **read-only
+SNMPv2c**, **routed 802.1Q VLAN interfaces** and **IPv4 VRRP interface provisioning**.
+Use it with LL2S trunks for router-on-a-stick and redundant virtual gateways.
+Saved configurations and lab ZIPs preserve these settings and exact image identity.
+
+The [release bundle](docs/releases/v0.8.0.md) includes a Linux amd64 Docker image
+and corresponding sources. The stock FRR profile and existing local images remain
+supported. See the [Weblab FRR setup and CLI guide](packaging/frr/README.md).
+
+## Added in v0.7.0 — optional shared-lab access control
 
 - [Authentication and roles](docs/authentication.md): opt-in admin/writer/reader
   accounts, server-enforced permissions and login protection.

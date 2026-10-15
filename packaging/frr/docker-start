@@ -1,0 +1,19 @@
+#!/bin/bash
+# Start the local CLI backend before watchfrr replays integrated configuration.
+# Its restart loop is independent of routing supervision.
+source /usr/lib/frr/frrcommon.sh
+mkdir -p /run/frr
+(
+    while true; do
+        python3 /usr/lib/frr/weblab_lldp.py
+        sleep 1
+    done
+) &
+for ((attempt=0; attempt<100; attempt++)); do
+    if [ -S /run/frr/weblab-lldpd.vty ]; then
+        exec /usr/lib/frr/watchfrr $(daemon_list)
+    fi
+    sleep 0.1
+done
+echo 'Weblab LLDP backend did not become ready' >&2
+exit 1

@@ -226,6 +226,16 @@ transport a local image separately. No container image,
 daemon shell settings or arbitrary guest filesystem data is included. Existing
 FRR configuration overrides snippets, including after ZIP restore.
 
+The optional [FRR LLDP/SNMP/VLAN/VRRP images](../packaging/frr/README.md) save service intent
+in that same `frr.conf`; discovered neighbors are runtime data. The VLAN image
+also saves `vlan interface ethN.VID` declarations there, recreating tagged
+interfaces before normal operation resumes. The VRRP image additionally
+recreates managed IPv4 VRRP macvlans and VIPs from saved native `vrrp` commands. Shell-created VLANs/macvlans are not saved. SNMP communities
+are plain text in saved/exported configuration, so protect those files. A lab can contain
+both stock and enhanced FRR routers. ZIP export records each image separately,
+and restore requires both matching images. Changing a node's image selector
+chooses a separate saved-configuration directory; it does not migrate settings.
+
 
 Junos ZIP storage is covered by synthetic-disk round-trip tests; a complete
 real-guest restore/forwarding test remains outstanding. Use `commit` and shut

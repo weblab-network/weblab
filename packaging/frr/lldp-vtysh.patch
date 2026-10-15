@@ -1,0 +1,340 @@
+--- a/vtysh/vtysh.c
++++ b/vtysh/vtysh.c
+@@ -1,4 +1,7 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
++/* Weblab modifications, 2026-10-15: native LLDP/SNMP/VLAN CLI integration
++ * and IPv4 VRRP provisioning status. See packaging/frr/NOTICE in Weblab.
++ */
+ /* Virtual terminal interface shell.
+  * Copyright (C) 2000 Kunihiro Ishiguro
+  */
+@@ -52,6 +55,7 @@
+ /* VTY should add timestamp */
+ bool vtysh_add_timestamp;
+ 
++static bool weblab_lldp_required;
+ static bool stderr_tty;
+ static bool stderr_stdout_same;
+ 
+@@ -136,6 +140,7 @@
+ 	{.name = "pathd", .flag = VTYSH_PATHD},
+ 	{.name = "pim6d", .flag = VTYSH_PIM6D},
+ 	{.name = "watchfrr", .flag = VTYSH_WATCHFRR},
++	{.name = "weblab-lldpd", .flag = VTYSH_WEBLAB_LLDPD},
+ };
+ 
+ /* Searches for client by name, returns index */
+@@ -200,7 +205,8 @@
+ 
+ 	do {
+ 		ret = recvmsg(vclient->fd, &mh, 0);
+-		if (ret >= 0 || (errno != EINTR && errno != EAGAIN))
++		if (ret >= 0 || (errno != EINTR &&
++		    (errno != EAGAIN || vclient->flag == VTYSH_WEBLAB_LLDPD)))
+ 			break;
+ 	} while (true);
+ 
+@@ -258,8 +264,14 @@
+ 			goto out_err;
+ 	}
+ 
+-	if (vclient->fd < 0)
++	if (vclient->fd < 0) {
++		if (vclient->flag == VTYSH_WEBLAB_LLDPD && weblab_lldp_required && vclient->fd != -3) {
++			if (gvty->of)
++				vty_out(gvty, "%% Weblab extension backend unavailable\n");
++			return CMD_WARNING_CONFIG_FAILED;
++		}
+ 		return CMD_SUCCESS;
++	}
+ 
+ 	ret = write(vclient->fd, line, strlen(line) + 1);
+ 	if (ret <= 0) {
+@@ -401,7 +413,7 @@
+ 
+ out_err:
+ 	vclient_close(vclient);
+-	ret = CMD_SUCCESS;
++	ret = vclient->flag == VTYSH_WEBLAB_LLDPD ? CMD_WARNING_CONFIG_FAILED : CMD_SUCCESS;
+ out:
+ 	if (buf != stackbuf)
+ 		XFREE(MTYPE_TMP, buf);
+@@ -485,21 +497,23 @@
+  * line
+  *    the specific command to execute
+  */
+-static void vtysh_client_config(struct vtysh_client *head_client, char *line)
++static int vtysh_client_config(struct vtysh_client *head_client, char *line)
+ {
+ 	/* watchfrr currently doesn't load any config, and has some hardcoded
+ 	 * settings that show up in "show run".  skip it here (for now at
+ 	 * least) so we don't get that mangled up in config-write.
+ 	 */
+ 	if (head_client->flag == VTYSH_WATCHFRR)
+-		return;
++		return CMD_SUCCESS;
++	int ret;
+ 
+ 	/* suppress output to user */
+ 	gvty->of_saved = gvty->of;
+ 	gvty->of = NULL;
+-	vtysh_client_run_all(head_client, line, 1, vtysh_config_parse_line,
++	ret = vtysh_client_run_all(head_client, line, 1, vtysh_config_parse_line,
+ 			     NULL);
+ 	gvty->of = gvty->of_saved;
++	return ret;
+ }
+ 
+ /* Command execution over the vty interface. */
+@@ -3698,6 +3712,15 @@
+ 	return CMD_SUCCESS;
+ }
+ 
++static void weblab_config_discard(void)
++{
++	FILE *out = gvty->of, *saved = gvty->of_saved;
++	gvty->of = gvty->of_saved = NULL;
++	vtysh_config_dump();
++	gvty->of = out;
++	gvty->of_saved = saved;
++}
++
+ DEFUN (vtysh_write_terminal,
+        vtysh_write_terminal_cmd,
+        "write terminal ["DAEMONS_LIST"] [no-header]",
+@@ -3720,7 +3743,11 @@
+ 	for (i = 0; i < array_size(vtysh_client); i++)
+ 		if ((argc < 3)
+ 		    || (strmatch(vtysh_client[i].name, argv[2]->text)))
+-			vtysh_client_config(&vtysh_client[i], line);
++			if (vtysh_client_config(&vtysh_client[i], line) != CMD_SUCCESS) {
++				weblab_config_discard();
++				vty_out(vty, "%% Configuration incomplete: backend unavailable\n");
++				return CMD_WARNING_CONFIG_FAILED;
++			}
+ 
+ 	/* Integrate vtysh specific configuration. */
+ 	vty_open_pager(vty);
+@@ -4126,6 +4153,13 @@
+ 	struct stat st;
+ 	int err = 0;
+ 
++	int lldp = vtysh_client_lookup("weblab-lldpd");
++	if (vtysh_client[lldp].fd == -1 || vtysh_client[lldp].fd == -3 ||
++	    vtysh_client_config(&vtysh_client[lldp], line) != CMD_SUCCESS) {
++		weblab_config_discard();
++		vty_out(gvty, "%% Extension configuration unavailable; saved file unchanged\n");
++		return CMD_WARNING_CONFIG_FAILED;
++	}
+ 	vty_out(gvty, "Building Configuration...\n");
+ 
+ 	backup_config_file(frr_config);
+@@ -4139,7 +4173,8 @@
+ 	fd = fileno(fp);
+ 
+ 	for (i = 0; i < array_size(vtysh_client); i++)
+-		vtysh_client_config(&vtysh_client[i], line);
++		if (vtysh_client[i].flag != VTYSH_WEBLAB_LLDPD)
++			vtysh_client_config(&vtysh_client[i], line);
+ 
+ 	vtysh_config_write();
+ 	gvty->of_saved = gvty->of;
+@@ -4265,7 +4300,6 @@
+        "Write configuration to the file (same as write memory)\n")
+ {
+ 	int ret = CMD_SUCCESS;
+-	char line[] = "do write memory";
+ 	unsigned int i;
+ 
+ 	vty_out(vty, "Note: this version of vtysh never writes vtysh.conf\n");
+@@ -4297,12 +4331,8 @@
+ 		return ret;
+ 	}
+ 
+-	vty_out(vty, "Building Configuration...\n");
+-
+-	for (i = 0; i < array_size(vtysh_client); i++)
+-		ret = vtysh_client_execute(&vtysh_client[i], line);
+-
+-	return ret;
++	vty_out(vty, "%% Weblab extensions require integrated configuration; enable service integrated-vtysh-config\n");
++	return CMD_WARNING_CONFIG_FAILED;
+ }
+ 
+ DEFUN (vtysh_copy_running_config,
+@@ -5062,6 +5092,14 @@
+ 		return -1;
+ 	}
+ 
++	if (vclient->flag == VTYSH_WEBLAB_LLDPD) {
++		struct timeval timeout = {.tv_sec = 15};
++		if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) ||
++		    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout))) {
++			close(sock);
++			return -1;
++		}
++	}
+ 	vclient->fd = sock;
+ 
+ 	return 0;
+@@ -5172,6 +5210,7 @@
+ 
+ int vtysh_connect_all(const char *daemon_name)
+ {
++	weblab_lldp_required = !daemon_name || strmatch(daemon_name, "weblab-lldpd");
+ 	unsigned int i;
+ 	int rc = 0;
+ 	int matches = 0;
+@@ -5264,6 +5303,52 @@
+ 	if (gvty->of != stdout)
+ 		fclose(gvty->of);
+ }
++
++/* Weblab LLDP extension: native CLI, separate service backend. */
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_lldp_run_cmd,
++      "[no] lldp run", NO_STR "Link Layer Discovery Protocol\n" "Enable LLDP\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_lldp_transmit_cmd,
++      "[no] lldp transmit", NO_STR "Link Layer Discovery Protocol\n" "Transmit advertisements\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_lldp_receive_cmd,
++      "[no] lldp receive", NO_STR "Link Layer Discovery Protocol\n" "Receive advertisements\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_show_lldp_cmd,
++      "show lldp", SHOW_STR "LLDP status\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_show_lldp_neighbors_cmd,
++      "show lldp neighbors [detail]", SHOW_STR "LLDP\n" "Neighbors\n" "Detailed neighbor information\n")
++
++
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_snmp_enable_cmd,
++      "[no] snmp-server enable", NO_STR "SNMP service\n" "Enable read-only SNMPv2c\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_snmp_community_cmd,
++      "snmp-server community WORD ro", "SNMP service\n" "Community\n" "Community string\n" "Read-only access\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_no_snmp_community_cmd,
++      "no snmp-server community", NO_STR "SNMP service\n" "Remove community (disable service first)\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_snmp_listen_cmd,
++      "snmp-server listen A.B.C.D", "SNMP service\n" "Listen address in default VRF\n" "Local IPv4 address\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_no_snmp_listen_cmd,
++      "no snmp-server listen", NO_STR "SNMP service\n" "Remove listen address\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_snmp_source_cmd,
++      "snmp-server source A.B.C.D/M", "SNMP service\n" "Allowed source network\n" "IPv4 prefix\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_no_snmp_source_cmd,
++      "no snmp-server source", NO_STR "SNMP service\n" "Remove source network\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_snmp_contact_cmd,
++      "snmp-server contact LINE...", "SNMP service\n" "System contact\n" "Contact text\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_no_snmp_contact_cmd,
++      "no snmp-server contact", NO_STR "SNMP service\n" "Remove contact\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_snmp_location_cmd,
++      "snmp-server location LINE...", "SNMP service\n" "System location\n" "Location text\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_no_snmp_location_cmd,
++      "no snmp-server location", NO_STR "SNMP service\n" "Remove location\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_show_snmp_cmd,
++      "show snmp", SHOW_STR "SNMP service status\n")
++
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_vlan_interface_cmd,
++      "[no] vlan interface WORD", NO_STR "Routed 802.1Q interfaces\n" "Create or remove a tagged interface\n" "eth0.VID through eth7.VID (VID 1-4094)\n")
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_show_vlan_interfaces_cmd,
++      "show vlan interfaces", SHOW_STR "Routed 802.1Q interfaces\n" "Configured interfaces and state\n")
++
++DEFSH(VTYSH_WEBLAB_LLDPD, weblab_show_vrrp_platform_cmd,
++      "show vrrp platform", SHOW_STR "Virtual Router Redundancy Protocol\n" "Weblab IPv4 interface provisioning status\n")
+ 
+ void vtysh_init_vty(void)
+ {
+@@ -5371,6 +5456,26 @@
+ 	install_node(&srv6_sid_format_uncompressed_f4024_node);
+ 
+ 	vtysh_init_cmd();
++	install_element(VIEW_NODE, &weblab_show_vrrp_platform_cmd);
++	install_element(CONFIG_NODE, &weblab_vlan_interface_cmd);
++	install_element(VIEW_NODE, &weblab_show_vlan_interfaces_cmd);
++	install_element(CONFIG_NODE, &weblab_snmp_enable_cmd);
++	install_element(CONFIG_NODE, &weblab_snmp_community_cmd);
++	install_element(CONFIG_NODE, &weblab_snmp_listen_cmd);
++	install_element(CONFIG_NODE, &weblab_snmp_source_cmd);
++	install_element(CONFIG_NODE, &weblab_snmp_contact_cmd);
++	install_element(CONFIG_NODE, &weblab_snmp_location_cmd);
++	install_element(CONFIG_NODE, &weblab_no_snmp_community_cmd);
++	install_element(CONFIG_NODE, &weblab_no_snmp_listen_cmd);
++	install_element(CONFIG_NODE, &weblab_no_snmp_source_cmd);
++	install_element(CONFIG_NODE, &weblab_no_snmp_contact_cmd);
++	install_element(CONFIG_NODE, &weblab_no_snmp_location_cmd);
++	install_element(VIEW_NODE, &weblab_show_snmp_cmd);
++	install_element(CONFIG_NODE, &weblab_lldp_run_cmd);
++	install_element(INTERFACE_NODE, &weblab_lldp_transmit_cmd);
++	install_element(INTERFACE_NODE, &weblab_lldp_receive_cmd);
++	install_element(VIEW_NODE, &weblab_show_lldp_cmd);
++	install_element(VIEW_NODE, &weblab_show_lldp_neighbors_cmd);
+ 
+ 	/* bgpd */
+ #ifdef HAVE_BGPD
+--- a/vtysh/vtysh.h
++++ b/vtysh/vtysh.h
+@@ -1,4 +1,7 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
++/* Weblab modifications, 2026-10-15: native LLDP/SNMP/VLAN CLI integration
++ * and IPv4 VRRP provisioning status. See packaging/frr/NOTICE in Weblab.
++ */
+ /* Virtual terminal interface shell.
+  * Copyright (C) 2000 Kunihiro Ishiguro
+  */
+@@ -36,6 +39,8 @@
+ #define VTYSH_PIM6D     0x100000
+ #define VTYSH_MGMTD 0x200000
+ 
++#define VTYSH_WEBLAB_LLDPD 0x400000
++
+ #define VTYSH_RCV_BUF_MAX 16777216
+ 
+ #define VTYSH_WAS_ACTIVE (-2)
+@@ -50,7 +55,7 @@
+ 		VTYSH_LDPD | VTYSH_BGPD | VTYSH_ISISD | VTYSH_PIMD |           \
+ 		VTYSH_PIM6D | VTYSH_NHRPD | VTYSH_EIGRPD | VTYSH_BABELD |      \
+ 		VTYSH_SHARPD | VTYSH_PBRD | VTYSH_STATICD | VTYSH_BFDD |       \
+-		VTYSH_FABRICD | VTYSH_VRRPD | VTYSH_PATHD | VTYSH_MGMTD
++		VTYSH_FABRICD | VTYSH_VRRPD | VTYSH_PATHD | VTYSH_MGMTD | VTYSH_WEBLAB_LLDPD
+ #define VTYSH_ACL_CONFIG                                                       \
+ 	VTYSH_BABELD | VTYSH_BGPD | VTYSH_EIGRPD | VTYSH_ISISD |               \
+ 		VTYSH_FABRICD | VTYSH_LDPD | VTYSH_NHRPD | VTYSH_OSPF6D |      \
+@@ -83,7 +88,7 @@
+ 		VTYSH_ISISD | VTYSH_PIMD | VTYSH_PIM6D | VTYSH_NHRPD |         \
+ 		VTYSH_EIGRPD | VTYSH_BABELD | VTYSH_PBRD | VTYSH_FABRICD |     \
+ 		VTYSH_VRRPD | VTYSH_MGMTD
+-#define VTYSH_INTERFACE VTYSH_INTERFACE_SUBSET | VTYSH_BGPD
++#define VTYSH_INTERFACE VTYSH_INTERFACE_SUBSET | VTYSH_BGPD | VTYSH_WEBLAB_LLDPD
+ #define VTYSH_VRF	VTYSH_INTERFACE_SUBSET | VTYSH_BGPD
+ #define VTYSH_KEYS	VTYSH_MGMTD | VTYSH_EIGRPD | VTYSH_OSPF6D | VTYSH_OSPFD | VTYSH_BFDD
+ /* Daemons who can process nexthop-group configs */
+@@ -177,6 +182,6 @@
+ 	uint32_t lost_msgs;
+ };
+ 
+-extern struct vtysh_client vtysh_client[22];
++extern struct vtysh_client vtysh_client[23];
+ 
+ #endif /* VTYSH_H */
+--- a/vtysh/vtysh_config.c
++++ b/vtysh/vtysh_config.c
+@@ -1,4 +1,7 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
++/* Weblab modifications, 2026-10-15: native LLDP/SNMP/VLAN CLI integration
++ * and IPv4 VRRP provisioning status. See packaging/frr/NOTICE in Weblab.
++ */
+ /* Configuration generator.
+  * Copyright (C) 2000 Kunihiro Ishiguro
+  */
+@@ -717,7 +720,7 @@
+ 				for (cl = &vtysh_client[i]; cl; cl = cl->next) {
+ 					if (cl->fd >= 0)
+ 						close(cl->fd);
+-					cl->fd = -1;
++					cl->fd = cl->flag == VTYSH_WEBLAB_LLDPD ? -3 : -1;
+ 				}
+ 			} else if (vtysh_client[i].fd == -1 &&
+ 				   vtysh_client[i].next == NULL) {
+@@ -727,7 +730,7 @@
+ 				 * client, that means the client isn't up in
+ 				 * the first place and we can exit early
+ 				 */
+-				exit(0);
++				exit(my_client_type == VTYSH_WEBLAB_LLDPD ? 1 : 0);
+ 			}
+ 		}
+ 

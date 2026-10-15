@@ -1,0 +1,11 @@
+{
+  "image": "ghcr.io/weblab-network/weblab-frr:10.7.1-wl1",
+  "image_id": "sha256:85775f0e1c09e8d92f7af0d0f8834cd92ddc8d8c60e5ebfbc9dc6d136562b423",
+  "source_release": "v0.8.0",
+  "files": {
+    "SHA256SUMS": "c02378b930554485884daa3dc34ec18636b2ae6d9aefa53cec585f57e5850380",
+    "image.json": "bcfe1324edf1e2fc66c3452d22ed3ac64816015a4657460eef2fbbefd00a6fba",
+    "weblab-frr-linux-amd64.tar.gz": "fc47225d79790f7e701c15f87ba327ed18980ca8a94972b69be7820514437f51",
+    "weblab-frr-sources.tar.gz": "31ccc28f24ca5350203531647fb9b1492ab80b6650e6941f23f2f21b71aa8c0e"
+  }
+}

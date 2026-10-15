@@ -1,0 +1,54 @@
+name: Publish tested Weblab FRR bundle
+
+# The release bundle is built and tested once, then published without rebuilding.
+# Upload its binary + corresponding sources to the public release first.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-weblab-frr-10.7.1-wl1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Download and verify the reviewed binary/source pair
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          test "$(gh release view v0.8.0 --json isDraft --jq .isDraft)" = false
+          mkdir bundle
+          gh release download v0.8.0 --dir bundle --pattern 'weblab-frr-*' --pattern image.json --pattern SHA256SUMS
+          python3 tools/verify_frr_bundle.py bundle
+          docker load -i bundle/weblab-frr-linux-amd64.tar.gz
+          python3 -c 'import frr,subprocess; frr.inspect_image(lambda *a: subprocess.check_output(a).decode(), RuntimeError, name=frr.PUBLIC_IMAGE)'
+      - name: Test the exact release image
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y perl openvswitch-switch
+          sudo modprobe openvswitch
+          docker pull ghcr.io/weblab-network/ll2s:0.2.0
+          docker pull alpine:latest
+          python3 -m unittest discover -s tests -p 'test_frr*.py' -v
+          sudo python3 tests/frr_vrrp_cli_native.py --release
+          sudo python3 tests/frr_lldp_native.py --release
+          sudo python3 tests/frr_snmp_native.py --release
+          sudo python3 tests/frr_vlan_native.py --release
+          sudo python3 tests/frr_native.py --release
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the verified image without rebuilding
+        run: docker push ghcr.io/weblab-network/weblab-frr:10.7.1-wl1

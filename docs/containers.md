@@ -146,3 +146,18 @@ atomically; pin matching numbered versions for core and Agent upgrades. After
 all three jobs succeed, the workflow creates a GitHub
 Release using the committed notes. Existing release pages are left unchanged
 on reruns. Do not move a published tag; use a new version for corrections.
+
+
+## Optional Weblab FRR node image
+
+Weblab v0.8.0 adds `ghcr.io/weblab-network/weblab-frr:10.7.1-wl1`, a separate
+Linux amd64 node image with LLDP, read-only SNMPv2c, routed VLANs and IPv4 VRRP
+provisioning. It is not embedded in core/Agent images. Install it on the Docker
+host by loading the [release bundle](releases/v0.8.0.md) or pulling the registry
+package after publication. Weblab checks its immutable image/config ID; source
+builds require the existing untested-image opt-in.
+
+The release bundles exact corresponding sources and dependency recipes with the
+binary. See [the FRR guide](../packaging/frr/README.md). Stock FRR and LL2S images
+remain separate choices. This does not add a nested Docker daemon or a preloaded
+starter topology.

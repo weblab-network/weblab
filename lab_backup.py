@@ -231,11 +231,12 @@ def create(lab, include_logs=False, compact_veos=True, agent_history=None):
         stream = tempfile.TemporaryFile(dir=lab.directory)
         try:
             manifest = {'format': 'web-netlab-backup', 'version': 1, 'images': [], 'files': []}
-            if any(frr.is_frr(n) for n in lab.topology['nodes']):
+            for name in sorted({n['image'] for n in lab.topology['nodes'] if frr.is_frr(n)}):
                 # Pin container content as well as the topology's human-readable tag.
                 from lab_server import run, LabError
-                identity = frr.archive_image(run, LabError, lab.allow_untested_frr)
-                manifest.update(version=2, containers=[identity])
+                identity = frr.archive_image(run, LabError, lab.allow_untested_frr, name)
+                manifest['version'] = 2
+                manifest.setdefault('containers', []).append(identity)
             if any(ll2s_device.is_ll2s(n) for n in lab.topology['nodes']):
                 from lab_server import run, LabError
                 manifest['version'] = 2
@@ -461,8 +462,8 @@ def restore(lab, stream, run):
                 # must accommodate a complete staged replacement beside them.
                 storage.require_space(lab.directory, required_space, operation='staged ZIP restore')
                 profiles = []
-                if any(frr.is_frr(n) for n in topology['nodes']):
-                    profiles.append((frr.IMAGE, lambda: frr.archive_image(run, ValueError, lab.allow_untested_frr)))
+                for name in sorted({n['image'] for n in topology['nodes'] if frr.is_frr(n)}):
+                    profiles.append((name, lambda name=name: frr.archive_image(run, ValueError, lab.allow_untested_frr, name)))
                 for name in sorted({n['image'] for n in topology['nodes'] if ll2s_device.is_ll2s(n)}):
                     profiles.append((name, lambda name=name: ll2s_device.archive_image(run, ValueError, name)))
                 containers = manifest.get('containers', [])

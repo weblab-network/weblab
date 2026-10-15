@@ -38,6 +38,20 @@ notices remain in that image under their upstream licenses. FRR binaries/source
 are not bundled into Weblab's standard image or source tree. The Weblab profile
 and TAP adapter are independently implemented.
 
+The optional [Weblab FRR image](packaging/frr/README.md) contains
+FRRouting 10.7.1 with a native vtysh patch and lldpd. The patch
+`packaging/frr/lldp-vtysh.patch` is GPL-2.0-or-later, following upstream vtysh;
+it is not covered by Weblab's MIT license. The image includes the exact FRR
+source archive, patch and [notice](packaging/frr/NOTICE) under
+`/usr/share/weblab-frr/`. The separate Python backend and build tooling are
+Weblab code under MIT. lldpd retains its upstream ISC license and package notices.
+The LLDP/SNMP variant also installs Alpine's Net-SNMP packages, which retain their
+individual upstream notices and licenses; see [the image notice](packaging/frr/NOTICE).
+Published binary bundles include matching FRR and dependency sources with checksums;
+see [source distribution](packaging/frr/SOURCES.md). The modified FRR files carry
+dated notices. Custom base FRR/libyang APK metadata is distinguished from the
+rebuilt Weblab binaries; it is not represented as an Alpine source commit.
+
 
 The optional Agent companion installs `@openai/codex` 0.160.0 (package license:
 Apache-2.0) and the separately pinned MCP Python SDK/dependencies. These are
@@ -57,3 +71,11 @@ operator uses their own eligible account or local model service. OpenAI's
 distinguishes local/open-source integrations from commercial or hosted services;
 the current device-login integration is intended for owner-operated self-hosted
 Weblab, not a public hosted login service.
+
+The enhanced FRR VLAN variant additionally includes Weblab's MIT-licensed
+`vlan_backend.py`; the native vtysh command additions retain the patch's
+GPL-2.0-or-later terms. See [the image notice](packaging/frr/NOTICE).
+
+The IPv4 VRRP variant includes Weblab's MIT-licensed `vrrp_backend.py`.
+Upstream FRR continues to implement VRRP elections and protocol state unchanged.
+See [NOTICE](packaging/frr/NOTICE).

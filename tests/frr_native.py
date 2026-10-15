@@ -3,6 +3,7 @@
 Run sequentially: python3 tests/frr_native.py
 """
 import json
+import argparse
 from pathlib import Path
 import shutil
 import sys
@@ -17,9 +18,10 @@ import lab_server
 import saved_config
 
 
-def main():
+def main(image=frr.IMAGE):
     with tempfile.TemporaryDirectory(prefix='weblab-frr-native-') as tmp:
-        lab = lab_server.Lab(Path(tmp)/'data', Path(tmp)/'images')
+        lab = lab_server.Lab(Path(tmp)/'data', Path(tmp)/'images',
+                             allow_untested_frr=image in (frr.LLDP_IMAGE, frr.SNMP_IMAGE, frr.VLAN_IMAGE, frr.VRRP_IMAGE))
         def cli(node, *commands):
             args = [part for command in commands for part in ('-c', command)]
             return lab_server.run('docker', 'exec', lab.runtime[node]['container'], 'vtysh', *args)
@@ -73,7 +75,9 @@ router bgp {65000+i}
  exit-address-family
 !
 '''
-                nodes.append({'id':f'r{i}', 'name':f'R{i}', 'type':'router','image':frr.IMAGE,
+                if image != frr.IMAGE:
+                    config += 'lldp run\n'
+                nodes.append({'id':f'r{i}', 'name':f'R{i}', 'type':'router','image':image,
                               'ethernet':2, 'startup_config':config})
                 nodes.append({'id':f'p{i}','name':f'PC{i}','type':'pc','ipv4':f'10.0.{i}.10/24','gateway':f'10.0.{i}.1'})
             links = [{'id':'transit','a':{'node':'r1','port':'eth0'},'b':{'node':'r2','port':'eth0'}}]
@@ -149,14 +153,14 @@ router bgp {65000+i}
 import os,sys
 from pathlib import Path
 import lab_server,frr
-lab=lab_server.Lab(Path(sys.argv[1]),Path(sys.argv[2]))
-lab.save({'name':'Crash recovery','nodes':[{'id':'r','name':'Recovery','type':'router','image':frr.IMAGE,'ethernet':1}],'links':[]})
+lab=lab_server.Lab(Path(sys.argv[1]),Path(sys.argv[2]),allow_untested_frr=sys.argv[3] in (frr.LLDP_IMAGE, frr.SNMP_IMAGE, frr.VLAN_IMAGE, frr.VRRP_IMAGE))
+lab.save({'name':'Crash recovery','nodes':[{'id':'r','name':'Recovery','type':'router','image':sys.argv[3],'ethernet':1}],'links':[]})
 lab.start('r')
 lab_server.run('docker','exec',lab.runtime['r']['container'],'vtysh','-c','configure terminal','-c','interface eth0','-c','description RECOVERY-MARKER','-c','end','-c','write memory')
 os._exit(0)
 """
-            subprocess.run([sys.executable,'-c',script,str(recovery_dir),str(lab.image_dir)],check=True,cwd=lab_server.ROOT,timeout=90)
-            recovered=lab_server.Lab(recovery_dir,lab.image_dir)
+            subprocess.run([sys.executable,'-c',script,str(recovery_dir),str(lab.image_dir),image],check=True,cwd=lab_server.ROOT,timeout=90)
+            recovered=lab_server.Lab(recovery_dir,lab.image_dir,allow_untested_frr=image in (frr.LLDP_IMAGE, frr.SNMP_IMAGE, frr.VLAN_IMAGE, frr.VRRP_IMAGE))
             try:
                 assert not recovered.runtime
                 assert b'description RECOVERY-MARKER' in frr.read_config(frr.config_path(recovered.node('r'),recovered.node_dir('r')))
@@ -175,4 +179,11 @@ os._exit(0)
             print('Disposable resources cleaned up',flush=True)
 
 if __name__=='__main__':
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--lldp', action='store_true', help='Test the experimental image with LLDP enabled')
+    parser.add_argument('--snmp', action='store_true', help='Test the LLDP/SNMP extension image')
+    parser.add_argument('--vlan', action='store_true', help='Test the LLDP/SNMP/VLAN extension image')
+    parser.add_argument('--vrrp', action='store_true', help='Test the IPv4 VRRP extension image')
+    parser.add_argument('--release', action='store_true', help='Test the pinned public Weblab FRR image')
+    args = parser.parse_args()
+    main(frr.PUBLIC_IMAGE if args.release else frr.VRRP_IMAGE if args.vrrp else frr.VLAN_IMAGE if args.vlan else frr.SNMP_IMAGE if args.snmp else frr.LLDP_IMAGE if args.lldp else frr.IMAGE)

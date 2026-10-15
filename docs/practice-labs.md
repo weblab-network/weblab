@@ -196,8 +196,10 @@ See [the OSPF exercise](../examples/ospf-practice.md) for an original exercise u
 
 ## FRR exercises
 
-Use router nodes with image `quay.io/frrouting/frr:10.7.1`, default memory 512 MB
-and `ethernet` 1–8. Ports are `eth0` onward. The container image must be pulled on
+Use router nodes with image `quay.io/frrouting/frr:10.7.1`, or
+`ghcr.io/weblab-network/weblab-frr:10.7.1-wl1` for native LLDP, SNMP, VLAN and
+IPv4 VRRP provisioning. Both use default memory 512 MB and `ethernet` 1–8.
+Ports are `eth0` onward. The container image must be pulled on
 the Docker host before starting; topology validation does not contact Docker.
 Use FRR syntax in `startup_config`, including interface addressing and routing.
 Saved configuration takes precedence. Do not include shell commands or daemon

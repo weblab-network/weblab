@@ -197,8 +197,9 @@ apply. The profile is listed even before pulling; Start gives an actionable erro
 if the image is missing. It checks the tested upstream manifest digest
 `sha256:e995beaa50fdc9edb35eadcfefa29b7f062cc06f2b812613789b68fa541554d2`;
 the tested image is required by default. Modified images can be explicitly allowed
-as described below. The profile still uses this exact tag; arbitrary alternate
-tags/names are not listed. Weblab never pulls images implicitly. [Upstream image information](https://frrouting.org/release/).
+as described below. The stock profile uses this exact tag; arbitrary alternate
+tags/names are not listed. The separate Weblab FRR release and experimental selectors are described
+below. Weblab never pulls images implicitly. [Upstream image information](https://frrouting.org/release/).
 
 Choose 1–8 interfaces (default 4), named **eth0** through **eth7**. Each interface
 is a separate lab port; none is reserved for management. The default memory limit
@@ -209,7 +210,7 @@ Use `configure terminal`, `show interface brief`, `show ip route` and
 The image's zebra/static routing services and BGP, OSPFv2, OSPFv3, RIP, RIPng,
 IS-IS, BFD and VRRP (`vrrpd`) daemons are enabled. Configure protocols through vtysh; enabled
 services alone do not establish neighbors. FRR is an L3 routing suite, not an
-STP/RSTP/MSTP switch. This profile does not provide Linux bridge/VLAN management,
+STP/RSTP/MSTP switch. The stock profile does not provide Linux bridge/VLAN management,
 automatic provisioning/persistence of shell-created interfaces, or arbitrary
 guest package/filesystem persistence. Linux shell access is available as described
 below.
@@ -244,6 +245,27 @@ PID/network sharing. See the [FRR OSPF exercise](../examples/frr-ospf.md) and
 [its topology](../examples/frr-ospf.json) for a vendor-image-free starting point.
 
 
+### Weblab FRR with LLDP/SNMP/VLAN/VRRP
+
+The optional **Weblab FRR** release profile is
+`ghcr.io/weblab-network/weblab-frr:10.7.1-wl1` (Linux amd64). Install its image
+on the Docker host using the release archive or registry package. It is pinned
+to a tested image/config ID and does not need the untested-image opt-in.
+Local source builds remain available. It adds
+`lldp run`, per-interface transmit/receive controls and `show lldp neighbors`
+to native vtysh, plus opt-in read-only SNMPv2c for system/interface/LLDP MIBs,
+with saved configuration support. The current build produces
+`weblab-frr:10.7.1-lldp-snmp-vlan-vrrp1`; the earlier LLDP-only, LLDP/SNMP and VLAN images remain supported.
+The newest image also provisions IPv4 VRRP virtual interfaces from native
+`vrrp` commands; use `show vrrp platform` for provisioning status.
+The newest image also creates persistent routed VLAN subinterfaces with
+`vlan interface eth0.10`; addresses and routing use normal FRR interface commands.
+This is 802.1Q routing, not bridge/access-port switching.
+SNMP needs an explicit listen address, allowed source prefix and community.
+Both services default off. Local experimental images have separate
+selectors and require `WL_ALLOW_UNTESTED_FRR=1`; the stock image above does not
+gain these commands. See the [FRR LLDP/SNMP/VLAN/VRRP build and CLI guide](../packaging/frr/README.md).
+
 ### FRR Linux shell
 
 The console starts in `vtysh`. Use `end` if currently configuring, then `exit`
@@ -261,7 +283,12 @@ Weblab enables **`vrrpd=yes`** at startup in the standard FRR image. A custom
 image is not necessary to turn on this daemon; `vrrp=yes` is not its daemon key.
 `show vrrp` is available in `vtysh` once the node is ready.
 
-FRR requires Linux macvlan interfaces for VRRP. Create these in the shell, using
+The enhanced VRRP image creates/persists IPv4 macvlan interfaces automatically
+from native VRRP configuration. Its port attachment also accepts virtual-MAC
+traffic from directly attached clients; use this profile for redundant client
+gateways. See [its CLI guide](../packaging/frr/README.md#ipv4-vrrp-through-native-frr-commands).
+
+For stock FRR and earlier extension images, create the required macvlans in the shell, using
 bridge mode and the VRID-specific MAC. The virtual address belongs on the macvlan,
 not on its parent. Linux 5.1+ is required. See the
 [FRR VRRP guide](https://docs.frrouting.org/en/latest/vrrp.html).
@@ -298,11 +325,14 @@ The peer uses a different real address and lower priority, with matching VLAN,
 VRID, version and virtual IP. This example assumes those Linux interfaces do not
 already exist. Inspect with `ip -d link show` before repeating creation commands.
 
-**Persistence:** `write memory` and lab ZIP save `frr.conf`, not Linux VLAN/macvlan
+**Persistence:** On stock FRR, `write memory` and lab ZIP save `frr.conf`, not Linux VLAN/macvlan
 objects or shell-made addressing. Recreate those after node Stop/Start or ZIP
 restore. `docker commit` also does not capture live network interfaces. Store your
 setup commands alongside the exercise; Weblab does not yet apply them automatically.
 The FRR protocol configuration survives only if you save it with `write memory`.
+The experimental VLAN image can persist the VLAN child using `vlan interface
+eth1.10` instead of shell creation. The newer VRRP image also recreates IPv4
+VRRP macvlans and virtual addresses from saved native configuration.
 
 ### Allow a modified FRR image
 

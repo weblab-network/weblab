@@ -107,6 +107,42 @@ class FrrTests(unittest.TestCase):
         with patch.dict(os.environ, {'WL_ALLOW_UNTESTED_FRR':'typo'}):
             with self.assertRaises(SystemExit): lab_server.parse_args([])
 
+    def test_mixed_stock_and_lldp_archive_keeps_distinct_identities(self):
+        self.lab.allow_untested_frr = True
+        topology = copy.deepcopy(self.lab.topology)
+        topology['nodes'].append({'id': 'enhanced', 'name': 'LLDP', 'type': 'router',
+                                  'image': frr.LLDP_IMAGE})
+        self.lab.save(topology)
+        self.config()
+        node = self.lab.node('enhanced')
+        path = frr.config_path(node, self.lab.node_dir('enhanced'))
+        path.parent.mkdir(parents=True)
+        path.write_text('hostname LLDP\nlldp run\n')
+        enhanced_id = 'sha256:' + 'c'*64
+        def inspect(*args):
+            if args[-1] == frr.IMAGE:
+                return json.dumps([{'Id': 'sha256:' + 'a'*64, 'RepoDigests': [frr.DIGEST]}])
+            self.assertEqual(args[-1], frr.LLDP_IMAGE)
+            return json.dumps([{'Id': enhanced_id, 'Config': {
+                'Labels': {'network.weblab.frr.extension': 'lldp-1'}}}])
+        with patch('lab_server.run', side_effect=inspect):
+            result = lab_backup.create(self.lab)
+        stream, _ = lab_backup.take(self.lab, result['url'].rsplit('/', 1)[1])
+        with stream:
+            content = stream.read()
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            identities = json.loads(archive.read('manifest.json'))['containers']
+        self.assertCountEqual(identities, [{'name': frr.IMAGE, 'digest': frr.DIGEST},
+                                          {'name': frr.LLDP_IMAGE, 'digest': enhanced_id}])
+        path.write_text('hostname KEEP\n')
+        enhanced_id = 'sha256:' + 'd'*64
+        with self.assertRaisesRegex(ValueError, 'exact saved image'):
+            lab_backup.restore(self.lab, io.BytesIO(content), inspect)
+        self.assertEqual(path.read_text(), 'hostname KEEP\n')
+        enhanced_id = 'sha256:' + 'c'*64
+        lab_backup.restore(self.lab, io.BytesIO(content), inspect)
+        self.assertEqual(path.read_text(), 'hostname LLDP\nlldp run\n')
+
     def config(self, data=b'hostname SAVED\n'):
         path=frr.config_path(self.lab.node('r'),self.lab.node_dir('r'))
         path.parent.mkdir(exist_ok=True)
@@ -173,6 +209,28 @@ class FrrTests(unittest.TestCase):
         with patch('frr.inspect_image',return_value={'Id':'sha256:'+'a'*64,'tested':True}),patch('lab_server.run',side_effect=conflict):
             with self.assertRaisesRegex(lab_server.LabError,'File exists'):self.lab.start('r')
         self.assertFalse(any(c[:3]==('ip','link','delete') for c in calls))
+
+    def test_vrrp_transport_settings_are_profile_specific(self):
+        for image in (frr.IMAGE, frr.VLAN_IMAGE, frr.VRRP_IMAGE):
+            self.lab.node('r')['image'] = image
+            calls = []
+            def stop_before_container(*args, **kwargs):
+                calls.append(args)
+                if args[:2] == ('docker', 'run'):
+                    raise lab_server.LabError('test stops before creating container')
+                return ''
+            with patch('frr.inspect_image', return_value={'Id': 'sha256:'+'a'*64, 'tested': True}), \
+                    patch('lab_server.run', side_effect=stop_before_container):
+                with self.assertRaisesRegex(lab_server.LabError, 'test stops'):
+                    self.lab.start('r')
+            networks = [c for c in calls if c[:3] == ('docker', 'network', 'create')]
+            container = next(c for c in calls if c[:2] == ('docker', 'run'))
+            self.assertTrue(networks)
+            for network in networks:
+                self.assertEqual('macvlan_mode=passthru' in network, image == frr.VRRP_IMAGE)
+            for setting in ('net.ipv4.conf.all.arp_ignore=1', 'net.ipv4.conf.all.arp_announce=2',
+                            'net.ipv4.conf.all.ignore_routes_with_linkdown=1'):
+                self.assertEqual(setting in container, image == frr.VRRP_IMAGE)
 
     def test_failed_copy_keeps_container_and_previous_saved_config(self):
         path=self.config()

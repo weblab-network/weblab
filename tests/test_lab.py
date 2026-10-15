@@ -178,6 +178,7 @@ while True:
         self.server.lab = self.lab
         self.assertEqual(self.lab.catalog(), [{"name": "fake.bin", "type": "router"},
                                              {"name": lab_server.frr.IMAGE, "type": "router"},
+                                             {"name": lab_server.frr.PUBLIC_IMAGE, "type": "router"},
                                              {"name": lab_server.ll2s_device.IMAGE, "type": "switch"}])
         self.lab.start("r1")
         self.assertEqual((self.lab.node_dir("r1") / "iourc").resolve(), images / "iourc")

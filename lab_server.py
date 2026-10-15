@@ -146,9 +146,17 @@ class Lab:
         entries = [{"name": p.name, "type": "switch" if "l2" in p.name.lower() or vios.is_exos({"image":p.name}) or vios.is_veos({"image":p.name}) or vios.is_junos_switch({"image":p.name}) else "router"}
                 for p in sorted(self.image_dir.iterdir()) if p.is_file() and
                 ((p.suffix == ".bin" and os.access(p, os.X_OK)) or
-                 (p.suffix == ".qcow2" and os.access(p, os.R_OK)))] + [{"name": frr.IMAGE, "type": "router"}, {"name": ll2s_device.IMAGE, "type": "switch"}]
+                 (p.suffix == ".qcow2" and os.access(p, os.R_OK)))] + [{"name": frr.IMAGE, "type": "router"}, {"name": frr.PUBLIC_IMAGE, "type": "router"}, {"name": ll2s_device.IMAGE, "type": "switch"}]
         if any(n.get("image") == ll2s_device.LEGACY_IMAGE for n in self.topology["nodes"]):
             entries.append({"name": ll2s_device.LEGACY_IMAGE, "type": "switch"})
+        if self.allow_untested_frr or any(n.get('image') == frr.LLDP_IMAGE for n in self.topology['nodes']):
+            entries.append({'name': frr.LLDP_IMAGE, 'type': 'router'})
+        if self.allow_untested_frr or any(n.get('image') == frr.SNMP_IMAGE for n in self.topology['nodes']):
+            entries.append({'name': frr.SNMP_IMAGE, 'type': 'router'})
+        if self.allow_untested_frr or any(n.get('image') == frr.VLAN_IMAGE for n in self.topology['nodes']):
+            entries.append({'name': frr.VLAN_IMAGE, 'type': 'router'})
+        if self.allow_untested_frr or any(n.get('image') == frr.VRRP_IMAGE for n in self.topology['nodes']):
+            entries.append({'name': frr.VRRP_IMAGE, 'type': 'router'})
         return entries
 
     def upload_image(self, name, stream, length):
@@ -276,8 +284,8 @@ class Lab:
             if is_ll2s and (kind != "switch" or image not in ll2s_device.IMAGES):
                 raise node_error(f"LL2S requires a switch node and image {ll2s_device.IMAGE}")
             is_frr = frr.is_frr({"image": image})
-            if is_frr and (kind != "router" or image != frr.IMAGE):
-                raise node_error(f"FRR requires a router node and image {frr.IMAGE}")
+            if is_frr and (kind != "router" or image not in (frr.IMAGE, frr.LLDP_IMAGE, frr.SNMP_IMAGE, frr.VLAN_IMAGE, frr.VRRP_IMAGE, frr.PUBLIC_IMAGE)):
+                raise node_error(f"FRR requires a router node and image {frr.IMAGE}, {frr.LLDP_IMAGE}, {frr.SNMP_IMAGE}, {frr.VLAN_IMAGE}, {frr.VRRP_IMAGE} or {frr.PUBLIC_IMAGE}")
             if (exos or veos) and kind != "switch":
                 raise node_error(f"{'Arista vEOS' if veos else 'EXOS'} images require a switch node")
             for key, default, low, high in [("x", 350, 70, 2330), ("y", 250, 60, 1540),

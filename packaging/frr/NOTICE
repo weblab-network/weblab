@@ -1,0 +1,21 @@
+This image contains FRRouting 10.7.1 from upstream commit
+f8c0b08dcb0c78f9e42b9b86ae70b049e4e617c1, with Weblab vtysh extensions.
+The source archive and applied patch are included in this directory.
+FRR's source retains its individual copyright and license notices, including
+COPYING and doc/licenses/LGPL-2.1. The FRR patch is GPL-2.0-or-later, like vtysh.
+The Weblab LLDP/SNMP/VLAN/VRRP backends and build tooling are MIT, like Weblab.
+lldpd and Alpine packages retain their upstream licenses; see their installed
+package metadata. lldpd source: https://github.com/lldpd/lldpd/tree/1.0.19
+This is a Weblab extension image, not an unmodified upstream FRRouting release.
+The image also includes Alpine's Net-SNMP packages. Their individual upstream
+copyright/license notices remain applicable; see installed package metadata and
+https://www.net-snmp.org/about/license.html. SNMP service integration is Weblab
+code under MIT. FRR routing-protocol SNMP modules are not enabled by this recipe.
+Routed VLAN backend integration is Weblab code under MIT. It uses Linux
+802.1Q interfaces; it does not modify the kernel or add an upstream FRR feature.
+IPv4 VRRP interface provisioning is Weblab code under MIT. FRR still implements
+the election protocol and Master/Backup state transitions.
+
+Weblab modifications dated 2026-10-15. Corresponding source and build recipes
+accompany published binaries; see SOURCES.md and packages.json. Package metadata
+for inherited FRR APKs describes the base, not the rebuilt Weblab executables.
