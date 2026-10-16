@@ -90,6 +90,10 @@ resizable window. With a stopped lab, right-click the link to see its actions;
 start at least one connected node before capturing. Multiple links can have
 separate monitors; **Arrange windows** includes them.
 
+<a href="https://weblab.network/assets/traffic-monitor-button.png"><img src="https://weblab.network/assets/traffic-monitor-button.png" alt="Link actions dialog with the Monitor traffic button below directional fault controls" width="400"></a>
+
+Open **Monitor traffic** from the link actions dialog.
+
 - **Stop** freezes the capture. **New capture** replaces that window's buffer.
 - Filter by protocol and direction; the protocol menu expands with detected
   protocols. Select a packet number and choose **Decoded** or **Hex / ASCII**.
@@ -100,6 +104,15 @@ separate monitors; **Arrange windows** includes them.
 - **Download PCAP** saves every frame captured so far, regardless of display
   filters. Open it in Wireshark for whole-capture analysis and stream reassembly. Closing a monitor discards
   its capture; download first if you want to keep it.
+
+<a href="https://weblab.network/assets/traffic-monitor-protocols.png"><img src="https://weblab.network/assets/traffic-monitor-protocols.png" alt="Traffic monitor with protocol filtering, STP and DTP packets, and decoded DTP fields below the resizable divider" width="800"></a>
+
+Filter the packet list, then inspect decoded protocol fields below it.
+
+<a href="https://weblab.network/assets/traffic-monitor-workspace.png"><img src="https://weblab.network/assets/traffic-monitor-workspace.png" alt="Traffic monitor arranged alongside a switching topology, Agent conversation and device console" width="800"></a>
+
+Monitoring alongside the topology and consoles. The Agent uses console tools;
+it does not have access to these captures. Click a screenshot for full size.
 
 Captures observe validated Ethernet frames entering Weblab's per-link relay,
 including VLAN tags and link-local protocols, across the supported device profiles.

@@ -164,6 +164,15 @@ enabled in the demonstrations; individual approvals remain the default.
 
 [Open the full-size screenshot](https://weblab.network/assets/weblab-agent-create-exercise.png).
 
+### Agent helping detect OVS–IOS STP interoperability issues
+
+<a href="https://weblab.network/assets/agent-ll2s-interworking.png"><img src="https://weblab.network/assets/agent-ll2s-interworking.png" alt="Sol Agent comparing STP and LLDP observations in a mixed IOL and LL2S switching lab" width="800"></a>
+
+In this session, the Agent compares live STP and LLDP observations across a mixed
+IOL/LL2S lab and identifies an unexpected root-path result for further investigation.
+Its suggested interoperability cause is a hypothesis, not a confirmed defect or fix.
+The console evidence remains available for the operator to check.
+
 ## Enable with prebuilt images
 
 The optional companion is a separate **Linux amd64** image,
