@@ -9,8 +9,10 @@ No KVM or vendor images are needed; load the host `openvswitch` module first.
 
 The contributor reported that the standalone installation worked end-to-end on
 a fresh VM and supplied this topology as their FRR/LL2S test lab. Publication
-checks validated the JSON structure; this particular exported configuration was
-not independently boot-tested during publication. The R2 SNMP listener and
+checks initially validated the JSON structure. The v0.8.2 installer check also
+booted all 12 devices in a disposable installation, verified PC4 reachability
+to the virtual gateway and PC3, PC1-to-PC2 routing, and R2 as VRRP Master.
+This installer check did not repeat the full protocol/failover test suites. The R2 SNMP listener and
 loopback advertisement were corrected as described below; other device
 configurations, addresses, resource settings and cable layout are preserved. Node/link IDs are
 example-specific and runtime `iol_id` values are omitted for import allocation.

@@ -30,6 +30,17 @@ Docker copies source into the image; rebuild/recreate to deploy changes. Never
 use an active lab's data directory as a test fixture. Do not read active guest
 storage or bypass QEMU disk locks. Run node-launching suites sequentially.
 
+## Installer checks
+
+`python3 -m unittest discover -s tests -p test_installer.py -v` exercises the
+POSIX shell installer with recording Docker/host commands and simulated device
+availability. It verifies refusal of existing state, remote/rootless Docker,
+invalid arguments and busy ports; companion isolation, failure reporting and
+preservation of custom Alpine tags. No Docker daemon or live lab is modified.
+`sh -n weblab-install.sh` checks syntax. Actual startup/preload validation needs a
+disposable prefix, port and volumes on a suitable Linux Docker host; never reuse
+an active lab for these checks.
+
 ## Backend tests
 
 From the repository root on Linux, with Python 3.11+ and Perl installed:

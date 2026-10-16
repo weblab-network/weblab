@@ -212,6 +212,8 @@ jobs:
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             exit 0
           fi
+          sha256sum weblab-install.sh > SHA256SUMS
           gh release create "$RELEASE_TAG" --verify-tag \
             --title "Weblab ${RELEASE_TAG}" \
-            --notes-file "docs/releases/${RELEASE_TAG}.md"
+            --notes-file "docs/releases/${RELEASE_TAG}.md" \
+            weblab-install.sh SHA256SUMS

@@ -4,7 +4,7 @@
 
 ## Requirements and access
 
-Use an x86-64 Linux host or Linux VM with rootful Docker Engine and Compose v2.
+Use an x86-64 Linux host or Linux VM with rootful Docker Engine. Compose is needed only for the Compose-based paths below.
 For QEMU images, enable KVM (including nested virtualization if this host is a VM).
 Budget RAM for the sum of the guest allocations plus the host and Weblab; see
 [device defaults](devices.md#supported-profiles).
@@ -26,6 +26,100 @@ ssh -L 8080:127.0.0.1:8080 user@lab-host
 Open `http://127.0.0.1:8080/` on the client. Do not expose this preview directly to
 the public internet. Console input locks coordinate users; they are not access
 control.
+
+## Quick installer (prebuilt images)
+
+For a **fresh Linux amd64 host/VM** with rootful Docker already installed,
+[weblab-install.sh](../weblab-install.sh) installs the prebuilt core, LL2S,
+Weblab FRR and Alpine images. It uses plain `docker` commands: neither Compose,
+a source checkout, a local build nor KVM is required for these container devices.
+The host needs `/dev/net/tun`, the Open vSwitch kernel module, `ss` (iproute2),
+and `curl` for downloads. Run the script on the Docker host, not inside a container.
+For the 12-node example with Agent, allow at least 4 GiB RAM and several GiB of
+free disk space; 8 GiB RAM provides more room for other work.
+
+Download the versioned script and checksum, verify them, then inspect/run it:
+
+```sh
+curl -fSL https://github.com/weblab-network/weblab/releases/download/v0.8.2/weblab-install.sh -o weblab-install.sh
+curl -fSL https://github.com/weblab-network/weblab/releases/download/v0.8.2/SHA256SUMS -o SHA256SUMS
+sha256sum -c SHA256SUMS
+sh weblab-install.sh --help
+sh weblab-install.sh --with-agent --start-example --dry-run
+sudo sh weblab-install.sh --with-agent --start-example
+```
+
+The checksum verifies the downloaded file against that release; it is not an
+independent signature. A dry run prints the plan without checking prerequisites
+or changing the host. First-run duration depends on image downloads and device startup.
+
+Omit `--start-example` for an empty workspace; omit `--with-agent` for ordinary
+Weblab. `--start-example` imports the [FRR/LL2S test lab](../examples/ll2s-frr-vrrp-test.md),
+publishes its instructions and starts its three routers, three switches and six
+PCs. Allow time for OSPF/RSTP/VRRP convergence after startup. It does not automatically
+start nodes again following a host/container restart; use **Start lab** then.
+`--examples-dir ./weblab-examples` also saves the JSON and exercise into a **new**
+local directory. Add `--with-kvm` only when `/dev/kvm` is available and you intend
+to supply QEMU images later. `--name mylab --port 8081` selects another container/
+volume prefix and localhost web port.
+
+Open **http://127.0.0.1:8080/** on the host, or use the SSH tunnel above from your
+workstation. Without `--with-auth`, the installer keeps authentication off and listens on
+localhost. It does not install Docker or configure a firewall or TLS.
+To change listener/provider settings later, use the documented
+[standalone container options](#run-the-prebuilt-image-without-compose) and
+[authentication setup](authentication.md), preserving the named volumes.
+
+To enable roles during installation, add `--with-auth`:
+
+```sh
+sudo sh weblab-install.sh --with-auth --with-agent --start-example
+```
+
+This enables `admin`, `user` (writer) and `guest` (reader), generates distinct
+random passwords, and binds to **0.0.0.0** so you can open `http://HOST_IP:8080/`
+from another workstation. Keys are written to `./weblab-auth.env` with mode 600,
+owned by the installer user (normally root). Read them locally with
+`sudo cat ./weblab-auth.env`; they are not printed in installation logs.
+`--auth-file /secure/path/keys.env` selects another **new** file. Keep it for
+container recreation and do not commit or share it publicly. Docker administrators
+can also inspect container environment variables. With auth enabled, the optional
+Agent is admin-only; example setup uses a temporary admin login and logs out.
+
+This exposes **HTTP on all IPv4 interfaces**, not HTTPS. Use a trusted network or
+configure a TLS reverse proxy before access over untrusted networks. Authentication
+does not add transport encryption. The installer does not alter firewall rules.
+
+The default container names are `weblab` and (when enabled) `weblab-agent`.
+Persistent volumes are `weblab-images`, `weblab-data` and the Agent's
+`weblab-agent-sockets`, `weblab-agent-conversations`, `weblab-agent-bridge-state`.
+The script refuses existing names/volumes and occupied ports; **it is not an
+upgrade tool**. It never deletes saved volumes or replaces an existing workspace.
+Existing authentication key files are also refused. A locally customized `alpine:latest` is retained, including added tools. Other
+images use the release's explicit tags. The Agent keeps its isolated network and
+only the core mounts the Docker socket.
+
+If installation fails after creating containers, it leaves them and their volumes
+for inspection. Use `docker logs weblab` / `docker logs weblab-agent`; fix the
+reported issue and recover deliberately using the standalone instructions.
+Do not delete populated volumes just to rerun the installer. Download failures
+occur before container creation. Loading `openvswitch` is runtime-only; arrange
+normal module loading or load it again after host reboot. Containers are started
+without an automatic restart policy, as in the standalone recipe.
+
+## Compose command spelling
+
+The examples use `docker compose`. Some installations, including Debian systems
+using the standalone package, provide `docker-compose` instead. Check which works:
+
+```sh
+docker compose version
+# If unavailable:
+docker-compose version
+```
+
+Use that spelling consistently; the `-f`, `up`, `down`, `pull` and `--build`
+arguments shown below stay the same. The quick installer does not use Compose.
 
 ## Pull a prebuilt container
 
@@ -108,8 +202,8 @@ sudo modprobe openvswitch
 docker pull alpine:latest
 docker pull ghcr.io/weblab-network/ll2s:0.2.0
 docker pull ghcr.io/weblab-network/weblab-frr:10.7.1-wl1
-docker pull ghcr.io/weblab-network/weblab:0.8.1
-docker pull ghcr.io/weblab-network/weblab-agent:0.8.1
+docker pull ghcr.io/weblab-network/weblab:0.8.2
+docker pull ghcr.io/weblab-network/weblab-agent:0.8.2
 
 # Start the isolated companion first, as in the Compose setup.
 docker run -d --name weblab-agent --platform linux/amd64 \
@@ -120,7 +214,7 @@ docker run -d --name weblab-agent --platform linux/amd64 \
   --tmpfs /workspace:rw,nosuid,nodev,uid=10001,gid=10001,size=32m \
   -v weblab-agent-sockets:/run/weblab-agent \
   -v weblab-agent-conversations:/home/agent \
-  ghcr.io/weblab-network/weblab-agent:0.8.1
+  ghcr.io/weblab-network/weblab-agent:0.8.2
 
 docker run -d --name weblab --platform linux/amd64 --init --stop-timeout 120 \
   --hostname weblab --add-host weblab:127.0.0.1 \
@@ -134,7 +228,7 @@ docker run -d --name weblab --platform linux/amd64 --init --stop-timeout 120 \
   -v weblab-agent-sockets:/run/weblab-agent \
   -v weblab-agent-bridge-state:/agent-state \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/weblab-network/weblab:0.8.1
+  ghcr.io/weblab-network/weblab:0.8.2
 ```
 
 Open **http://127.0.0.1:8080/**. Add a Switch with the LL2S image, a Router with
@@ -190,11 +284,13 @@ for NETMAP; change both values if you choose a different hostname.
 
 ## Docker Compose
 
-Requires an **x86-64 Linux host**, rootful Docker Engine with Compose v2, and
+Build from source with an **x86-64 Linux host**, rootful Docker Engine, Compose, and
 `/dev/net/tun`. This setup uses macvlan and is intended for native Linux or a Linux
 VM, not Docker Desktop or rootless Docker.
 
 ```sh
+git clone https://github.com/weblab-network/weblab.git
+cd weblab
 cp .env.example .env
 mkdir -p images lab-data
 # Optional: copy your IOL .bin files into images/, then chmod +x images/*.bin

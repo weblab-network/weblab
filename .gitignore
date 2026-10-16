@@ -50,3 +50,6 @@ playwright-report/
 
 # Authentication runtime state (never source or lab archives).
 .auth/
+
+# Installer-generated account keys
+*-auth.env

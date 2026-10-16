@@ -40,6 +40,12 @@ leaves OSPF and RSTP tasks for the student.*
 
 ## Quick start
 
+**Prebuilt installer:** follow the [quick installer guide](docs/installation.md#quick-installer-prebuilt-images)
+for a fresh host, optional Agent, and `--start-example` to open a running
+FRR/LL2S lab with its instructions. No Compose or local build is required.
+
+**Build from source:** use the commands below.
+
 Use an **x86-64 Linux host/VM**, rootful Docker Engine with Compose, and
 `/dev/net/tun`. From the source checkout:
 
@@ -85,8 +91,8 @@ three-switch/two-PC topology with a companion exercise.
 
 ## New in v0.8.0 — Weblab FRR
 
-Use [v0.8.1](docs/releases/v0.8.1.md) for the current core, Agent and EXOS edition;
-it fixes offline image validation that blocked the v0.8.0 EXOS release workflow.
+Use [v0.8.2](docs/releases/v0.8.2.md) for the current core, Agent and EXOS edition.
+It adds the fresh-install helper and retains the v0.8.1 offline-validator fix.
 
 An optional FRR 10.7.1 package adds native CLI controls for **LLDP**, **read-only
 SNMPv2c**, **routed 802.1Q VLAN interfaces** and **IPv4 VRRP interface provisioning**.
