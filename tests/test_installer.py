@@ -82,6 +82,7 @@ class InstallerTests(unittest.TestCase):
                 self.assertIn('WL_BIND=127.0.0.1', core)
                 self.assertIn('test-lab-data:/data', core)
                 self.assertNotIn('--privileged', core)
+                self.assertNotIn('--dns', core)
                 self.assertEqual(len(runs), 2 if options else 1)
                 if options:
                     agent = runs[0]
@@ -173,6 +174,31 @@ class InstallerTests(unittest.TestCase):
     def test_existing_alpine_tools_tag_is_preserved(self):
         self.assertEqual(self.run_script(ALPINE_PRESENT='1').returncode, 0)
         self.assertNotIn(['docker', 'pull', 'alpine:latest'], self.calls)
+
+    def test_dns_override_is_core_only(self):
+        for address in ('127.0.0.199', '192.0.2.53'):
+            with self.subTest(address=address):
+                result = self.run_script('--with-agent', '--dns', address)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                runs = [c for c in self.calls if c[:2] == ['docker', 'run']]
+                self.assertNotIn('--dns', runs[0])
+                core = runs[-1]
+                self.assertEqual(core[core.index('--dns')+1], address)
+                self.assertIn('Core DNS override: '+address, result.stdout)
+        result = self.run_script('--dns', '127.0.0.199', '--dry-run')
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('Core DNS override: 127.0.0.199', result.stdout)
+        self.assertEqual(self.calls, [])
+
+    def test_invalid_dns_fails_before_host_operations(self):
+        for address in ('resolver.local', '256.0.0.1', '127.0.0', '127.0.0.1.2',
+                        '127..0.1', '.127.0.0.1', '127.0.0.1.', '127.00.0.1',
+                        '127.0.0.1;false', '--privileged', '127.0.0.1 8.8.8.8'):
+            with self.subTest(address=address):
+                self.assertNotEqual(self.run_script('--dns', address).returncode, 0)
+                self.assertEqual(self.calls, [])
+        self.assertNotEqual(self.run_script('--dns').returncode, 0)
+        self.assertEqual(self.calls, [])
 
 
 if __name__ == '__main__':

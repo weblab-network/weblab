@@ -41,8 +41,8 @@ free disk space; 8 GiB RAM provides more room for other work.
 Download the versioned script and checksum, verify them, then inspect/run it:
 
 ```sh
-curl -fSL https://github.com/weblab-network/weblab/releases/download/v0.8.2/weblab-install.sh -o weblab-install.sh
-curl -fSL https://github.com/weblab-network/weblab/releases/download/v0.8.2/SHA256SUMS -o SHA256SUMS
+curl -fSL https://github.com/weblab-network/weblab/releases/download/v0.8.3/weblab-install.sh -o weblab-install.sh
+curl -fSL https://github.com/weblab-network/weblab/releases/download/v0.8.3/SHA256SUMS -o SHA256SUMS
 sha256sum -c SHA256SUMS
 sh weblab-install.sh --help
 sh weblab-install.sh --with-agent --start-example --dry-run
@@ -62,6 +62,25 @@ start nodes again following a host/container restart; use **Start lab** then.
 local directory. Add `--with-kvm` only when `/dev/kvm` is available and you intend
 to supply QEMU images later. `--name mylab --port 8081` selects another container/
 volume prefix and localhost web port.
+
+Starting with v0.8.3, the installer accepts `--dns IPV4` to override DNS for the
+Weblab core container.
+For example, if Weblab should not use a responding DNS resolver:
+
+```sh
+sudo sh weblab-install.sh --with-agent --start-example --dns 127.0.0.199
+```
+
+Choose `127.0.0.199` or another IPv4 address where no DNS service is listening.
+With host networking, loopback refers to the Docker host; verify that the chosen
+address does not run a resolver. This makes normal DNS lookups fail or time out;
+it is **not Internet isolation**. IP connections, `/etc/hosts` entries and
+applications using their own resolvers can still work. Host DNS, image pulls,
+installer downloads and separately launched lab-device containers are unchanged.
+OpenAI and other Agent providers that need hostname resolution through the core
+gateway can stop working; an IP-addressed local provider can still be used.
+Omit the option to retain Docker's normal DNS settings. See
+[Docker DNS services](https://docs.docker.com/engine/network/#dns-services).
 
 Open **http://127.0.0.1:8080/** on the host, or use the SSH tunnel above from your
 workstation. Without `--with-auth`, the installer keeps authentication off and listens on
@@ -202,8 +221,8 @@ sudo modprobe openvswitch
 docker pull alpine:latest
 docker pull ghcr.io/weblab-network/ll2s:0.2.0
 docker pull ghcr.io/weblab-network/weblab-frr:10.7.1-wl1
-docker pull ghcr.io/weblab-network/weblab:0.8.2
-docker pull ghcr.io/weblab-network/weblab-agent:0.8.2
+docker pull ghcr.io/weblab-network/weblab:0.8.3
+docker pull ghcr.io/weblab-network/weblab-agent:0.8.3
 
 # Start the isolated companion first, as in the Compose setup.
 docker run -d --name weblab-agent --platform linux/amd64 \
@@ -214,7 +233,7 @@ docker run -d --name weblab-agent --platform linux/amd64 \
   --tmpfs /workspace:rw,nosuid,nodev,uid=10001,gid=10001,size=32m \
   -v weblab-agent-sockets:/run/weblab-agent \
   -v weblab-agent-conversations:/home/agent \
-  ghcr.io/weblab-network/weblab-agent:0.8.2
+  ghcr.io/weblab-network/weblab-agent:0.8.3
 
 docker run -d --name weblab --platform linux/amd64 --init --stop-timeout 120 \
   --hostname weblab --add-host weblab:127.0.0.1 \
@@ -228,7 +247,7 @@ docker run -d --name weblab --platform linux/amd64 --init --stop-timeout 120 \
   -v weblab-agent-sockets:/run/weblab-agent \
   -v weblab-agent-bridge-state:/agent-state \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/weblab-network/weblab:0.8.2
+  ghcr.io/weblab-network/weblab:0.8.3
 ```
 
 Open **http://127.0.0.1:8080/**. Add a Switch with the LL2S image, a Router with
@@ -255,11 +274,19 @@ three `WL_AGENT_*` environment variables and the two `weblab-agent-*` volume
 mounts from the core command. For QEMU devices, add `--device /dev/kvm` to the
 core command; the container-only setup above does not need KVM.
 
-For an optional non-resolving DNS setting, add `--dns 127.0.0.199` after
-`-e WL_BIND=127.0.0.1`. With host networking this uses the host loopback;
-it only fails to resolve names if no DNS service answers at that address.
-It does not block internet access or change the host Docker daemon’s DNS
-for image pulls. See [Docker DNS services](https://docs.docker.com/engine/network/#dns-services).
+To override DNS for the Weblab core container, add `--dns 127.0.0.199` (or another
+address with no responding DNS service) to its `docker run` command, for example:
+
+```sh
+  -e WL_BIND=127.0.0.1 --dns 127.0.0.199 \
+```
+
+With host networking this uses the host loopback. Normal DNS lookups fail or
+time out only if no DNS service answers there. This is **not Internet isolation**;
+IP connections and `/etc/hosts` still work. It does not change host DNS, image
+pulls, or DNS in separate lab-device containers. Agent providers needing DNS
+through the core gateway may become unavailable. Omit this flag to use Docker's
+normal DNS settings. See [Docker DNS services](https://docs.docker.com/engine/network/#dns-services).
 
 Use `docker logs -f weblab` or `docker logs -f weblab-agent` to inspect startup.
 After saving guest configurations and following any guest shutdown requirements,

@@ -2,7 +2,7 @@
 # Weblab fresh-install helper. Run on the Docker host, not inside a container.
 set -eu
 
-VERSION=0.8.2
+VERSION=0.8.3
 LL2S_IMAGE=ghcr.io/weblab-network/ll2s:0.2.0
 FRR_IMAGE=ghcr.io/weblab-network/weblab-frr:10.7.1-wl1
 name=weblab
@@ -15,6 +15,7 @@ start_example=0
 auth=0
 auth_file=
 bind=127.0.0.1
+dns=
 
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 usage() {
@@ -27,12 +28,15 @@ Fresh Linux amd64 installation using prebuilt images and local rootful Docker.
   --auth-file FILE      NEW key file (default: ./NAME-auth.env; mode 600)
   --name NAME           Container/volume prefix (default: weblab)
   --port PORT           HTTP port, 1024-65535 (default: 8080)
+  --dns IPV4            Override core DNS only (default: Docker DNS settings)
   --examples-dir DIR    Download the LL2S/FRR example into a NEW directory
   --start-example       Import, publish instructions and start that lab (12 nodes)
   --dry-run             Print the plan without host checks or changes
   --help                Show this help
 Run as root (sudo sh ...). Docker must already be installed.
 Existing containers/volumes are never replaced. This is not an upgrade tool.
+For non-resolving DNS, use --dns 127.0.0.199 or another address with no DNS
+service. This does not block Internet access and can prevent Agent cloud access.
 EOF
 }
 while [ "$#" -gt 0 ]; do
@@ -42,13 +46,14 @@ while [ "$#" -gt 0 ]; do
         --start-example) start_example=1; shift ;;
         --with-auth) auth=1; shift ;;
         --dry-run) dry_run=1; shift ;;
-        --name|--port|--examples-dir|--auth-file)
+        --name|--port|--examples-dir|--auth-file|--dns)
             [ "$#" -ge 2 ] && [ -n "$2" ] || die "Missing value for $1"
             case "$1" in
                 --name) name=$2 ;;
                 --port) port=$2 ;;
                 --examples-dir) examples=$2 ;;
                 --auth-file) auth_file=$2 ;;
+                --dns) dns=$2 ;;
             esac
             shift 2 ;;
         --help|-h) usage; exit 0 ;;
@@ -59,6 +64,18 @@ case "$name" in ''|[!a-z0-9]*|*[!a-z0-9-]*) die 'Name must use lowercase letters
 [ "${#name}" -le 40 ] || die 'Name is limited to 40 characters'
 case "$port" in ''|*[!0-9]*|0*) die 'Port must be a decimal number from 1024 to 65535' ;; esac
 [ "${#port}" -le 5 ] && [ "$port" -ge 1024 ] && [ "$port" -le 65535 ] || die 'Port must be from 1024 to 65535'
+valid_dns_ipv4() (
+    case "$1" in *[!0-9.]*|.*|*.|*..*) exit 1 ;; esac
+    IFS=.
+    set -f
+    set -- $1
+    [ "$#" = 4 ] || exit 1
+    for octet do
+        case "$octet" in ''|0[0-9]*) exit 1 ;; esac
+        [ "${#octet}" -le 3 ] && [ "$octet" -le 255 ] || exit 1
+    done
+)
+[ -z "$dns" ] || valid_dns_ipv4 "$dns" || die '--dns requires an IPv4 address such as 127.0.0.199'
 if [ "$auth" = 1 ]; then
     bind=0.0.0.0
     auth_file=${auth_file:-$PWD/$name-auth.env}
@@ -80,6 +97,7 @@ fi
 [ -z "$examples" ] || printf 'Example download: %s\n' "$examples"
 [ "$start_example" = 0 ] || printf 'Will start the preconfigured FRR/LL2S lab: 3 routers, 3 switches, 6 PCs.\n'
 [ "$auth" = 0 ] || printf 'Authentication on; new key file: %s (HTTP on all IPv4 interfaces).\n' "$auth_file"
+[ -z "$dns" ] || printf 'Core DNS override: %s. No network egress isolation; hostname-based Agent providers need working DNS.\n' "$dns"
 if [ "$dry_run" = 1 ]; then
     printf 'Dry run: no host checks, downloads or changes performed.\n'
     exit 0
@@ -209,6 +227,7 @@ if [ "$agent" = 1 ]; then
 fi
 [ "$kvm" = 0 ] || set -- "$@" --device /dev/kvm
 [ "$auth" = 0 ] || set -- "$@" --env-file "$auth_file"
+[ -z "$dns" ] || set -- "$@" --dns "$dns"
 "$@" "ghcr.io/weblab-network/weblab:$VERSION"
 printf 'Waiting for Weblab startup...\n'
 docker exec "$name" python3 -c '

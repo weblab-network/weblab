@@ -91,8 +91,9 @@ three-switch/two-PC topology with a companion exercise.
 
 ## New in v0.8.0 — Weblab FRR
 
-Use [v0.8.2](docs/releases/v0.8.2.md) for the current core, Agent and EXOS edition.
-It adds the fresh-install helper and retains the v0.8.1 offline-validator fix.
+Use [v0.8.3](docs/releases/v0.8.3.md) for the current core, Agent and EXOS edition.
+It adds an optional installer DNS override to the v0.8.2 fresh-install helper
+and retains the v0.8.1 offline-validator fix.
 
 An optional FRR 10.7.1 package adds native CLI controls for **LLDP**, **read-only
 SNMPv2c**, **routed 802.1Q VLAN interfaces** and **IPv4 VRRP interface provisioning**.
