@@ -48,7 +48,7 @@ def recover(directory, netio):
 
 
 class LinkFabric:
-    def __init__(self, directory, netio, links, occupied):
+    def __init__(self, directory, netio, links, occupied, captures=None):
         self.directory, self.netio = Path(directory), Path(netio)
         self.links, self.peers, self.owned = {}, {}, {}
         self.lock = threading.Lock()
@@ -57,6 +57,8 @@ class LinkFabric:
         self.closed = False
         self.thread = None
         self.error = ''
+        self.captures = captures
+        self.capture_source = object()
         self.netio.mkdir(mode=0o755, exist_ok=True)
         candidates = iter(i for i in range(1023, 0, -1) if i not in occupied)
         try:
@@ -131,14 +133,27 @@ class LinkFabric:
             return
         with self.lock:
             if link[f'blocked_{side}_to_{other}'] or any(link['carrier_' + end] != 'up' for end in ('a', 'b')):
+                self.capture(link, packet, side, other, 'blocked')
                 return
             header = HEADER.pack(peer['id'], link['id_number'], peer['port'], 16 if other == 'b' else 0, 0x100)
+            outcome = 'forwarded'
             try:
                 link['socket'].sendto(header + packet[HEADER.size:], str(self.netio / str(peer['id'])))
             except OSError as exc:
                 # No replay when restoring: stopped peers and full queues lose frames.
                 if exc.errno not in (errno.ENOENT, errno.ECONNREFUSED, errno.EAGAIN, errno.ENOBUFS):
                     raise
+                outcome = 'undelivered'
+            self.capture(link, packet, side, other, outcome)
+
+    def capture(self, link, packet, side, other, outcome):
+        if self.captures and self.captures.active:
+            try:
+                self.captures.observe(self.capture_source, link['id'], packet[HEADER.size:],
+                                      side + '_to_' + other, outcome)
+            except Exception:
+                # Monitoring must never take down forwarding.
+                self.captures.contention_drops += 1
 
     def serve(self):
         try:
@@ -151,6 +166,8 @@ class LinkFabric:
                     self.forward(self.links[key.data], packet)
         except Exception as exc:
             self.error = f'Link relay failed: {exc}'
+            if self.captures:
+                self.captures.stop_source(self.capture_source, 'Link relay failed')
 
     def close(self):
         if self.closed:
@@ -159,6 +176,8 @@ class LinkFabric:
         self.stopping.set()
         if self.thread:
             self.thread.join()
+        if self.captures:
+            self.captures.stop_source(self.capture_source)
         for key in list(self.selector.get_map().values()):
             key.fileobj.close()
         self.selector.close()

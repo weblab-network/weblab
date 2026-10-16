@@ -49,6 +49,11 @@ From the repository root on Linux, with Python 3.11+ and Perl installed:
 python3 -m unittest discover -s tests -v
 ```
 
+Workspace reset regressions are in `tests/test_backup.py`, `tests/test_web_auth.py`
+and `tests/workspace_features.cjs`: exported ZIP recovery, transactional rollback,
+stopped/stale-state checks, admin/CSRF enforcement, cancellation and failed exports.
+They use disposable fixtures and never reset the active lab.
+
 The default suite uses disposable fake device processes, real PTYs/WebSockets,
 local sockets and temporary storage. It does not require vendor images or Docker.
 Some QEMU/disk checks run only when `qemu-system-x86`, `qemu-img`, `qemu-io`, mtools
@@ -592,3 +597,36 @@ an active lab to satisfy a test. The manual FRR package workflow loads and tests
 the published release archive and pushes that same image to GHCR; it does not
 rebuild or silently update a pinned package. Publish corresponding sources with
 the binary. See [source distribution](../packaging/frr/SOURCES.md).
+
+## Link traffic monitor checks
+
+`python3 -m unittest discover -s tests -p test_traffic_capture.py -v` checks
+bounded capture, Ethernet summaries, exact PCAP bytes, relay forwarding/drop
+outcomes, expiration and authenticated ownership/CSRF/logout. Run with the
+existing link-fabric and authentication suites after changing the relay.
+`node tests/traffic_ui.cjs` sends synthetic Ethernet frames through a disposable
+real relay and checks filtering, safe packet details, PCAP download, recapture,
+window resizing and unchanged topology/fault state. These tests do not boot
+vendor devices or modify the active lab.
+
+
+The traffic suite also tests protocol recognition, decoder absence/busy/timeout,
+output/cache limits and ownership revocation during decoding. A real TShark test
+covers synthetic LLDP, CDP, DTP, VTP, STP/PVST+, LACP, OSPF and BGP packets;
+it is skipped if TShark/util-linux are not installed. To exercise the packaged
+runtime without touching the active lab:
+
+```sh
+docker build -t weblab-traffic-check:local .
+docker run --rm --network none --hostname traffic-test \
+  --add-host traffic-test:127.0.0.1 --entrypoint python3 \
+  -v "$PWD/tests:/app/tests:ro" weblab-traffic-check:local \
+  -m unittest discover -s tests -p test_traffic_capture.py -v
+TRAFFIC_TEST_IMAGE=weblab-traffic-check:local node tests/traffic_ui.cjs
+```
+
+The optional browser mode starts its own disposable container with host networking
+only to reach a random loopback HTTP test port; it mounts the tests read-only,
+with no Docker socket, guest images or lab data. It verifies decoded BGP/DTP,
+protocol filters, mouse/keyboard splitter resizing and PCAP bytes. The ordinary
+browser mode checks the no-TShark fallback when it is absent locally.

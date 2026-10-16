@@ -6,6 +6,7 @@
 !storage.py
 !container_console.py
 !link_fabric.py
+!traffic_capture.py
 !iol_l1.py
 !qmp.py
 !lab_backup.py

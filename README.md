@@ -8,7 +8,8 @@ Keep the topology, multiple device consoles and lab instructions together in one
 page. Float, resize and arrange windows for desktop or tablet use; share consoles
 across workstations with input locks and confirmed takeover. Practice failure
 scenarios with directional link loss and supported carrier controls, and share
-labs as topology JSON or saved-state ZIP archives.
+labs as topology JSON or saved-state ZIP archives. Inspect link traffic with
+protocol decoding and PCAP downloads.
 
 **[Read the wiki](https://github.com/weblab-network/weblab/wiki)** · [Device profiles](https://github.com/weblab-network/weblab/wiki/Device-profiles) ·
 [Starter exercise](examples/starter.md) · [OSPF practice](examples/ospf-practice.md)
@@ -89,11 +90,22 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
-## New in v0.8.0 — Weblab FRR
+## New in v0.9.0 — Traffic monitor and workspace reset
 
-Use [v0.8.3](docs/releases/v0.8.3.md) for the current core, Agent and EXOS edition.
-It adds an optional installer DNS override to the v0.8.2 fresh-install helper
-and retains the v0.8.1 offline-validator fix.
+Click a link to open a floating **traffic monitor**, inspect decoded protocols
+or raw packet bytes, filter traffic, and download Ethernet PCAP files. TShark is
+included in the core image. With authentication enabled, admin and writer logins
+can capture traffic; captures remain private to their owning login.
+
+The Export dialog now offers **Reset lab after export** and **Reset without
+export…**, with confirmation, stopped-device checks and stale-workspace protection.
+See [release notes](docs/releases/v0.9.0.md), [traffic monitoring](docs/link-actions.md#monitor-traffic)
+and [backup/reset behavior](docs/backups.md#export-and-reset-the-workspace).
+
+Use **0.9.0** for matching core, Agent and EXOS images. The installer retains the
+optional core-only DNS override from v0.8.3.
+
+## Weblab FRR
 
 An optional FRR 10.7.1 package adds native CLI controls for **LLDP**, **read-only
 SNMPv2c**, **routed 802.1Q VLAN interfaces** and **IPv4 VRRP interface provisioning**.

@@ -83,9 +83,76 @@ carrier state resets when that endpoint stops; a restarted NIC starts connected.
 A failed/timed-out QMP operation or failed IOL L1 signal is shown as uncertain and blocks traffic until
 you successfully Reconnect the endpoint or stop it. Check the reported error before treating the cable as restored.
 
+## Monitor traffic
+
+Click a running link, then **Monitor traffic** to start a capture in a floating,
+resizable window. With a stopped lab, right-click the link to see its actions;
+start at least one connected node before capturing. Multiple links can have
+separate monitors; **Arrange windows** includes them.
+
+- **Stop** freezes the capture. **New capture** replaces that window's buffer.
+- Filter by protocol and direction; the protocol menu expands with detected
+  protocols. Select a packet number and choose **Decoded** or **Hex / ASCII**.
+  **Follow** keeps the packet list at the latest frames.
+- Drag the handle between the packet list and details to resize them. Focus the
+  divider and use Up/Down arrows (Home/End for the limits), or double-click to
+  restore the initial split.
+- **Download PCAP** saves every frame captured so far, regardless of display
+  filters. Open it in Wireshark for whole-capture analysis and stream reassembly. Closing a monitor discards
+  its capture; download first if you want to keep it.
+
+Captures observe validated Ethernet frames entering Weblab's per-link relay,
+including VLAN tags and link-local protocols, across the supported device profiles.
+No guest CLI commands or host-interface sniffing are used. The **Relay** column
+reports **forwarded** (sent to the peer socket), **blocked** (a configured frame
+loss or carrier fault), or **undelivered** (peer unavailable or socket queue full).
+Forwarded is not confirmation of guest receipt. PCAP includes all these frames;
+direction and relay outcome are UI metadata, not fields in the Ethernet PCAP.
+
+The core Docker image includes [TShark](https://www.wireshark.org/docs/man-pages/tshark.html),
+Wireshark's command-line decoder. It supplies packet-list summaries and decoded
+fields using its installed dissectors, including LLDP, CDP, DTP, VTP, STP/PVST+,
+LACP, ARP, IPv4/IPv6, ICMP, OSPF, BGP and other recognized protocols. This is not a
+fixed protocol allowlist. Recognition depends on packet contents, ports, and the
+installed TShark version; encrypted payloads are not decrypted.
+
+List summaries are decoded in independent batches; the selected packet's details
+are decoded individually. TCP/IP reassembly is disabled, and conversations are
+not reconstructed across batches. A message split across packets may appear only
+as TCP or an incomplete protocol message. Download the PCAP for full analysis.
+TShark's internal frame number in **Decoded** refers to that one-packet decode;
+the heading retains the packet number from the capture.
+
+Native installations can enable decoding by installing `tshark` and `util-linux`
+(for example, `sudo apt-get install tshark util-linux` on Debian). Without them,
+basic Ethernet/IP/switching summaries, Hex/ASCII and PCAP still work. Decode
+failures show a fallback message and preserve the captured bytes. The hex preview
+is limited to 4 KiB; PCAP contains the complete frames.
+
+Decoding runs outside the relay, with numeric addresses (no name-resolution
+lookups), two concurrent workers maximum, a five-second wall-time limit, CPU and
+memory limits, and at most 256 KiB of decoded output per request. When Weblab runs
+as root, the decoder runs as an unprivileged user with no supplementary groups.
+Temporary decoded output is discarded after each request; up to 16 decoded packet
+details per capture are cached in memory. No external decoder service is used.
+
+Each capture stops at **60 seconds, 2,000 frames or 8 MiB**, whichever comes first.
+Up to four captures are retained server-wide; closed monitors free their slot.
+Capture buffers live only in server memory and expire 15 minutes after creation.
+They are not included in lab JSON/ZIP, browser storage or Agent tools. Stopping
+the relay stops its captures, retaining their buffers until close/expiry. Capture
+does not automatically resume once stopped. Server restart discards all buffers. The relay does not
+wait for capture readers; monitor-busy skips are reported across active captures.
+
+With authentication enabled, **admin and writer** can monitor links. Captures
+are private to the login session that created them; another login, including
+another admin login, cannot read or stop them. Logout removes that session's
+captures. Reader capture access and node-specific permissions are not implemented.
+Packets may contain credentials or other application data; review before sharing.
+
 ## Scope
 
-Packet capture/decoding, random packet loss, latency injection, payload corruption
+Random packet loss, latency injection, payload corruption
 and moving a cable while devices run are not implemented. Stop the lab before
 recabling. See [development and testing](development.md) for the opt-in carrier
 and forwarding tests.

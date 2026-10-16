@@ -14,6 +14,7 @@
   <script src="/instructions.js" defer></script>
   <script src="/storage.js" defer></script>
   <script src="/agent.js" defer></script>
+  <script src="/traffic.js" defer></script>
   <script src="/workspace.js" defer></script>
 </head>
 <body>
@@ -114,7 +115,7 @@
       <button data-link-carrier="a"></button><button data-link-carrier="b"></button>
     </div>
     <p class="muted" id="link-actions-help"></p>
-    <div class="dialog-actions"><button id="link-actions-delete" class="danger-text">Delete cable</button><button id="link-actions-close" autofocus>Close</button></div>
+    <div class="dialog-actions"><button id="link-monitor">Monitor traffic</button><button id="link-actions-delete" class="danger-text">Delete cable</button><button id="link-actions-close" autofocus>Close</button></div>
   </dialog>
   <dialog id="link-dialog"><form method="dialog" id="link-form"><span class="eyebrow">NEW CONNECTION</span><h2>Choose your interfaces</h2><p class="muted">Each interface connects to one cable.</p><div class="link-endpoints"><label><span id="link-a-name"></span><select id="link-a-port"></select></label><span>↔</span><label><span id="link-b-name"></span><select id="link-b-port"></select></label></div><div class="dialog-actions"><button value="cancel" formnovalidate>Cancel</button><button class="primary" id="confirm-link" value="connect">Connect devices</button></div></form></dialog>
   <dialog id="takeover-dialog" aria-labelledby="takeover-title"><form method="dialog" id="takeover-form"><h2 id="takeover-title">Take over console input?</h2><p id="takeover-description" class="muted"></p><div class="dialog-actions"><button value="cancel" autofocus>Cancel</button><button class="primary" id="confirm-takeover" value="takeover">Take over</button></div></form></dialog>
@@ -152,8 +153,18 @@
       <label class="export-log-option"><input type="checkbox" id="export-compact" checked> Compact vEOS disks in ZIP (lossless)</label>
       <p class="field-help">Reuses matching data from the installed base image. Import requires a Weblab version supporting compact backups; turn off for older installations. All saved disk contents are preserved.</p>
     </div>
+    <label class="export-log-option"><input type="checkbox" id="export-reset"> Reset lab after export</label>
+    <p class="field-help">Requires all nodes stopped. JSON does not preserve complete device state; choose ZIP to resume this lab later. You will confirm reset after saving the download.</p>
     <p id="export-message" class="field-help" role="status"></p>
-    <div class="dialog-actions"><button id="cancel-export">Cancel</button><button id="export-json">Topology JSON</button><button class="primary" id="export-saved">JSON + saved configs</button><button id="export-initial">JSON + live configs</button><button id="export-zip">Saved lab ZIP</button></div>
+    <div class="dialog-actions"><button id="cancel-export">Cancel</button><button id="export-json">Topology JSON</button><button class="primary" id="export-saved">JSON + saved configs</button><button id="export-initial">JSON + live configs</button></div>
+    <div class="dialog-actions export-reset-actions"><button class="danger-button" id="reset-without-export">Reset without export…</button><button id="export-zip">Saved lab ZIP</button></div>
+  </dialog>
+  <dialog id="reset-lab-dialog" aria-labelledby="reset-lab-title">
+    <h2 id="reset-lab-title">Backup downloaded?</h2>
+    <p id="reset-lab-hint">Check that your download has finished and is saved before resetting.</p>
+    <p>This clears the topology and all saved node storage and logs, including retained files from removed nodes (not included in exports). Images, authentication, Agent history and published instructions are kept.</p>
+    <p id="reset-lab-message" class="field-help" role="status"></p>
+    <div class="dialog-actions"><button id="cancel-reset-lab" autofocus>Cancel</button><button class="danger-button" id="confirm-reset-lab">Reset lab</button></div>
   </dialog>
   <dialog id="import-dialog" aria-labelledby="import-title">
     <h2 id="import-title">Restore saved lab?</h2>

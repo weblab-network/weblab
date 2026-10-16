@@ -38,7 +38,12 @@ def activity_operation(method, path):
         ('POST', '/api/export/saved-configs'): 'config.export_saved',
         ('POST', '/api/lab/start'): 'lab.start',
         ('POST', '/api/lab/stop'): 'lab.stop',
+        ('POST', '/api/lab/reset'): 'lab.reset',
     }
+    if method == 'POST' and re.fullmatch(r'/api/links/[\w-]+/capture', path):
+        return 'capture.start', path.split('/')[3]
+    if method == 'POST' and re.fullmatch(r'/api/captures/[a-f0-9]{32}/(stop|close)', path):
+        return 'capture.' + path.rsplit('/', 1)[1], ''
     if (method, path) in routes:
         return routes[method, path], ''
     if method == 'POST':
@@ -94,6 +99,10 @@ def allowed(role, method, path):
                 'proposal', 'decision', 'login', 'login-status', 'login-cancel',
                 'logout', 'history-read', 'history-export', 'history-open',
                 'history-rename', 'history-delete', 'attachment'}))
+    if ((method == 'POST' and re.fullmatch(r'/api/links/[\w-]+/capture', path)) or
+            (method == 'POST' and re.fullmatch(r'/api/captures/[a-f0-9]{32}/(stop|close)', path)) or
+            (method == 'GET' and re.fullmatch(r'/api/captures/[a-f0-9]{32}(?:/pcap|/packets/[0-9]+)?', path))):
+        return role in ('admin', 'writer')
     if method == 'GET':
         if path == '/api/activity':
             return role == 'admin'
@@ -110,7 +119,7 @@ def allowed(role, method, path):
         return False
     return ((method == 'PUT' and path in ('/api/topology', '/api/instructions')) or
             (method == 'POST' and (path in ('/api/import', '/api/export', '/api/export/initial-configs',
-                                           '/api/export/saved-configs') or path.startswith('/api/images/'))))
+                                           '/api/export/saved-configs', '/api/lab/reset') or path.startswith('/api/images/'))))
 
 
 class Auth:

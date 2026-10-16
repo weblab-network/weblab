@@ -73,6 +73,19 @@ class AuthTests(unittest.TestCase):
             self.server.auth.db.execute('UPDATE sessions SET expires=0')
         self.assertEqual(self.http('/api/state',cookie=cookie)[0],401)
 
+    def test_workspace_reset_requires_admin_csrf_and_preserves_login(self):
+        self.enable()
+        cookie, csrf = self.login()
+        data = {'expected_revision': self.lab.workspace_revision}
+        self.assertEqual(self.http('/api/lab/reset', 'POST', data)[0], 401)
+        self.assertEqual(self.http('/api/lab/reset', 'POST', data, cookie)[0], 403)
+        self.assertTrue(self.lab.topology['nodes'])
+        code, _, result = self.http('/api/lab/reset', 'POST', data, cookie, csrf)
+        self.assertEqual(code, 200, result)
+        self.assertEqual(result['topology']['nodes'], [])
+        self.assertEqual(self.http('/api/state', cookie=cookie)[0], 200)
+        self.assertEqual(web_auth.activity_operation('POST', '/api/lab/reset'), ('lab.reset', ''))
+
     def test_role_matrix_and_no_agent_bypass(self):
         self.enable()
         for name in PASSWORDS:
@@ -83,7 +96,7 @@ class AuthTests(unittest.TestCase):
                 self.assertEqual(self.http(path,method,{},cookie,csrf)[0],403,(name,path))
             self.assertEqual(self.http('/api/agent/session','POST',{},cookie,csrf)[0],400 if name=='admin' else 403)
             if name != 'admin':
-                for method,path in [('PUT','/api/topology'),('POST','/api/import'),('POST','/api/export'),('POST','/api/export/saved-configs'),('POST','/api/export/initial-configs'),('POST','/api/images/new.bin'),('GET','/api/exports/'+'a'*32)]:
+                for method,path in [('PUT','/api/topology'),('POST','/api/import'),('POST','/api/lab/reset'),('POST','/api/export'),('POST','/api/export/saved-configs'),('POST','/api/export/initial-configs'),('POST','/api/images/new.bin'),('GET','/api/exports/'+'a'*32)]:
                     self.assertEqual(self.http(path,method,{},cookie,csrf)[0],403,(name,path))
             for path in ['/api/lab/stop','/api/nodes/r1/stop']:
                 self.assertEqual(self.http(path,'POST',{},cookie,csrf)[0],403 if name=='guest' else 200)

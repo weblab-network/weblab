@@ -28,9 +28,17 @@ checksum are pinned in [image.json](packaging/exos/image.json); existing notices
 inside the virtual image remain intact. EXOS is not covered by Weblab's MIT license.
 
 Container runtime packages (including Debian, QEMU, Perl, Python and the Docker
-client) retain their own licenses. Debian package copyright notices are retained
+client, TShark/Wireshark and util-linux) retain their own licenses. Debian package copyright notices are retained
 under `/usr/share/doc/` in the image. Container tags identify the corresponding
 Weblab source revision; `iou2net.pl` is also included as source in `/app/`.
+
+The core image installs Debian's unmodified TShark package (Wireshark,
+GPL-2.0-or-later) for offline packet dissection as a separate process. Its package
+copyright and component notices remain in `/usr/share/doc/tshark/copyright`
+and the associated Wireshark library package directories; GPL text is retained
+under `/usr/share/common-licenses/GPL-2`. Upstream: <https://www.wireshark.org/>;
+Debian source package: <https://sources.debian.org/src/wireshark/>. Weblab does not
+embed Wireshark source or relicense its dissectors.
 
 The optional FRRouting profile runs the separately downloaded
 [upstream FRR container](https://github.com/FRRouting/frr). Its software and

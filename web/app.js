@@ -157,6 +157,7 @@ function accept(result, updateForm = true) {
   if (updateForm) renderInspector(); else updateInspectorStatus();
   updateLinkActions();
   applyRoleControls();
+  if ($("export-dialog").open) updateExportControls();
 }
 
 async function perform(label, operation) {
@@ -734,6 +735,7 @@ function updateLinkActions() {
     button.classList.toggle('carrier-fault', down);
     button.setAttribute('aria-label', `${button.textContent}${down ? ' (currently interrupted)' : ''}`);
   });
+  $('link-monitor').disabled = busy || !value.available || !authCan('write');
   $('link-actions-delete').disabled = busy || hasRunning();
   applyRoleControls();
 }
@@ -854,7 +856,60 @@ $("starter").onclick = () => structuralEdit(() => {
   topology.links.push({id: uid(), a: {node:r.id, port:nodePorts(r)[0]}, b:{node:s.id, port:nodePorts(s)[noConfigExport(s) ? 1 : 0]}}, {id:uid(), a:{node:s.id,port:nodePorts(s)[noConfigExport(s) ? 2 : 1]}, b:{node:p.id,port:"eth0"}});
   setSelection(r.id);
 });
+let pendingResetRevision = null;
+async function prepareWorkspaceReset(required = $("export-reset").checked) {
+  pendingResetRevision = null;
+  if (!required) return;
+  const current = await api("/api/state");
+  if (Object.values(current.status).some(s => s.state === 'running')) throw new Error('Stop all nodes before resetting.');
+  if (JSON.stringify(current.topology) !== JSON.stringify(topology)) throw new Error('Lab changed. Close Export and try again.');
+  pendingResetRevision = current.workspace_revision;
+}
+function showResetConfirmation(exported) {
+  $("reset-lab-title").textContent = exported ? 'Backup downloaded?' : 'Reset lab without a backup?';
+  $("reset-lab-hint").textContent = exported
+    ? 'Check that your download has finished and is saved before resetting.'
+    : 'No backup will be created. This cannot be undone.';
+  $("reset-lab-message").textContent = '';
+  $("reset-lab-dialog").showModal();
+  $("cancel-reset-lab").focus();
+}
+$("reset-without-export").onclick = async () => {
+  if (busy || !authCan('admin')) return;
+  busy = true; updateControls(); updateExportControls();
+  try {
+    await prepareWorkspaceReset(true);
+    $("export-dialog").close();
+    showResetConfirmation(false);
+  } catch (error) { $("export-message").textContent = error.message; }
+  finally { busy = false; updateControls(); updateExportControls(); }
+};
+function finishExport() {
+  $("export-dialog").close();
+  if (pendingResetRevision) {
+    showResetConfirmation(true);
+  }
+}
+$("cancel-reset-lab").onclick = () => $("reset-lab-dialog").close();
+$("reset-lab-dialog").addEventListener('close', () => { pendingResetRevision = null; });
+$("reset-lab-dialog").addEventListener('cancel', event => { if (busy) event.preventDefault(); });
+$("confirm-reset-lab").onclick = async () => {
+  if (busy || !pendingResetRevision || !authCan('admin')) return;
+  busy = true; updateControls();
+  $("confirm-reset-lab").disabled = $("cancel-reset-lab").disabled = true;
+  try {
+    const result = await api('/api/lab/reset', 'POST', {expected_revision:pendingResetRevision});
+    for (const id of [...consoleSessions.keys()]) closeConsole(id);
+    setSelection(null); accept(result);
+    $("reset-lab-dialog").close(); toast('Lab reset. Ready for a new topology.');
+  } catch (error) { $("reset-lab-message").textContent = error.message; }
+  finally {
+    busy = false; updateControls();
+    $("confirm-reset-lab").disabled = $("cancel-reset-lab").disabled = false;
+  }
+};
 function updateExportControls() {
+  $("reset-without-export").disabled = $("export-reset").disabled = busy || hasRunning() || !authCan('admin');
   $("export-initial").disabled = busy || topology.nodes.some(n => noConfigExport(n) || isFrr(n) || isLl2s(n) || n.type !== "pc" && state(n.id) !== "running");
   $("export-saved").disabled = busy || topology.nodes.some(n => noConfigExport(n) || n.type !== "pc" && state(n.id) === "running");
   $("export-zip").disabled = busy || hasRunning();
@@ -862,6 +917,8 @@ function updateExportControls() {
   $("export-compact-option").hidden = !topology.nodes.some(isVeos);
 }
 $("export").onclick = () => {
+  $("export-reset").checked = false;
+  pendingResetRevision = null;
   updateExportControls();
   $("export-message").textContent = topology.nodes.some(noConfigExport) ? "EXOS, Arista and Junos config snippets and extraction are not supported yet. Use Topology JSON or, with all devices stopped, Saved lab ZIP." : topology.nodes.some(n => isFrr(n) || isLl2s(n)) ? "FRR and LL2S support startup snippets, JSON + saved configs and Saved lab ZIP. On LL2S, commit first; then write memory and stop before export. Live capture for these containers is not supported yet." : hasRunning() ? "Saved configs require stopped Cisco devices; saved lab ZIP requires all devices stopped. Live configs require running Cisco devices with ready consoles." : "";
   $("export-dialog").showModal();
@@ -882,8 +939,9 @@ $("export-json").onclick = async () => {
   if (busy) return;
   busy = true; updateControls(); updateExportControls();
   try {
+    await prepareWorkspaceReset();
     downloadTopology({...topology, ...await exportAgentHistory()});
-    $("export-dialog").close();
+    finishExport();
   } catch (error) { $("export-message").textContent = error.message; }
   finally { busy = false; updateControls(); updateExportControls(); }
 };
@@ -893,9 +951,10 @@ async function exportConfigs(saved) {
   updateExportControls();
   $("export-message").textContent = saved ? "Reading saved configurations from device storage… IOSv disks can take a minute. Unsaved changes are excluded." : "Reading running configurations… Consoles are locked during capture; original console logging settings are restored before export.";
   try {
+    await prepareWorkspaceReset();
     const history = await exportAgentHistory();
     downloadTopology({...await api(saved ? "/api/export/saved-configs" : "/api/export/initial-configs", "POST", {}), ...history});
-    $("export-dialog").close(); toast("Initial configurations exported. They apply only to fresh devices.");
+    finishExport(); toast("Initial configurations exported. They apply only to fresh devices.");
   } catch (error) { $("export-message").textContent = error.message; }
   finally {
     busy = false; updateControls();
@@ -910,11 +969,12 @@ $("export-zip").onclick = async () => {
   updateExportControls();
   $("export-message").textContent = "Preparing saved lab… Large disks can take a few minutes.";
   try {
+    await prepareWorkspaceReset();
     const history = await exportAgentHistory();
     const result = await api("/api/export", "POST", {include_logs:$("export-logs").checked, compact_veos:$("export-compact").checked, ...history});
     const a = document.createElement("a"); a.href = result.url; a.download = result.filename;
     document.body.append(a); a.click(); a.remove();
-    $("export-dialog").close(); toast("Backup ready. Your browser will download the ZIP.");
+    finishExport(); toast("Backup ready. Your browser will download the ZIP.");
   } catch (error) { $("export-message").textContent = error.message; }
   finally {
     busy = false; updateControls();

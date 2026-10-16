@@ -13,14 +13,18 @@ isolation or a sandbox for untrusted device images or console operators.
 
 | Account | Role | Permissions |
 | --- | --- | --- |
-| `admin` | Administrator | Edit topology, upload images, import/export, start/stop devices, operate link faults, type in consoles, publish instructions, view activity records and use the optional Agent |
-| `user` | Writer | View the lab, type in consoles, take console input locks, start/stop nodes or the lab, operate link faults |
+| `admin` | Administrator | Edit topology, upload images, import/export, start/stop devices, operate link faults, capture link traffic, type in consoles, publish instructions, view activity records and use the optional Agent |
+| `user` | Writer | View the lab, type in consoles, take console input locks, start/stop nodes or the lab, operate link faults, capture link traffic |
 | `guest` | Reader | View topology, console output, launcher logs and storage; arrange local windows, pan and zoom |
 
 Writers cannot change node settings, names, placement or cables, upload images,
 import/export labs, or replace instructions. Readers cannot type in consoles,
 take input locks, start/stop nodes or manipulate links. Permissions are enforced
 on the HTTP API and console transport, not just by disabling buttons.
+
+Traffic captures and PCAP downloads are available to admin and writer. Each
+capture belongs to the exact login session that started it, and logout discards
+its buffers. Reader capture access is not enabled. See [traffic monitoring](link-actions.md#monitor-traffic).
 
 ## Console ownership and approval
 

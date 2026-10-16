@@ -402,6 +402,7 @@ def install(lab, stage, topology):
     except BaseException:
         recover(lab.directory)
         raise
+    lab.workspace_revision = uuid.uuid4().hex
     lab.topology = topology
     lab.errors.clear()
     recover(lab.directory)

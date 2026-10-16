@@ -62,6 +62,57 @@ class BackupTests(unittest.TestCase):
         self.assertEqual(self.nvram.read_bytes(), b'keep this state')
         self.assertFalse(list(self.lab.directory.glob('.restore-*')))
 
+    def test_workspace_reset_and_backup_recovery(self):
+        archive = self.backup()
+        instructions = self.lab.directory / 'instructions.json'
+        instructions.write_text('preserved instructions')
+        retained = self.lab.node_dir('removed-node') / 'old-config'
+        retained.write_text('retained storage')
+        revision = self.lab.snapshot()['workspace_revision']
+        result = self.fixture.request('/api/lab/reset', 'POST', {'expected_revision': revision})
+        self.assertEqual(result['topology']['nodes'], [])
+        self.assertEqual(result['topology']['links'], [])
+        self.assertFalse(self.nvram.exists())
+        self.assertFalse(retained.exists())
+        self.assertEqual(instructions.read_text(), 'preserved instructions')
+        self.assertTrue((self.lab.image_dir / 'fake.bin').exists())
+        with self.assertRaises(lab_server.LabError):
+            self.lab.reset_workspace({'expected_revision': revision})
+        self.restore(archive)
+        self.assertEqual(self.nvram.read_bytes(), self.contents)
+
+    def test_workspace_reset_rejects_changed_or_running_lab(self):
+        revision = self.lab.workspace_revision
+        self.lab.save(self.lab.topology)
+        with self.assertRaisesRegex(lab_server.LabError, 'changed'):
+            self.lab.reset_workspace({'expected_revision': revision})
+        revision = self.lab.workspace_revision
+        self.lab.start('r1')
+        with self.assertRaisesRegex(lab_server.LabError, 'Stop all'):
+            self.lab.reset_workspace({'expected_revision': self.lab.workspace_revision})
+        self.lab.stop('r1')
+        with self.assertRaisesRegex(lab_server.LabError, 'changed'):
+            self.lab.reset_workspace({'expected_revision': revision})
+        for data in ({}, None, {'expected_revision': None}):
+            with self.assertRaises(lab_server.LabError):
+                self.lab.reset_workspace(data)
+        self.assertEqual(self.nvram.read_bytes(), self.contents)
+
+    def test_workspace_reset_rolls_back_failed_install(self):
+        topology = copy.deepcopy(self.lab.topology)
+        original = lab_backup.write_json
+        def fail_topology(path, value):
+            if path == self.lab.topology_path and not value['nodes']:
+                raise OSError('simulated disk failure')
+            return original(path, value)
+        with patch.object(lab_backup, 'write_json', side_effect=fail_topology):
+            with self.assertRaises(OSError):
+                self.lab.reset_workspace({'expected_revision': self.lab.workspace_revision})
+        self.assertEqual(self.lab.topology, topology)
+        self.assertEqual(json.loads(self.lab.topology_path.read_text()), topology)
+        self.assertEqual(self.nvram.read_bytes(), self.contents)
+        self.assertFalse((self.lab.directory / '.restore.json').exists())
+
     def test_agent_transcript_roundtrip_is_reference_only(self):
         source = {'title': 'OSPF lab', 'created': 123, 'updated': 456,
                   'settings': {'model': 'test', 'provider': 'ollama', 'endpoint': 'PRIVATE_ENDPOINT'},

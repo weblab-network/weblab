@@ -23,6 +23,7 @@ import vios
 import frr
 import ll2s_device
 import lab_backup
+import traffic_capture
 import storage
 import console_capture
 import saved_config
@@ -115,6 +116,7 @@ class Lab:
             raise LabError("A server already manages this data directory") from exc
         lab_backup.recover(self.directory)
         self.exports = {}
+        self.captures = traffic_capture.Captures()
         self.lock = threading.RLock()
         self.storage = storage.Monitor(self.directory, self.image_dir)
         self.fabric = None
@@ -203,10 +205,12 @@ class Lab:
         return self.snapshot()
 
     def persist(self):
+        self.workspace_revision = uuid.uuid4().hex
         atomic_json(self.topology_path, self.topology)
         atomic_json(self.runtime_path, self.runtime)
 
     def journal(self):
+        self.workspace_revision = uuid.uuid4().hex
         atomic_json(self.runtime_path, self.runtime)
 
     def node(self, node_id):
@@ -218,6 +222,7 @@ class Lab:
     def snapshot(self):
         with self.lock:
             return {"topology": copy.deepcopy(self.topology),
+                    "workspace_revision": self.workspace_revision,
                     "iol_l1_profiles": sorted(iol_l1.PROFILES),
                     "allow_untested_frr": self.allow_untested_frr,
                     "storage": {"filesystems": storage.filesystems(self.directory, self.image_dir)},
@@ -405,6 +410,24 @@ class Lab:
             self.persist()
             return self.snapshot()
 
+    def reset_workspace(self, data):
+        with self.lock:
+            if self.runtime:
+                raise LabError("Stop all nodes before resetting the lab")
+            if (not isinstance(data, dict) or set(data) != {'expected_revision'} or
+                    data['expected_revision'] != self.workspace_revision):
+                raise LabError("Lab changed. Export again or reopen the reset confirmation.")
+            stage = self.directory / ('.restore-' + uuid.uuid4().hex)
+            stage.mkdir()
+            (stage / 'nodes').mkdir()
+            try:
+                lab_backup.install(self, stage, {
+                    'version': 1, 'name': 'Untitled lab', 'nodes': [], 'links': []})
+                return self.snapshot()
+            finally:
+                if not (self.directory / '.restore.json').exists():
+                    shutil.rmtree(stage, ignore_errors=True)
+
     @staticmethod
     def validate_instructions_file(file):
         if file is None:
@@ -520,6 +543,18 @@ class Lab:
             self.fabric.set_carrier(link_id, side, 'up' if data['up'] else 'down')
             return self.snapshot()
 
+    def start_capture(self, link_id, owner):
+        with self.lock:
+            link = next((item for item in self.topology['links'] if item['id'] == link_id), None)
+            if not link:
+                raise LabError('Link does not exist')
+            if (not self.fabric or self.fabric.error or not self.fabric.thread.is_alive() or
+                    not any(link[end]['node'] in self.runtime for end in ('a', 'b'))):
+                raise LabError('Start a connected node before monitoring traffic')
+            endpoints = {end: self.node(link[end]['node'])['name'] + ' · ' + link[end]['port']
+                         for end in ('a', 'b')}
+            return self.captures.start(self.fabric.capture_source, link_id, endpoints, owner)
+
     def set_link_traffic(self, link_id, data):
         with self.lock:
             if not isinstance(data, dict) or set(data) != {'blocked_a_to_b', 'blocked_b_to_a'} or any(type(v) is not bool for v in data.values()):
@@ -551,7 +586,7 @@ class Lab:
                                 'id': node['iol_id'], 'port': major | minor << 4}
             links.append(record)
         occupied = self.occupied_ids() | {n['iol_id'] for n in self.topology['nodes']}
-        self.fabric = link_fabric.LinkFabric(self.directory, self.netio, links, occupied)
+        self.fabric = link_fabric.LinkFabric(self.directory, self.netio, links, occupied, self.captures)
         self.l1 = iol_l1.Controller(self.directory, self.netl1, self.fabric)
 
     def write_netmap(self):
@@ -934,6 +969,7 @@ class Lab:
         while not shutdown.wait(2):
             with self.lock:
                 lab_backup.expire(self)
+                self.captures.expire()
                 for node_id, runtime in list(self.runtime.items()):
                     if node_id not in self.runtime:
                         continue
@@ -980,6 +1016,9 @@ class Handler(BaseHTTPRequestHandler):
         if not web_auth.allowed(self.principal['role'], self.command, path):
             raise web_auth.Denied('This operation is not available for your role')
 
+    def capture_owner(self):
+        return web_auth.digest(self.auth_token) if self.auth else None
+
     def auth_status(self):
         if not self.auth:
             return {'enabled': False, 'role': 'admin'}
@@ -993,6 +1032,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/auth/logout':
             self.auth_check(path)
             self.auth.logout(self.auth_token)
+            self.lab.captures.revoke(web_auth.digest(self.auth_token))
             if getattr(self.server, 'agent', None):
                 self.server.agent.revoke_owner(web_auth.digest(self.auth_token))
             self.reply(200, {'ok': True}, cookie=self.auth.cookie('', 0))
@@ -1125,6 +1165,25 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, self.auth.activity_page(parse_qs(urlsplit(self.path).query, keep_blank_values=True)))
             elif path.startswith('/api/automation/'):
                 self.automation_get(path)
+            elif re.fullmatch(r'/api/captures/[a-f0-9]{32}(?:/pcap|/packets/[0-9]+)?', path):
+                self.same_origin()
+                parts = path.split('/')
+                ident, owner = parts[3], self.capture_owner()
+                if len(parts) == 5 and parts[4] == 'pcap':
+                    body = self.lab.captures.pcap(ident, owner)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/vnd.tcpdump.pcap')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.send_header('Content-Disposition', f'attachment; filename="weblab-{ident}.pcap"')
+                    self.send_header('Cache-Control', 'no-store')
+                    self.send_header('X-Content-Type-Options', 'nosniff')
+                    self.end_headers()
+                    self.wfile.write(body)
+                elif len(parts) == 6:
+                    self.reply(200, self.lab.captures.packet(ident, owner, int(parts[5])))
+                else:
+                    query = parse_qs(urlsplit(self.path).query)
+                    self.reply(200, self.lab.captures.read(ident, owner, int(query.get('after', ['0'])[0])))
             elif path == "/api/storage":
                 with self.lab.lock:
                     nodes = copy.deepcopy(self.lab.topology['nodes'])
@@ -1264,6 +1323,15 @@ class Handler(BaseHTTPRequestHandler):
                 result = self.lab.set_link_carrier(path.split('/')[3], data)
             elif self.command == "POST" and re.fullmatch(r"/api/links/[\w-]+/traffic", path):
                 result = self.lab.set_link_traffic(path.split('/')[3], data)
+            elif self.command == 'POST' and re.fullmatch(r'/api/links/[\w-]+/capture', path):
+                if data != {}:
+                    raise LabError('Capture start expects an empty object')
+                result = self.lab.start_capture(path.split('/')[3], self.capture_owner())
+            elif self.command == 'POST' and re.fullmatch(r'/api/captures/[a-f0-9]{32}/(stop|close)', path):
+                if data != {}:
+                    raise LabError('Capture action expects an empty object')
+                parts = path.split('/')
+                result = self.lab.captures.action(parts[3], self.capture_owner(), parts[4])
             elif self.command == "POST" and path == "/api/export":
                 result = lab_backup.create(self.lab, data.get('include_logs', False), data.get('compact_veos', True),
                                            data.get('agent_history'))
@@ -1271,6 +1339,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = console_capture.export(self.lab)
             elif self.command == "POST" and path == "/api/export/saved-configs":
                 result = saved_config.export(self.lab, run)
+            elif self.command == "POST" and path == "/api/lab/reset":
+                result = self.lab.reset_workspace(data)
             elif self.command == "POST" and path == "/api/lab/start":
                 self.lab.start_all()
                 result = self.lab.snapshot()

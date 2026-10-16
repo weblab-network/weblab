@@ -21,6 +21,29 @@ JSON/ZIP imports preserve that document; they do not install an exercise from
 the archive. Keep its original Markdown/text file and publish the matching
 document after importing a different lab. See [publishing instructions](instructions.md).
 
+## Export and reset the workspace
+
+In **Export**, select **Reset lab after export**, then choose JSON or ZIP.
+All nodes must be stopped. After saving the download, confirm **Reset lab**;
+Cancel keeps the lab intact. The browser cannot verify that you saved the file,
+so check that the download finished before confirming. Failed exports do not reset.
+
+To discard the lab without a backup, choose **Reset without export…** in the
+same dialog, then confirm **Reset lab without a backup?**. Cancel is focused by
+default. The same stopped-node and administrator requirements apply.
+
+Reset clears the topology and all saved node storage and logs, including retained
+files from previously removed nodes; those retained files are not included in
+exports of the current topology. Installed images, authentication settings,
+Agent history and published instructions are kept. **Choose ZIP to resume a lab
+later**: JSON does not preserve complete device state. Save device configurations
+before stopping; exports do not save unsaved running configurations.
+
+With authentication enabled, only administrators can reset. The server checks
+that all nodes are stopped and rejects reset if the workspace changed or a node
+started since export began or the reset confirmation was opened. Export again
+or reopen the reset confirmation in that case.
+
 ## Optional Agent conversation
 
 In **Export**, select **Include current Agent conversation (ZIP or JSON)** to
