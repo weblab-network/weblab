@@ -212,7 +212,15 @@ def start(lab, node, run, error, root):
     runtime['ll2s_ready'] = False
     lab.journal()
     run('docker', 'exec', stem, 'touch', '/run/weblab-ready')
-    deadline = time.monotonic() + 30
+    _wait_ready(stem, run, error)
+    runtime['ll2s_ready'] = True
+    lab.journal()
+    return sys.executable, [str(root / 'container_console.py'), '--ll2s', stem]
+
+
+def _wait_ready(stem, run, error):
+    # Slow hosts get more time; successful readiness still returns immediately.
+    deadline = time.monotonic() + 120
     while True:
         try:
             run('docker', 'exec', stem, 'test', '-f', '/run/ll2s/ready', timeout=5)
@@ -222,9 +230,6 @@ def start(lab, node, run, error, root):
         if time.monotonic() >= deadline:
             raise error('LL2S daemons did not become ready: ' + run('docker', 'logs', '--tail', '30', stem))
         time.sleep(.25)
-    runtime['ll2s_ready'] = True
-    lab.journal()
-    return sys.executable, [str(root / 'container_console.py'), '--ll2s', stem]
 
 
 def save(lab, node_id, run):

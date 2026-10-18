@@ -38,7 +38,7 @@ let log='';fixture.stderr.on('data',data=>log+=data);
  try {
   const url=await new Promise((resolve,reject)=>{let out='';fixture.stdout.on('data',d=>{out+=d;if(out.includes('\n'))resolve(out.trim());});fixture.once('exit',code=>reject(new Error(`Fixture ${code}: ${log}`)));});
   browser=await chromium.launch({headless:true,args:['--no-sandbox']});
-  const page=await browser.newPage({viewport:{width:1440,height:1000}});
+  const page=await browser.newPage({viewport:{width:1440,height:1000},hasTouch:true});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(url);await page.waitForFunction(()=>loaded);
   const topologyBefore=(await page.request.get(url+'/api/state').then(r=>r.json())).topology;
@@ -48,6 +48,25 @@ let log='';fixture.stderr.on('data',data=>log+=data);
   const panel=page.locator('.traffic-panel');
   await panel.waitFor({state:'visible'});
   await page.waitForFunction(()=>document.querySelector('.traffic-panel [data-part=status]').textContent.includes('Capturing'));
+  const toolbar=panel.locator('[data-part=toolbar]');
+  for (const part of ['start','stop','download','protocol','direction','follow']) {
+    assert.equal(await panel.locator(`[data-part=${part}]`).evaluate(e=>!!e.closest('[data-part=toolbar]')),true);
+  }
+  const help=panel.locator('[data-part=help]'), helpButton=help.locator('summary');
+  assert.equal(await help.getAttribute('open'),null);
+  await helpButton.hover();
+  await help.locator('.console-menu-list').waitFor({state:'visible'});
+  assert.match(await help.textContent(),/2,000 frames/);
+  assert.match(await help.textContent(),/not confirmed guest reception/);
+  await page.mouse.move(0,0);
+  await help.locator('.console-menu-list').waitFor({state:'hidden'});
+  await page.keyboard.press('Tab'); await helpButton.focus();
+  await help.locator('.console-menu-list').waitFor({state:'visible'});
+  await page.keyboard.press('Escape');
+  await help.locator('.console-menu-list').waitFor({state:'hidden'});
+  const titleBox=await toolbar.boundingBox(), packetBox=await panel.locator('[data-part=scroll]').boundingBox();
+  assert.ok(packetBox.y-titleBox.y-titleBox.height<40,'Only a compact status line separates controls from packets');
+
   fixture.stdin.write('frames\n');
   await page.waitForFunction(()=>document.querySelectorAll('.traffic-panel tbody tr').length===6);
   assert.equal(await panel.locator('tbody tr').filter({hasText:'blocked'}).count(),3);
@@ -109,6 +128,20 @@ let log='';fixture.stderr.on('data',data=>log+=data);
   const after=await panel.boundingBox();assert.ok(after.width<before.width);
   await page.setViewportSize({width:390,height:740});
   const small=await panel.boundingBox();assert.ok(small.x>=0 && small.width<=390);
+  for(const part of ['move','help','maximize','close']) {
+    const box=await panel.locator(`[data-part=${part}]`).boundingBox();
+    assert.ok(box.x>=small.x && box.x+box.width<=small.x+small.width,'Window controls stay inside the narrow title bar');
+  }
+  await helpButton.tap();
+  await help.locator('.console-menu-list').waitFor({state:'visible'});
+  await page.waitForFunction(()=>{const b=document.querySelector('.traffic-help .console-menu-list').getBoundingClientRect();return b.x>=0 && b.right<=innerWidth;});
+  const helpBox=await help.locator('.console-menu-list').boundingBox();
+  assert.ok(helpBox.x>=0 && helpBox.x+helpBox.width<=390,JSON.stringify(helpBox));
+  await page.keyboard.press('Escape');
+  await panel.locator('.toolbar-scroll').evaluate(e=>e.scrollLeft=e.scrollWidth);
+  await panel.locator('[data-part=direction]').selectOption('a_to_b');
+  await panel.locator('[data-part=direction]').selectOption('all');
+
   await page.setViewportSize({width:1440,height:1000});
   await panel.locator('[data-part=protocol]').selectOption('LLDP');
   await panel.locator('[data-part=start]').click();

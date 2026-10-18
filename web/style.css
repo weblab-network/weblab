@@ -462,14 +462,20 @@ html[data-auth-role=writer] #instructions-open { display: none; }
 
 /* Bounded Ethernet capture window: always floats independently of workspace tabs. */
 .traffic-panel .console-toolbar{flex-shrink:0}
-.traffic-panel .topology-window-title{flex:1}
-.traffic-controls{padding:10px 14px;flex-shrink:0}
-.traffic-endpoints{font-size:13px;margin-bottom:8px;overflow-wrap:anywhere}
-.traffic-buttons{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.traffic-panel .topology-window-title{flex:0 0 auto;font-size:12px}
+.traffic-buttons{display:flex;gap:6px;align-items:center;flex-wrap:nowrap}
+.traffic-buttons button{padding:6px 8px;font-size:12px;white-space:nowrap}
 .traffic-buttons label{display:flex;align-items:center;gap:5px;margin:0;font-size:12px}
-.traffic-buttons select{width:auto;padding:6px}
-.traffic-buttons input[type=checkbox]{width:auto}
-.traffic-controls .field-help{margin:7px 0 0}
+.traffic-buttons select{width:auto;padding:4px;margin:0;max-width:140px}
+.traffic-buttons input[type=checkbox]{width:auto;margin:0}
+.traffic-meta{display:flex;align-items:baseline;justify-content:space-between;gap:4px 16px;flex-wrap:wrap;padding:3px 14px;font-size:11px;color:var(--muted);flex-shrink:0}
+.traffic-endpoints{color:var(--text);overflow-wrap:anywhere}
+.traffic-meta [data-part=status]{overflow-wrap:anywhere;min-width:0}
+.traffic-help>summary{font-size:16px;padding:4px 8px;list-style:none}
+.traffic-help>summary::-webkit-details-marker{display:none}
+.traffic-help>.console-menu-list{width:350px;white-space:normal;padding:10px 12px;font-size:12px;color:var(--muted)}
+.traffic-help p{margin:0;line-height:1.5}
+.traffic-help p+p{margin-top:8px}
 .traffic-panes{display:flex;flex-direction:column;flex:1;min-height:180px;overflow:hidden}
 .traffic-table{flex:60 1 0;min-height:60px;overflow:auto;scrollbar-width:thin}
 .traffic-table table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}
@@ -486,5 +492,21 @@ html[data-auth-role=writer] #instructions-open { display: none; }
 .traffic-detail-toolbar button[aria-pressed=true]{color:var(--accent);background:#243b36}
 .traffic-detail-toolbar span{font-size:11px;color:var(--muted)}
 .traffic-detail{flex:1;min-height:0;margin:0;padding:10px 14px;overflow:auto;font-size:12px;user-select:text;border-top:1px solid #303c46;scrollbar-width:thin}
-.traffic-footer{font-size:11px;color:var(--muted);padding:6px 36px 8px 14px;flex-shrink:0}
-@media(max-width:600px){.traffic-controls{padding:6px}.traffic-controls .field-help{font-size:10px}.traffic-buttons{gap:4px}.traffic-buttons button{padding:6px;font-size:12px}}
+
+
+/* Map workspace: one toolbar, no docked panes consume topology space. */
+body.map-workspace>.topbar{display:none}
+.map-workspace .workspace{height:var(--app-height,100vh)}
+.map-workspace .canvas-toolbar{position:relative;z-index:10;min-height:48px;height:48px;padding:5px 10px;gap:6px}
+.map-workspace .canvas-footer,.map-workspace #float-topology,.map-workspace .canvas-hint{display:none}
+.map-workspace .panels-compact>.palette,.map-workspace .panels-compact>.inspector{top:48px;bottom:12px;border:1px solid var(--border);border-radius:8px}
+.map-workspace #panel-backdrop{top:48px}
+#map-workspace-menu>.console-menu-list{width:280px;white-space:normal}
+#map-workspace-menu .header-actions{margin:0;display:flex;flex-direction:column;gap:3px;white-space:normal}
+#map-workspace-menu .header-actions button{display:block}
+#map-workspace-menu .header-actions button span{display:inline}
+#map-workspace-menu .lab-heading{padding:8px}
+#map-workspace-menu .save-state{display:block;padding:0 8px 8px}
+#map-workspace-menu #lab-name{max-width:none}
+
+.map-selection-box{position:fixed;pointer-events:none;border:1px solid var(--accent);background:#67d8bc20;z-index:5}

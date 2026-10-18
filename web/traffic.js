@@ -13,26 +13,36 @@
     panel.setAttribute('aria-label','Traffic monitor');
     panel.innerHTML = `<div class="console-toolbar" data-part="toolbar">
       <button class="console-move" data-part="move" aria-label="Move traffic monitor">⠿</button>
+      <div class="toolbar-scroll">
       <strong class="topology-window-title">Traffic monitor</strong>
-      <button data-part="maximize" aria-label="Maximize traffic monitor" aria-pressed="false">↗</button>
-      <button data-part="close" aria-label="Close traffic monitor" title="Close and discard capture">×</button>
-      </div><div class="traffic-controls">
-      <div class="traffic-endpoints" data-part="endpoints"></div>
       <div class="traffic-buttons"><button data-part="start">Start capture</button><button data-part="stop" disabled>Stop</button>
       <button data-part="download" disabled>Download PCAP</button>
       <label>Protocol <select data-part="protocol" aria-label="Filter protocol"></select></label>
       <label>Direction <select data-part="direction" aria-label="Filter direction"><option value="all">Both</option><option value="a_to_b">A → B</option><option value="b_to_a">B → A</option></select></label>
-      <label><input type="checkbox" data-part="follow" checked> Follow</label></div>
-      <p class="field-help">Up to 60 seconds, 2,000 frames or 8 MiB. Filters affect this view; PCAP includes every captured frame. New capture replaces this buffer.</p>
-      <p data-part="status" class="field-help" role="status">Ready</p></div>
+      <label><input type="checkbox" data-part="follow" checked> Follow</label></div></div>
+      <details class="console-menu traffic-help" data-part="help"><summary aria-label="Traffic capture information">ⓘ</summary>
+      <div class="console-menu-list"><p>Up to 60 seconds, 2,000 frames or 8 MiB. Filters affect this view; PCAP includes every captured frame. New capture replaces this buffer.</p>
+      <p>Capture observes link ingress. Forwarded means sent to the peer socket, not confirmed guest reception.</p></div></details>
+      <button data-part="maximize" aria-label="Maximize traffic monitor" aria-pressed="false">↗</button>
+      <button data-part="close" aria-label="Close traffic monitor" title="Close and discard capture">×</button>
+      </div><div class="traffic-meta">
+      <span class="traffic-endpoints" data-part="endpoints"></span>
+      <span data-part="status" role="status">Ready</span></div>
       <div class="traffic-panes" data-part="panes"><div class="traffic-table" data-part="scroll"><table><thead><tr><th>#</th><th>Time (s)</th><th>Direction</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Bytes</th><th>Relay</th><th>Info</th></tr></thead><tbody data-part="rows"></tbody></table></div>
       <div class="traffic-divider" data-part="divider" role="separator" tabindex="0" aria-label="Resize packet list and details" aria-orientation="horizontal" aria-valuemin="20" aria-valuemax="80" aria-valuenow="60" title="Drag to resize packet details; use arrow keys when focused"><span></span></div>
       <div class="traffic-detail-pane" data-part="detail-pane">
       <div class="traffic-detail-toolbar"><button data-part="decoded" aria-pressed="true">Decoded</button><button data-part="hex" aria-pressed="false">Hex / ASCII</button><span data-part="decode-status" role="status"></span></div>
       <pre class="traffic-detail" data-part="detail" tabindex="0">Select a packet number to inspect its protocols and bytes.</pre></div></div>
-      <div class="traffic-footer">Capture observes link ingress. Forwarded means sent to the peer socket, not confirmed guest reception.</div>
       <button class="console-resize" data-part="resize" aria-label="Resize traffic monitor">◢</button>`;
     const q = name => panel.querySelector(`[data-part="${name}"]`);
+    const help = q('help'), helpButton = help.querySelector('summary');
+    let helpTimer;
+    help.addEventListener('pointerenter', event => { clearTimeout(helpTimer); if (event.pointerType === 'mouse') help.open = true; });
+    help.addEventListener('pointerleave', () => {
+      helpTimer = setTimeout(() => { if (!help.contains(document.activeElement)) help.open = false; },150);
+    });
+    helpButton.addEventListener('focus', () => { if (helpButton.matches(':focus-visible')) help.open = true; });
+    help.addEventListener('focusout', event => { if (!help.contains(event.relatedTarget)) help.open = false; });
     for (const protocol of protocols) q('protocol').add(new Option(protocol, protocol));
     const label = side => `${nodeById(link[side].node).name} · ${link[side].port}`;
     q('endpoints').textContent = `A: ${label('a')} ↔ B: ${label('b')}`;
@@ -84,6 +94,7 @@
       q('maximize').setAttribute('aria-pressed', String(view.maximized));
       q('maximize').setAttribute('aria-label', view.maximized ? 'Restore traffic monitor size' : 'Maximize traffic monitor');
       q('maximize').textContent = view.maximized ? '↙' : '↗';
+      if (help.open) positionConsoleMenu(help);
     }
     function controls() {
       q('start').disabled = pending || running;
@@ -191,7 +202,7 @@
     window.addEventListener('pagehide', leaving);
     q('close').onclick = () => {
       window.removeEventListener('pagehide', leaving);
-      closed = true; clearInterval(timer);
+      closed = true; clearInterval(timer); clearTimeout(helpTimer);
       if (id) api(`/api/captures/${id}/close`, 'POST', {}).catch(()=>{});
       documentWindows.delete(view); windows.delete(linkId); panel.remove();
     };

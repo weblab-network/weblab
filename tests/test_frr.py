@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import zipfile
 
 import console_capture
@@ -25,6 +25,25 @@ class FrrTests(unittest.TestCase):
         self.lab.netio = self.root/'netio'
         self.lab.netl1 = self.root/'netl1'
         self.lab.save({'name':'FRR test', 'nodes':[{'id':'r','name':'R','type':'router','image':frr.IMAGE}], 'links':[]})
+
+    def test_readiness_allows_slow_boot_and_remains_bounded(self):
+        module = frr
+        ready = 'all daemons up, doing startup-complete notify'
+        run = Mock(side_effect=[ValueError('starting'), ValueError('starting'), ready, 'version'])
+        with patch.object(module.time, 'monotonic', side_effect=[0, 31, 60]), \
+                patch.object(module.time, 'sleep') as sleep:
+            module._wait_ready('fixture', run, ValueError)
+        self.assertEqual(sleep.call_count, 2)
+        # Ready daemons do not pay the additional wait.
+        with patch.object(module.time, 'monotonic', return_value=0), \
+                patch.object(module.time, 'sleep') as sleep:
+            module._wait_ready('fixture', Mock(return_value=ready), ValueError)
+        sleep.assert_not_called()
+        with patch.object(module.time, 'monotonic', side_effect=[0, 120]), \
+                patch.object(module.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(ValueError, 'FRR daemons did not become ready: diagnostic'):
+                module._wait_ready('fixture', Mock(side_effect=[ValueError('starting'), 'diagnostic']), ValueError)
+        sleep.assert_not_called()
 
     def tearDown(self):
         # Runtime entries below are synthetic, never real containers/processes.

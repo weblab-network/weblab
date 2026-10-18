@@ -41,8 +41,8 @@ free disk space; 8 GiB RAM provides more room for other work.
 Download the versioned script and checksum, verify them, then inspect/run it:
 
 ```sh
-curl -fSL https://github.com/weblab-network/weblab/releases/download/v0.9.0/weblab-install.sh -o weblab-install.sh
-curl -fSL https://github.com/weblab-network/weblab/releases/download/v0.9.0/SHA256SUMS -o SHA256SUMS
+curl -fSL https://github.com/weblab-network/weblab/releases/download/v0.9.1/weblab-install.sh -o weblab-install.sh
+curl -fSL https://github.com/weblab-network/weblab/releases/download/v0.9.1/SHA256SUMS -o SHA256SUMS
 sha256sum -c SHA256SUMS
 sh weblab-install.sh --help
 sh weblab-install.sh --with-agent --start-example --dry-run
@@ -52,6 +52,10 @@ sudo sh weblab-install.sh --with-agent --start-example
 The checksum verifies the downloaded file against that release; it is not an
 independent signature. A dry run prints the plan without checking prerequisites
 or changing the host. First-run duration depends on image downloads and device startup.
+FRR and LL2S each allow up to 120 seconds for daemon readiness, returning as
+soon as ready. The installer allows up to 30 minutes for the whole example-start
+request; HTTP errors report the server message. A failed start is not retried
+automatically—inspect the workspace before recovery.
 
 Omit `--start-example` for an empty workspace; omit `--with-agent` for ordinary
 Weblab. `--start-example` imports the [FRR/LL2S test lab](../examples/ll2s-frr-vrrp-test.md),
@@ -221,8 +225,8 @@ sudo modprobe openvswitch
 docker pull alpine:latest
 docker pull ghcr.io/weblab-network/ll2s:0.2.0
 docker pull ghcr.io/weblab-network/weblab-frr:10.7.1-wl1
-docker pull ghcr.io/weblab-network/weblab:0.9.0
-docker pull ghcr.io/weblab-network/weblab-agent:0.9.0
+docker pull ghcr.io/weblab-network/weblab:0.9.1
+docker pull ghcr.io/weblab-network/weblab-agent:0.9.1
 
 # Start the isolated companion first, as in the Compose setup.
 docker run -d --name weblab-agent --platform linux/amd64 \
@@ -233,7 +237,7 @@ docker run -d --name weblab-agent --platform linux/amd64 \
   --tmpfs /workspace:rw,nosuid,nodev,uid=10001,gid=10001,size=32m \
   -v weblab-agent-sockets:/run/weblab-agent \
   -v weblab-agent-conversations:/home/agent \
-  ghcr.io/weblab-network/weblab-agent:0.9.0
+  ghcr.io/weblab-network/weblab-agent:0.9.1
 
 docker run -d --name weblab --platform linux/amd64 --init --stop-timeout 120 \
   --hostname weblab --add-host weblab:127.0.0.1 \
@@ -247,7 +251,7 @@ docker run -d --name weblab --platform linux/amd64 --init --stop-timeout 120 \
   -v weblab-agent-sockets:/run/weblab-agent \
   -v weblab-agent-bridge-state:/agent-state \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/weblab-network/weblab:0.9.0
+  ghcr.io/weblab-network/weblab:0.9.1
 ```
 
 Open **http://127.0.0.1:8080/**. Add a Switch with the LL2S image, a Router with

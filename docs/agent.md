@@ -190,8 +190,8 @@ image/data mounts and project name when adding the companion.
 
 ```sh
 mkdir -p images lab-data
-export WL_IMAGE=ghcr.io/weblab-network/weblab:0.9.0
-export WL_AGENT_IMAGE=ghcr.io/weblab-network/weblab-agent:0.9.0
+export WL_IMAGE=ghcr.io/weblab-network/weblab:0.9.1
+export WL_AGENT_IMAGE=ghcr.io/weblab-network/weblab-agent:0.9.1
 # For Ollama, use the /v1 URL reachable from the Weblab service:
 export WL_AGENT_PROVIDERS=http://YOUR_OLLAMA_HOST:11434/v1
 docker compose -f compose.prebuilt.yaml -f compose.agent.prebuilt.yaml pull

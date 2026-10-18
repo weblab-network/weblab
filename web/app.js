@@ -55,7 +55,7 @@ try {
 function applyPanelLayout() {
   const area = $("canvas-scroll");
   const center = {x:area.scrollLeft+area.clientWidth/2, y:area.scrollTop+area.clientHeight/2};
-  const compact = panelMedia.matches || !!window.weblabLayout?.active();
+  const compact = panelMedia.matches || !!window.weblabLayout?.overlays();
   $("workspace").classList.toggle("panels-compact", compact);
   for (const [key,id,label] of [["palette","device-library","device library"],["inspector","inspector","inspector"]]) {
     const open = compact ? compactPanel === key : desktopPanels[key];
@@ -77,7 +77,7 @@ function applyPanelLayout() {
 }
 
 function setPanel(key, open, keyboard = false) {
-  if (panelMedia.matches || window.weblabLayout?.active()) compactPanel = open ? key : (compactPanel === key ? null : compactPanel);
+  if (panelMedia.matches || window.weblabLayout?.overlays()) compactPanel = open ? key : (compactPanel === key ? null : compactPanel);
   else {
     desktopPanels[key] = open;
     try { localStorage.setItem("iol-panels", JSON.stringify(desktopPanels)); } catch (_) { /* Keep this session's choice. */ }
@@ -87,7 +87,7 @@ function setPanel(key, open, keyboard = false) {
 }
 
 function dismissCompactPanel() {
-  if ((panelMedia.matches || window.weblabLayout?.active()) && compactPanel) setPanel(compactPanel, false);
+  if ((panelMedia.matches || window.weblabLayout?.overlays()) && compactPanel) setPanel(compactPanel, false);
 }
 
 for (const key of Object.keys(desktopPanels)) {
@@ -101,7 +101,7 @@ document.addEventListener("pointerdown", event => { backdropPress = event.target
 $("panel-backdrop").onclick = () => { if (backdropPress) dismissCompactPanel(); backdropPress = false; };
 panelMedia.addEventListener("change", () => { compactPanel = null; applyPanelLayout(); });
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape" && (panelMedia.matches || window.weblabLayout?.active()) && compactPanel && !document.querySelector("dialog[open]")) {
+  if (event.key === "Escape" && (panelMedia.matches || window.weblabLayout?.overlays()) && compactPanel && !document.querySelector("dialog[open]")) {
     event.preventDefault(); event.stopImmediatePropagation(); dismissCompactPanel();
   }
 }, true);
@@ -435,12 +435,70 @@ $("canvas-scroll").addEventListener("wheel", event => {
              {x: event.clientX - rect.left, y: event.clientY - rect.top});
 }, {passive: false});
 
+function startRectangleSelection(event) {
+  const area = $("canvas-scroll");
+  const original = [...selectedNodes], originalSelected = selected;
+  const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+  const box = document.createElement('div');
+  box.className = 'map-selection-box'; box.hidden = true;
+  box.setAttribute('aria-hidden','true'); area.append(box);
+  const start = {x:event.clientX, y:event.clientY};
+  let moved = false;
+  dragging = true; area.setPointerCapture(event.pointerId); updateViewControls();
+  const highlight = () => {
+    for (const node of $("nodes").children) node.classList.toggle('selected',selectedNodes.has(node.dataset.id));
+  };
+  const move = e => {
+    if (e.pointerId !== event.pointerId) return;
+    const bounds = area.getBoundingClientRect();
+    const x = Math.max(bounds.left,Math.min(bounds.left+area.clientWidth,e.clientX));
+    const y = Math.max(bounds.top,Math.min(bounds.top+area.clientHeight,e.clientY));
+    if (Math.hypot(x-start.x,y-start.y)>4) moved = true;
+    if (!moved) return;
+    const left = Math.min(start.x,x), top = Math.min(start.y,y);
+    const right = Math.max(start.x,x), bottom = Math.max(start.y,y);
+    box.hidden = false;
+    Object.assign(box.style,{left:left+'px',top:top+'px',width:(right-left)+'px',height:(bottom-top)+'px'});
+    selectedNodes.clear();
+    if (additive) original.forEach(id=>selectedNodes.add(id));
+    for (const node of $("nodes").children) {
+      const rect = node.getBoundingClientRect();
+      if (rect.right>=left && rect.left<=right && rect.bottom>=top && rect.top<=bottom) selectedNodes.add(node.dataset.id);
+    }
+    selected = selectedNodes.has(originalSelected) ? originalSelected : [...selectedNodes].at(-1) || null;
+    highlight();
+  };
+  const finish = e => {
+    if (e.pointerId !== event.pointerId) return;
+    area.removeEventListener('pointermove',move);
+    for (const type of ['pointerup','pointercancel','lostpointercapture']) area.removeEventListener(type,finish);
+    document.removeEventListener('keydown',cancel,true);
+    if (area.hasPointerCapture(event.pointerId)) area.releasePointerCapture(event.pointerId);
+    box.remove(); dragging = false;
+    if (e.type !== 'pointerup') {
+      selectedNodes.clear(); original.forEach(id=>selectedNodes.add(id)); selected = originalSelected;
+    }
+    suppressMapClick = moved || e.type !== 'pointerup';
+    setTimeout(()=>{suppressMapClick=false;},0);
+    render(); renderInspector(); updateViewControls();
+  };
+  const cancel = e => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    finish({pointerId:event.pointerId,type:'pointercancel'});
+  };
+  area.addEventListener('pointermove',move);
+  for (const type of ['pointerup','pointercancel','lostpointercapture']) area.addEventListener(type,finish);
+  document.addEventListener('keydown',cancel,true);
+}
+
 $("canvas-scroll").addEventListener("pointerdown", event => {
   if (event.button !== 0 || dragging || busy || event.target.closest(".map-node, .cable-group, button")) return;
   const area = $("canvas-scroll"), rect = area.getBoundingClientRect();
   // Leave native scrollbar interaction to the browser.
   if (event.clientX >= rect.left + area.clientWidth || event.clientY >= rect.top + area.clientHeight) return;
   event.preventDefault();
+  if (mode === 'select' && selectionGesture(event)) { startRectangleSelection(event); return; }
   const start = {x: event.clientX, y: event.clientY, left: area.scrollLeft, top: area.scrollTop};
   let moved = false;
   dragging = true;
@@ -1545,8 +1603,9 @@ const documentWindows = new Set();
 const clampConsole = (value, low, high) => Math.max(low, Math.min(high, value));
 function consoleViewport() {
   const view = window.visualViewport;
-  return {x:(view?.offsetLeft || 0) + 8, y:(view?.offsetTop || 0) + 8,
-          width:Math.max(1, (view?.width || innerWidth) - 16), height:Math.max(1, (view?.height || innerHeight) - 16)};
+  const top = window.weblabLayout?.mapMode() ? 48 : 0;
+  return {x:(view?.offsetLeft || 0) + 8, y:(view?.offsetTop || 0) + 8 + top,
+          width:Math.max(1, (view?.width || innerWidth) - 16), height:Math.max(1, (view?.height || innerHeight) - 16 - top)};
 }
 function boundedConsoleRect(rect) {
   const bounds = consoleViewport();
@@ -1610,6 +1669,7 @@ function applyConsoleLayout() {
   requestAnimationFrame(fitConsole);
 }
 $("detach-console").onclick = () => {
+  if (window.weblabLayout?.mapMode()) window.weblabLayout.leave();
   consoleGesture = null;
   if (!consoleFloating && consoleRect === null) {
     const rect = $("console-panel").getBoundingClientRect();

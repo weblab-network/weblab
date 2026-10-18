@@ -6,13 +6,14 @@
   const detached = new Set();
   try {
     const saved = JSON.parse(localStorage.getItem(KEY));
-    if (saved && ['build','side','stack','free'].includes(saved.preset)) {
+    if (saved && ['build','side','stack','map','free'].includes(saved.preset)) {
       settings.preset = saved.preset;
       if (['agent','instructions'].includes(saved.tool)) settings.tool = saved.tool;
       if (['console','agent','instructions'].includes(saved.sideTool)) settings.sideTool = saved.sideTool;
       for (const key of ['column','row']) if (Number.isFinite(saved[key])) settings[key] = clampConsole(saved[key],.25,.75);
     }
   } catch (_) { /* Defaults also work without browser storage. */ }
+  const mapMode = () => settings.preset === 'map';
   const active = () => ['side','stack'].includes(settings.preset);
   const narrow = matchMedia('(max-width: 1000px), (orientation: portrait)');
   const stacked = () => settings.preset === 'stack' && !narrow.matches;
@@ -25,6 +26,31 @@
   };
   function save() {
     try { localStorage.setItem(KEY,JSON.stringify(settings)); } catch (_) {}
+  }
+  // Move the real controls so auth/Agent state and event handlers stay intact.
+  const mapMenu = document.createElement('details');
+  mapMenu.id = 'map-workspace-menu'; mapMenu.className = 'console-menu'; mapMenu.hidden = true;
+  mapMenu.innerHTML = '<summary title="Lab name and actions">Lab</summary><div class="console-menu-list"></div>';
+  const mapActions = mapMenu.querySelector('.console-menu-list');
+  const toolbar = document.querySelector('.canvas-toolbar');
+  toolbar.append(mapMenu);
+  const headerParts = [document.querySelector('.lab-heading'), $('save-state'),
+    document.querySelector('.header-actions'), $('auth-activity'), $('auth-logout'),
+    $('open-agent'), $('open-instructions')].filter(Boolean);
+  const homes = headerParts.map(element => {
+    const marker = document.createComment('workspace control home');
+    element.before(marker); return [element,marker];
+  });
+  function mapChrome() {
+    document.body.classList.toggle('map-workspace',mapMode());
+    mapMenu.hidden = !mapMode(); mapMenu.open = false;
+    if (mapMode()) {
+      for (const element of headerParts.slice(0,-2)) mapActions.append(element);
+      for (const element of headerParts.slice(-2)) toolbar.insertBefore(element,mapMenu);
+    } else {
+      for (const [element,marker] of homes) marker.after(element);
+    }
+    fitWorkspaceViewport();
   }
   const right = document.createElement('section');
   right.id = 'workspace-right'; right.hidden = true;
@@ -62,6 +88,7 @@
   }
   function consoleLayout() {
     const panel = $('console-panel');
+    if (mapMode()) { consoleFloating = true; }
     if (!active() || consoleFloating) {
       panel.classList.remove('workspace-docked','workspace-inactive');
       return false;
@@ -171,6 +198,7 @@
   function selectPreset(preset) {
     const focus = document.activeElement;
     settings.preset = preset; compactPanel = null; consoleGesture = null;
+    mapChrome();
     if (active()) {
       detached.clear();
       normalizing = true;
@@ -182,6 +210,13 @@
     } else {
       release(); render();
       if (preset === 'build') { dockTopology(); setAllConsolesFloating(false); }
+      if (mapMode()) {
+        dockTopology(); $('topology-panel').hidden = false;
+        consoleFloating = true; consoleOpenMode = 'tabbed'; consoleMaximized = false;
+        applyConsoleLayout();
+        for (const view of documentWindows) view.applyLayout();
+        for (const session of consoleSessions.values()) if (session.floating) applyFloatingConsoleLayout(session.floating);
+      }
     }
     applyPanelLayout(); save();
     // Layout-only changes must not drop a terminal's focus or input lock.
@@ -195,8 +230,8 @@
     $('console-windows').append(view.panel); view.applyLayout(); bringConsoleForward(view.panel);
     emptyStates();
   }
-  window.weblabLayout = {active, consoleLayout, documentLayout, show:kind => { if (!normalizing && (kind !== 'console' || !consoleFloating)) reveal(kind,true); },
-    leave:() => { if (active()) selectPreset('free'); },
+  window.weblabLayout = {active, mapMode, overlays:() => active() || mapMode(), consoleLayout, documentLayout, show:kind => { if (!normalizing && (kind !== 'console' || !consoleFloating)) reveal(kind,true); },
+    leave:() => { if (active() || mapMode()) selectPreset('free'); },
     availability:() => { if (active()) { render(); activateTool(); } }
   };
   for (const kind of ['agent','instructions']) {
@@ -257,6 +292,6 @@
   new MutationObserver(emptyStates).observe(right,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','class']});
   narrow.addEventListener('change',()=>{ if (active()) { render(); activateTool(); } });
   new ResizeObserver(fit).observe(area);
-  if (active()) selectPreset(settings.preset);
+  if (active() || mapMode()) selectPreset(settings.preset);
   else render();
 })();

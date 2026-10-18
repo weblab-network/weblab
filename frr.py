@@ -204,7 +204,13 @@ def start(lab, node, run, error, root):
     runtime['frr_configured'] = True
     lab.journal()
     run('docker', 'exec', stem, 'touch', '/run/weblab-ready')
-    deadline = time.monotonic() + 30
+    _wait_ready(stem, run, error)
+    return sys.executable, [str(root / 'container_console.py'), '--frr', stem]
+
+
+def _wait_ready(stem, run, error):
+    # Slow hosts get more time; successful readiness still returns immediately.
+    deadline = time.monotonic() + 120
     while True:
         try:
             # A reachable vtysh socket is not sufficient: watchfrr can still be
@@ -218,7 +224,6 @@ def start(lab, node, run, error, root):
         if time.monotonic() >= deadline:
             raise error('FRR daemons did not become ready: ' + run('docker', 'logs', '--tail', '30', stem))
         time.sleep(.25)
-    return sys.executable, [str(root / 'container_console.py'), '--frr', stem]
 
 
 def save(lab, node_id, run):

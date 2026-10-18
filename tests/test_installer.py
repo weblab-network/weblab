@@ -171,6 +171,39 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('3 routers', result.stdout)
         self.assertEqual(self.calls, [])
 
+    def test_preload_reports_server_error_without_retry(self):
+        import io
+        import urllib.error
+        from unittest.mock import Mock
+        # Execute the actual embedded client helper without making network calls.
+        source = (ROOT / 'weblab-install.sh').read_text()
+        helper = source.split("import http.cookiejar,", 1)[1].split(
+            'if os.environ.get("WL_AUTH")', 1)[0]
+        scope = {}
+        with unittest.mock.patch.object(sys, 'argv', ['installer', '18080']):
+            exec('import http.cookiejar,' + helper, scope)
+        for path, body, expected in (
+            ('/api/lab/start', b'{"error":"FRR daemons did not become ready"}',
+             'FRR daemons did not become ready'),
+            ('/api/lab/start', b'<html>unavailable</html>', 'HTTP 400'),
+            ('/api/auth/login', b'{"error":"sensitive login detail"}', 'HTTP 400'),
+        ):
+            with self.subTest(path=path, body=body):
+                opener = Mock()
+                opener.open.side_effect = urllib.error.HTTPError(
+                    'http://localhost' + path, 400, 'Bad Request', {}, io.BytesIO(body))
+                scope['opener'] = opener
+                with self.assertRaises(SystemExit) as caught:
+                    scope['request'](path, {}, 'POST')
+                message = str(caught.exception)
+                self.assertIn('POST ' + path, message)
+                self.assertIn(expected, message)
+                self.assertIn('preserved', message)
+                self.assertNotIn('sensitive login detail', message)
+                opener.open.assert_called_once()
+                self.assertEqual(opener.open.call_args.kwargs["timeout"],
+                                 1800 if path == "/api/lab/start" else 600)
+
     def test_existing_alpine_tools_tag_is_preserved(self):
         self.assertEqual(self.run_script(ALPINE_PRESENT='1').returncode, 0)
         self.assertNotIn(['docker', 'pull', 'alpine:latest'], self.calls)

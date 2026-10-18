@@ -143,5 +143,23 @@ works while devices are running and in the floating map.
 
 Turn Multi-select off for ordinary console clicks. A normal node click selects
 that node alone; clicking blank canvas or pressing Escape clears the selection.
-Blank-canvas dragging still pans. The inspector edits only the last selected
+In **Multi-select**, drag empty canvas space to draw a selection rectangle.
+Nodes touched by the rectangle are selected; hold Shift/Ctrl/⌘ while dragging
+to add to the existing selection. Escape during the drag cancels it and restores
+the previous selection. Shift/Ctrl/⌘-drag also works in normal Select mode.
+Without Multi-select or a modifier, blank-canvas dragging pans. The inspector edits only the last selected
 node, not the group. Selection is local to your browser; positions save together.
+
+## Map workspace
+
+Choose **Layout → Map workspace** for a large topology. The map fills the
+workspace below one compact toolbar. **Agent** (when available) and
+**Instructions** open floating windows; consoles open in a floating tabbed
+window, with individual tabs still detachable. Traffic monitors also float.
+**Devices** and **Inspector** open overlays without reducing the map size.
+
+The **Lab** menu keeps the topology name, save status, Start/Stop, Import/Export,
+Storage and account controls accessible. The toolbar scrolls on narrow screens.
+Choose another layout to restore the usual header; docking the console group
+switches to Free layout. This preference is remembered in this browser and
+changes no topology, terminal connections or Agent permissions.

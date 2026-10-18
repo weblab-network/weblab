@@ -2,7 +2,7 @@
 # Weblab fresh-install helper. Run on the Docker host, not inside a container.
 set -eu
 
-VERSION=0.9.0
+VERSION=0.9.1
 LL2S_IMAGE=ghcr.io/weblab-network/ll2s:0.2.0
 FRR_IMAGE=ghcr.io/weblab-network/weblab-frr:10.7.1-wl1
 name=weblab
@@ -245,7 +245,7 @@ if [ "$start_example" = 1 ]; then
     printf 'Importing and starting the example; initial device startup can take several minutes...\n'
     docker cp "$tmp/." "$name:/tmp/weblab-example"
     docker exec "$name" python3 -c '
-import http.cookiejar, json, os, pathlib, sys, urllib.request
+import http.cookiejar, json, os, pathlib, sys, urllib.error, urllib.request
 base = "http://127.0.0.1:" + sys.argv[1]
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 csrf = ""
@@ -253,8 +253,22 @@ def request(path, data=None, method=None):
     body = json.dumps(data).encode() if data is not None else None
     req = urllib.request.Request(base+path, data=body, method=method,
                                  headers={"Content-Type": "application/json", "X-Weblab-Login": "1", "X-Weblab-CSRF": csrf})
-    with opener.open(req, timeout=600) as response:
-        return json.load(response)
+    try:
+        with opener.open(req, timeout=1800 if path == "/api/lab/start" else 600) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        with exc:
+            raw = exc.read(16384)
+        if not path.startswith("/api/auth/"):
+            try:
+                payload = json.loads(raw)
+                if isinstance(payload, dict) and isinstance(payload.get("error"), str):
+                    detail = ": " + payload["error"]
+            except (ValueError, UnicodeError):
+                pass
+        sys.exit(f"Weblab {req.get_method()} {path} failed (HTTP {exc.code}){detail}. "
+                 "Existing containers and data were preserved; inspect the workspace before retrying.")
 if os.environ.get("WL_AUTH") == "1":
     login = request("/api/auth/login", {"name": "admin", "password": os.environ["WL_AUTH_ADMIN_PASSWORD"]}, "POST")
     csrf = login["csrf"]

@@ -90,7 +90,18 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
-## New in v0.9.0 — Traffic monitor and workspace reset
+## New in v0.9.1 — More room for your topology
+
+**Map workspace** fills the screen below a compact toolbar, with floating
+consoles, Agent and Instructions. **Multi-select** now supports rectangle
+selection. Traffic-monitor controls move into its title bar, with capture help
+behind **ⓘ**, leaving more space for packets and decoding.
+
+FRR/LL2S daemon readiness now allows 120 seconds per node for slower hosts;
+the installer reports server errors when example startup fails.
+See [v0.9.1 release notes](docs/releases/v0.9.1.md).
+
+## Introduced in v0.9.0 — Traffic monitor and workspace reset
 
 Click a link to open a floating **traffic monitor**, inspect decoded protocols
 or raw packet bytes, filter traffic, and download Ethernet PCAP files. TShark is
@@ -102,7 +113,7 @@ export…**, with confirmation, stopped-device checks and stale-workspace protec
 See [release notes](docs/releases/v0.9.0.md), [traffic monitoring](docs/link-actions.md#monitor-traffic)
 and [backup/reset behavior](docs/backups.md#export-and-reset-the-workspace).
 
-Use **0.9.0** for matching core, Agent and EXOS images. The installer retains the
+Use **0.9.1** for matching core, Agent and EXOS images. The installer retains the
 optional core-only DNS override from v0.8.3.
 
 ## Weblab FRR

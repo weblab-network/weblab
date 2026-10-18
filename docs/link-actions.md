@@ -94,6 +94,10 @@ separate monitors; **Arrange windows** includes them.
 
 Open **Monitor traffic** from the link actions dialog.
 
+Capture controls sit in the title bar; scroll the controls horizontally in a
+narrow window. Hover, focus or tap **ⓘ** for capture limits and relay semantics.
+Link endpoints and current capture status remain visible below the title bar.
+
 - **Stop** freezes the capture. **New capture** replaces that window's buffer.
 - Filter by protocol and direction; the protocol menu expands with detected
   protocols. Select a packet number and choose **Decoded** or **Hex / ASCII**.
@@ -109,9 +113,9 @@ Open **Monitor traffic** from the link actions dialog.
 
 Filter the packet list, then inspect decoded protocol fields below it.
 
-<a href="https://weblab.network/assets/traffic-monitor-workspace.png"><img src="https://weblab.network/assets/traffic-monitor-workspace.png" alt="Traffic monitor arranged alongside a switching topology, Agent conversation and device console" width="800"></a>
+<a href="https://weblab.network/assets/traffic-monitor-workspace.png"><img src="https://weblab.network/assets/traffic-monitor-workspace.png" alt="Map workspace with compact traffic-monitor controls, decoded DTP packets, a switching topology, Agent and console" width="800"></a>
 
-Monitoring alongside the topology and consoles. The Agent uses console tools;
+DTP decoding in Map workspace, alongside the topology and consoles. The Agent uses console tools;
 it does not have access to these captures. Click a screenshot for full size.
 
 Captures observe validated Ethernet frames entering Weblab's per-link relay,

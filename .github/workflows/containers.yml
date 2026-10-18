@@ -40,6 +40,8 @@ jobs:
           npm exec --prefix tests -- playwright install --with-deps chromium
           node tests/agent_ui.cjs
           node tests/workspace_layouts.cjs
+          node tests/topology_multiselect.cjs
+          node tests/map_controls.cjs
           node tests/instructions.cjs
           node tests/auth_ui.cjs
           node tests/auth_console_locks.cjs
