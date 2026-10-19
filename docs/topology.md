@@ -2,6 +2,10 @@
 
 [Help index](README.md) · [Project overview](../README.md)
 
+<a href="https://weblab.network/assets/internet-network-cloud.png"><img src="https://weblab.network/assets/internet-network-cloud.png" alt="Weblab topology with an Internet gateway, an HQ diagram cloud and a Switches diagram group" width="720"></a>
+
+*Internet gateway on the left; HQ is a diagram-only cloud. The Switches rectangle groups devices visually. All nodes are stopped in this screenshot.*
+
 ## Network clouds for diagrams
 
 Use **Network cloud** in the library to represent an unmanaged network, a

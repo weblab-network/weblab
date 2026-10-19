@@ -11,6 +11,10 @@ The separate **Network cloud** library item is a customizable drawing of an
 unmanaged network. It has no forwarding or Internet access. See
 [network clouds for diagrams](topology.md#network-clouds-for-diagrams).
 
+<a href="https://weblab.network/assets/internet-network-cloud.png"><img src="https://weblab.network/assets/internet-network-cloud.png" alt="Weblab topology with an Internet gateway, an HQ diagram cloud and a Switches diagram group" width="720"></a>
+
+*Internet gateway on the left; HQ is a diagram-only cloud. The Switches rectangle groups devices visually. All nodes are stopped in this screenshot.*
+
 ## Build the gateway image
 
 Use Weblab **0.10.0 or later**. The gateway is a separate, locally built image;

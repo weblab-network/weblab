@@ -100,6 +100,10 @@ and prebuilt core image do not include that separate helper image.
 **Diagram group** adds editable rectangles and notes, with optional movement
 of enclosed devices. Both are preserved in JSON and ZIP exports.
 
+<a href="https://weblab.network/assets/internet-network-cloud.png"><img src="https://weblab.network/assets/internet-network-cloud.png" alt="Weblab topology with an Internet gateway, an HQ diagram cloud and a Switches diagram group" width="720"></a>
+
+*Internet gateway on the left; HQ is a diagram-only cloud. The Switches rectangle groups devices visually. All nodes are stopped in this screenshot.*
+
 See [v0.10.0 release notes](docs/releases/v0.10.0.md) and the
 [topology guide](docs/topology.md).
 
