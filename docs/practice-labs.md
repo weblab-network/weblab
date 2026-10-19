@@ -72,7 +72,7 @@ Each node uses:
 | --- | --- |
 | `id` | Unique string, 1–40 ASCII letters/digits/underscores/hyphens |
 | `name` | Display label, 1–40 characters |
-| `type` | `router`, `switch` or `pc` |
+| `type` | `router`, `switch`, `pc`, `cloud` (Internet), `network` (diagram cloud) or `group` (diagram rectangle) |
 | `image` | Exact `.bin` or `.qcow2` filename, or supported FRR/LL2S container tag; PCs use `alpine:latest` or another installed Alpine tag |
 | `x`, `y` | Integer canvas center coordinates; x 70–2330, y 60–1540 |
 | `memory` | Integer MB, 256–8192; normally 1024 for Cisco devices |
@@ -81,6 +81,38 @@ Each node uses:
 | `ipv4` | PC startup address and prefix, e.g. `192.0.2.10/24`; otherwise empty |
 | `gateway` | PC gateway in its configured IPv4 subnet, or empty |
 | `startup_config` | Optional Cisco, FRR or LL2S configuration-file text, up to 16 KiB UTF-8; see precedence below |
+
+Cloud nodes use `image: "weblab-internet:dev"` (or omit it), `memory: 256`,
+`ethernet: 1`, and an `internet` object: `{"address":"192.0.2.1/24","routes":[],
+"uplink_subnet":""}`. Return routes are `{"destination":"10.44.0.0/24",
+"via":"192.0.2.2"}`. IPv4/gateway/startup_config fields must be empty on clouds.
+A cloud has one `eth0` port; it starts before other nodes and has no console.
+See [Internet cloud](internet.md) for addressing and the required helper build.
+
+Diagram-only clouds use `type: "network"`, with optional `size` (integer
+60–200, default 100 percent) and `color` (six-digit hex, default `#94a3b8`).
+Omit `image`, `memory` and `ethernet`: they normalize to `""`, `0` and `0`.
+Addressing, startup snippets and `internet` settings do not apply. A cloud
+endpoint uses `port: "connection"`, which can be shared by multiple drawn
+links. Device endpoints still require distinct valid ports. Such links are
+excluded from the runtime fabric and carry no packets. Network clouds are
+excluded from Agent start order and consume no guest memory.
+
+Diagram rectangles use `type: "group"`. Like network clouds, omit `image`,
+`memory` and `ethernet` (normalized to `""`, `0`, `0`); runtime/addressing fields
+must be empty. Groups have no ports and cannot be link endpoints. Optional fields:
+
+- `width`: integer 160–1600 canvas pixels (default 480).
+- `height`: integer 100–1200 canvas pixels (default 300).
+- `notes`: plain text, at most 2,000 characters (default empty).
+- `color`: six-digit hex outline color (default `#94a3b8`).
+- `label_position`: `inside` (default), `above` or `right`.
+- `move_contents`: boolean (default `true`). Moving the rectangle in the UI also
+  moves objects fully enclosed at drag start; resizing does not move them.
+
+The center coordinates are adjusted on import to keep the rectangle on the
+2400 × 1600 canvas. Groups preserve their fields in JSON/ZIP and are omitted
+from Agent start order. They do not create guest processes or network segments.
 
 Omit `iol_id` from new lab files; the importer allocates an available application
 ID. Defaults exist for position/memory/interface count, but specify them for a

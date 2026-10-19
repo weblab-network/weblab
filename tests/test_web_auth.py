@@ -103,6 +103,17 @@ class AuthTests(unittest.TestCase):
             # For authorized users this reaches backend validation, rather than role refusal.
             self.assertEqual(self.http('/api/links/cable/traffic','POST',{},cookie,csrf)[0],403 if name=='guest' else 400)
 
+    def test_internet_start_requires_admin(self):
+        self.enable()
+        self.lab.save({'name':'Cloud', 'nodes':[{'id':'cloud','type':'cloud','name':'Internet'}], 'links':[]})
+        for account in ('user', 'guest', 'admin'):
+            cookie,csrf=self.login(account)
+            for path,method in (('/api/nodes/cloud/start','start'),('/api/lab/start','start_all')):
+                with patch.object(self.lab,method) as start:
+                    result=self.http(path,'POST',{},cookie,csrf)
+                self.assertEqual(result[0],200 if account=='admin' else 403,result)
+                self.assertEqual(start.call_count,1 if account=='admin' else 0)
+
     def test_password_change_sessions_rate_limit_and_private_storage(self):
         self.enable()
         cookie, csrf = self.login(remember=True)

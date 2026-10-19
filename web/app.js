@@ -3,6 +3,9 @@
 const $ = id => document.getElementById(id);
 const authCan = capability => window.weblabAuth?.can(capability) ?? true;
 const icons = {
+  group: '<svg viewBox="0 0 40 36" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="34" height="26" stroke-dasharray="4 3"/><path d="M9 12h18M9 18h12"/></svg>',
+  network: '<svg viewBox="0 0 180 120" fill="none" stroke="currentColor" stroke-width="1.7"><path vector-effect="non-scaling-stroke" d="M42 104C22 104 8 91 8 74C8 57 20 44 36 44C39 24 55 13 74 17C92 0 122 7 133 29C156 24 175 42 170 63C185 84 170 104 150 104Z"/></svg>',
+  cloud: '<svg viewBox="0 0 40 36" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M11 28h20a7 7 0 0 0 1-14 11 11 0 0 0-21-3 8.5 8.5 0 0 0 0 17Z"/><path d="M20 16v9m-4-5 4-4 4 4"/></svg>',
   switch: '<svg viewBox="0 0 40 36" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="8" width="34" height="21" rx="4"/><path d="M8 15h11m-3-3 3 3-3 3m16 4H21m3-3-3 3 3 3"/><path d="M8 24h2m3 0h2m13-10h2m3 0h1"/></svg>',
   router: '<svg viewBox="0 0 40 36" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="20" cy="12" rx="16" ry="7"/><path d="M4 12v12c0 4 7 7 16 7s16-3 16-7V12M10 12h9m-3-3 3 3-3 3m14-3h-8m3-3-3 3 3 3"/></svg>',
   pc: '<svg viewBox="0 0 40 36" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="4" width="32" height="23" rx="3"/><path d="M4 22h32M16 27v5m8-5v5m-13 0h18M12 11l4 3-4 3m8 0h7"/></svg>'
@@ -38,11 +41,12 @@ const isJunosSwitch = n => isQemu(n) && /^vjunos-switch-/i.test(n.image);
 const isJunosEvolved = n => isQemu(n) && /^vjunosevolved-/i.test(n.image);
 const isJunos = n => isJunosSwitch(n) || isJunosEvolved(n);
 const noConfigExport = n => isExos(n) || isVeos(n) || isJunos(n);
-const nodePorts = n => n.type === "pc" ? ["eth0"] : isFrr(n) || isLl2s(n) ? Array.from({length:n.ethernet}, (_, i) => `eth${i}`) : isJunos(n) ? [isJunosEvolved(n) ? "re0:mgmt-0" : "fxp0", ...Array.from({length:n.ethernet-1}, (_, i) => `${isJunosEvolved(n) ? "et" : "ge"}-0/0/${i}`)] : isVeos(n) ? ["Management1", ...Array.from({length:n.ethernet - 1}, (_, i) => `Ethernet${i + 1}`)] : isExos(n) ? ["Mgmt", ...Array.from({length:n.ethernet - 1}, (_, i) => String(i + 1))] : isQemu(n)
+const isDiagram = n => ["network","group"].includes(n?.type);
+const nodePorts = n => n.type === "group" ? [] : n.type === "network" ? ["connection"] : ["pc","cloud"].includes(n.type) ? ["eth0"] : isFrr(n) || isLl2s(n) ? Array.from({length:n.ethernet}, (_, i) => `eth${i}`) : isJunos(n) ? [isJunosEvolved(n) ? "re0:mgmt-0" : "fxp0", ...Array.from({length:n.ethernet-1}, (_, i) => `${isJunosEvolved(n) ? "et" : "ge"}-0/0/${i}`)] : isVeos(n) ? ["Management1", ...Array.from({length:n.ethernet - 1}, (_, i) => `Ethernet${i + 1}`)] : isExos(n) ? ["Mgmt", ...Array.from({length:n.ethernet - 1}, (_, i) => String(i + 1))] : isQemu(n)
   ? Array.from({length: n.ethernet}, (_, i) => n.type === "switch" ? `Gi${Math.floor(i / 4)}/${i % 4}` : `Gi0/${i}`)
   : Array.from({length: n.ethernet * 4}, (_, i) => `${Math.floor(i / 4)}/${i % 4}`);
 const portLink = (id, port) => topology.links.find(l => [l.a, l.b].some(e => e.node === id && e.port === port));
-const freePorts = n => nodePorts(n).filter(p => !portLink(n.id, p));
+const freePorts = n => n.type === "network" ? nodePorts(n) : nodePorts(n).filter(p => !portLink(n.id, p));
 
 const panelMedia = matchMedia("(max-width: 1000px), (orientation: portrait)");
 const desktopPanels = {palette:true, inspector:true};
@@ -191,25 +195,134 @@ function structuralEdit(change) {
 }
 
 function newNode(type, x, y) {
-  const prefix = {switch: "SW", router: "R", pc: "PC"}[type];
+  const prefix = {switch: "SW", router: "R", pc: "PC", cloud: "Internet", network:"Network", group:"Group"}[type];
   let number = 1;
   while (topology.nodes.some(n => n.name === prefix + number)) number++;
-  const image = type === "pc" ? "alpine:latest" : (images.find(i => i.type === type)?.name || "");
+  const image = type === "cloud" ? "weblab-internet:dev" : type === "pc" ? "alpine:latest" : (images.find(i => i.type === type)?.name || "");
+  if (type === 'group') return {id:uid(),type,name:prefix+number,image:'',memory:0,ethernet:0,
+    x:Math.round(Math.max(240,Math.min(2160,x))),y:Math.round(Math.max(150,Math.min(1450,y))),
+    width:480,height:300,notes:'',color:'#94a3b8',label_position:'inside',move_contents:true,ipv4:'',gateway:''};
+  if (type === 'network') return {id:uid(),type,name:prefix+number,image:'',memory:0,ethernet:0,
+    x:Math.round(Math.max(90,Math.min(2310,x))),y:Math.round(Math.max(60,Math.min(1540,y))),
+    size:100,color:'#94a3b8',ipv4:'',gateway:''};
+  if (type === 'cloud') return {id:uid(),type,name:prefix+number,image,memory:256,ethernet:1,
+    x:Math.round(Math.max(70,Math.min(2330,x))),y:Math.round(Math.max(60,Math.min(1540,y))),ipv4:'',gateway:'',
+    internet:{address:'192.0.2.1/24',routes:[],uplink_subnet:''}};
   return {id: uid(), type, name: prefix + number, image,
           memory: isJunosEvolved({type,image}) ? 8192 : isJunosSwitch({type,image}) ? 5120 : isFrr({image}) ? 512 : isLl2s({image}) ? 256 : isVeos({type,image}) ? 6144 : 1024, ethernet: isJunos({type,image}) ? 5 : (isFrr({image}) || isLl2s({image})) ? 4 : isVeos({type,image}) ? 5 : isExos({type,image}) ? 13 : image.endsWith(".qcow2") ? 4 : 2, x: Math.round(Math.max(70, Math.min(2330, x))), y: Math.round(Math.max(60, Math.min(1540, y))), ipv4: "", gateway: ""};
 }
 
 function addNode(type, x, y) {
-  if (type !== "pc" && !images.some(i => i.type === type)) return toast(`No ${type} image was found in the image directory.`, true);
+  if (!["pc","cloud","network","group"].includes(type) && !images.some(i => i.type === type)) return toast(`No ${type} image was found in the image directory.`, true);
   structuralEdit(() => { const n = newNode(type, x, y); topology.nodes.push(n); setSelection(n.id); })?.then(() => {
     if (panelMedia.matches && selected) setPanel("inspector", true);
   });
 }
 
+// Diagram groups are independent annotations; membership is determined at drag start.
+const mapNodeElement = id => [...$('canvas').querySelectorAll('.map-node')].find(el => el.dataset.id === id);
+function nodeHalfSize(n) {
+  if (n.type === 'group') return {x:n.width/2,y:n.height/2};
+  if (n.type === 'network') return {x:.9*n.size,y:.6*n.size};
+  const el = mapNodeElement(n.id);
+  return {x:(el?.offsetWidth || 126)/2,y:(el?.offsetHeight || 110)/2};
+}
+function nodeMargin(n) {
+  const half = nodeHalfSize(n);
+  return {x:Math.max(70,Math.ceil(half.x)),y:Math.max(60,Math.ceil(half.y))};
+}
+function groupMoveIds(ids) {
+  const result = new Set(ids);
+  for (const id of ids) {
+    const group = nodeById(id);
+    if (group?.type !== 'group' || !group.move_contents) continue;
+    for (const n of topology.nodes) {
+      const half = nodeHalfSize(n);
+      if (n.x-half.x >= group.x-group.width/2 && n.x+half.x <= group.x+group.width/2 &&
+          n.y-half.y >= group.y-group.height/2 && n.y+half.y <= group.y+group.height/2) result.add(n.id);
+    }
+  }
+  return [...result];
+}
+function renderDiagramGroups() {
+  // Larger rectangles go behind smaller nested ones; empty interiors pass pointer events through.
+  $('diagram-groups').innerHTML = topology.nodes.filter(n => n.type === 'group')
+    .sort((a,b) => b.width*b.height-a.width*a.height).map(n => `
+    <div class="map-node diagram-group ${selectedNodes.has(n.id) ? 'selected' : ''}" data-id="${esc(n.id)}"
+      style="left:${n.x}px;top:${n.y}px;width:${n.width}px;height:${n.height}px;--group-color:${esc(n.color)}">
+      <svg class="group-outline" width="100%" height="100%" aria-hidden="true"><rect x="1" y="1" width="${n.width-2}" height="${n.height-2}"/><rect class="group-hit" x="1" y="1" width="${n.width-2}" height="${n.height-2}"/></svg>
+      <button class="group-label label-${esc(n.label_position)}" aria-label="${esc(n.name)}, diagram group. Drag to move or use arrow keys."><strong>${esc(n.name)}</strong>${n.notes ? `<span class="group-notes">${esc(n.notes)}</span>` : ''}</button>
+      <button class="group-resize" aria-label="Resize ${esc(n.name)}" title="Drag to resize, or use arrow keys (Shift for larger steps)">◢</button>
+    </div>`).join('');
+}
+function groupResizeValues(n, width, height) {
+  // Corner resizing holds the upper-left corner fixed and never moves enclosed devices.
+  const left = n.x-n.width/2, top = n.y-n.height/2;
+  width = Math.round(Math.max(160,Math.min(1600,MAP_WIDTH-left,width)));
+  height = Math.round(Math.max(100,120-2*top,Math.min(1200,MAP_HEIGHT-top,height)));
+  return {width,height,x:Math.round(left+width/2),y:Math.round(top+height/2)};
+}
+function resizeDiagramGroup(event, target) {
+  if (!authCan('admin') || busy || dragging) return;
+  const n = nodeById(target.dataset.id), original = {x:n.x,y:n.y,width:n.width,height:n.height};
+  const start = {x:event.clientX,y:event.clientY};
+  let moved = false;
+  dragging = true; target.setPointerCapture(event.pointerId); updateViewControls();
+  const move = e => {
+    if (e.pointerId !== event.pointerId) return;
+    const dx=e.clientX-start.x,dy=e.clientY-start.y;
+    if (Math.hypot(dx,dy)>4) moved=true;
+    if (!moved) return;
+    Object.assign(n,groupResizeValues(original,original.width+dx/mapZoom,original.height+dy/mapZoom));
+    Object.assign(target.style,{left:n.x+'px',top:n.y+'px',width:n.width+'px',height:n.height+'px'});
+    for (const rect of target.querySelectorAll('rect')) {
+      rect.setAttribute('width',n.width-2); rect.setAttribute('height',n.height-2);
+    }
+  };
+  const finish = e => {
+    if (e.pointerId !== event.pointerId) return;
+    target.removeEventListener('pointermove',move);
+    for (const type of ['pointerup','pointercancel','lostpointercapture']) target.removeEventListener(type,finish);
+    document.removeEventListener('keydown',cancel,true);
+    if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
+    dragging=false; updateViewControls();
+    if (e.type !== 'pointerup') {Object.assign(n,original);render();renderInspector();}
+    else {setSelection(n.id);if(moved)edit(()=>{});else {render();renderInspector();}}
+  };
+  const cancel = e => {
+    if(e.key !== 'Escape')return;
+    e.preventDefault();e.stopImmediatePropagation();finish({pointerId:event.pointerId,type:'pointercancel'});
+  };
+  target.addEventListener('pointermove',move);
+  for (const type of ['pointerup','pointercancel','lostpointercapture']) target.addEventListener(type,finish);
+  document.addEventListener('keydown',cancel,true);
+}
+function diagramGroupKey(event) {
+  const target=event.target.closest('.diagram-group');
+  if(!target || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return false;
+  event.preventDefault();event.stopPropagation();
+  if(!authCan('admin') || busy || dragging)return true;
+  const n=nodeById(target.dataset.id), resize=!!event.target.closest('.group-resize');
+  const step=event.shiftKey?20:2, dx=event.key==='ArrowRight'?step:event.key==='ArrowLeft'?-step:0;
+  const dy=event.key==='ArrowDown'?step:event.key==='ArrowUp'?-step:0;
+  setSelection(n.id);
+  edit(()=>{
+    if(resize)Object.assign(n,groupResizeValues(n,n.width+dx,n.height+dy));
+    else {
+      const nodes=groupMoveIds([n.id]).map(nodeById);
+      const x=Math.max(...nodes.map(o=>nodeMargin(o).x-o.x),Math.min(dx,...nodes.map(o=>MAP_WIDTH-nodeMargin(o).x-o.x)));
+      const y=Math.max(...nodes.map(o=>nodeMargin(o).y-o.y),Math.min(dy,...nodes.map(o=>MAP_HEIGHT-nodeMargin(o).y-o.y)));
+      for(const node of nodes){node.x+=x;node.y+=y;}
+    }
+  })?.then(()=>mapNodeElement(n.id)?.querySelector(resize?'.group-resize':'.group-label').focus({preventScroll:true}));
+  return true;
+}
+
 function render() {
   $("empty-state").hidden = topology.nodes.length > 0;
-  $("nodes").innerHTML = topology.nodes.map(n => `<button class="map-node ${selectedNodes.has(n.id) ? "selected" : ""} ${linkSource === n.id ? "linking" : ""}" data-id="${esc(n.id)}" style="left:${n.x}px;top:${n.y}px" aria-label="${esc(n.name)}, ${n.type}, ${state(n.id)}"><span class="little-dot ${state(n.id)}"></span><span class="device-icon ${n.type}">${icons[n.type]}</span><span class="node-label">${esc(n.name)}</span><span class="node-type">${n.type === "pc" ? "ALPINE PC" : `${isJunosEvolved(n) ? "JUNOS EVO" : isJunosSwitch(n) ? "JUNOS" : isFrr(n) ? "FRR" : isLl2s(n) ? "LL2S" : isVeos(n) ? "vEOS" : isExos(n) ? "EXOS" : isQemu(n) ? "IOSv" : "IOL"} ${n.type.toUpperCase()}`}</span></button>`).join("");
-  $("node-list").innerHTML = topology.nodes.map(n => `<button data-id="${esc(n.id)}" class="${selectedNodes.has(n.id) ? "selected" : ""}"><span class="mini-type">${{switch:"L2",router:"L3",pc:"PC"}[n.type]}</span>${esc(n.name)}<span class="little-dot ${state(n.id)}"></span></button>`).join("");
+  renderDiagramGroups();
+  $("nodes").innerHTML = topology.nodes.filter(n => n.type !== "group").map(n => n.type === 'network' ? `<button class="map-node network-cloud ${selectedNodes.has(n.id) ? 'selected' : ''} ${linkSource === n.id ? 'linking' : ''}" data-id="${esc(n.id)}" style="left:${n.x}px;top:${n.y}px;--cloud-size:${n.size/100};--cloud-color:${esc(n.color)}" aria-label="${esc(n.name)}, network cloud, diagram only" title="${esc(n.name)} · Diagram only">${icons.network}<span class="node-label">${esc(n.name)}</span></button>` : `<button class="map-node ${selectedNodes.has(n.id) ? "selected" : ""} ${linkSource === n.id ? "linking" : ""}" data-id="${esc(n.id)}" style="left:${n.x}px;top:${n.y}px" aria-label="${esc(n.name)}, ${n.type}, ${state(n.id)}"><span class="little-dot ${state(n.id)}"></span><span class="device-icon ${n.type}">${icons[n.type]}</span><span class="node-label">${esc(n.name)}</span><span class="node-type">${n.type === "cloud" ? "INTERNET · NAT" : n.type === "pc" ? "ALPINE PC" : `${isJunosEvolved(n) ? "JUNOS EVO" : isJunosSwitch(n) ? "JUNOS" : isFrr(n) ? "FRR" : isLl2s(n) ? "LL2S" : isVeos(n) ? "vEOS" : isExos(n) ? "EXOS" : isQemu(n) ? "IOSv" : "IOL"} ${n.type.toUpperCase()}`}</span></button>`).join("");
+  $("node-list").innerHTML = topology.nodes.map(n => `<button data-id="${esc(n.id)}" class="${selectedNodes.has(n.id) ? "selected" : ""}"><span class="mini-type">${{switch:"L2",router:"L3",pc:"PC",cloud:"WAN",network:"NET",group:"GRP"}[n.type]}</span>${esc(n.name)}${isDiagram(n) ? "" : `<span class="little-dot ${state(n.id)}"></span>`}</button>`).join("");
   renderLinks();
   $("node-count").textContent = String(topology.nodes.length).padStart(2, "0");
   $("link-count").textContent = `${topology.nodes.length} devices · ${topology.links.length} links${topology.links.some(l => linkFault(l.id)) ? ` · ${topology.links.filter(l => linkFault(l.id)).length} interrupted` : ""}`;
@@ -249,7 +362,9 @@ function linkFault(linkId) {
   return !!value && (value.blocked_a_to_b || value.blocked_b_to_a ||
     ['a','b'].some(side => value['carrier_'+side] && value['carrier_'+side] !== 'up'));
 }
+const diagramLink = link => ['a','b'].some(side => nodeById(link[side].node)?.type === 'network');
 function linkDescription(link) {
+  if (diagramLink(link)) return 'Diagram-only connection · no traffic or forwarding';
   const label = side => `${nodeById(link[side].node)?.name || link[side].node} ${link[side].port}`;
   const value = linkStates[link.id] || {}, parts = [];
   if (value.blocked_a_to_b) parts.push(`Blocked ${label('a')} → ${label('b')}`);
@@ -267,10 +382,10 @@ function linkDescription(link) {
 function renderLinks() {
   const bundles = linkBundles();
   $("links").innerHTML = bundles.map(routes => `<g class="cable-bundle">${routes.map(({link, a, b, path, point}) => {
-    const text = port => `<text class="port-label" text-anchor="middle" x="0" y="0">${esc(port)}</text>`;
+    const text = port => `<text class="port-label" text-anchor="middle" x="0" y="0">${port === "connection" ? "" : esc(port)}</text>`;
     const original = topology.links.find(item => item.id === link.id), fault = linkFault(link.id), middle = point(.5);
     const description = `${a.name} ${link.a.port} ↔ ${b.name} ${link.b.port} · ${linkDescription(original)} · ${hasRunning() ? 'Click for link actions' : 'Click to remove; right-click for actions'}`;
-    return `<g class="cable-group" data-link="${esc(link.id)}" tabindex="0" role="button" aria-label="${esc(description)}"><title>${esc(description)}</title><path class="cable ${state(a.id) === "running" && state(b.id) === "running" ? "running" : ""} ${fault ? 'interrupted' : ''}" d="${path}"/><path class="cable-hit" d="${path}"/>${text(link.a.port)}${text(link.b.port)}${fault ? `<text class="link-fault-marker" text-anchor="middle" x="${middle.x}" y="${middle.y}">×</text>` : ''}</g>`;
+    return `<g class="cable-group" data-link="${esc(link.id)}" tabindex="0" role="button" aria-label="${esc(description)}"><title>${esc(description)}</title><path class="cable ${diagramLink(original) ? "diagram-cable" : ""} ${state(a.id) === "running" && state(b.id) === "running" ? "running" : ""} ${fault ? 'interrupted' : ''}" d="${path}"/><path class="cable-hit" d="${path}"/>${text(link.a.port)}${text(link.b.port)}${fault ? `<text class="link-fault-marker" text-anchor="middle" x="${middle.x}" y="${middle.y}">×</text>` : ''}</g>`;
   }).join("")}</g>`).join("");
   placeLinkLabels(bundles.flat());
 }
@@ -287,7 +402,7 @@ function placeLinkLabels(routes) {
   });
   const groups = new Map([...$("links").querySelectorAll(".cable-group")].map(el => [el.dataset.link, el]));
   const labels = routes.flatMap(route => [...groups.get(route.link.id).querySelectorAll(".port-label")].map((el, side) =>
-    ({route, el, side, box:el.getBBox(), node:side ? route.b : route.a})));
+    ({route, el, side, box:el.getBBox(), node:side ? route.b : route.a}))).filter(label => label.el.textContent);
   // Deterministic placement even when imported links change order/direction.
   labels.sort((a,b) => a.node.id.localeCompare(b.node.id) || a.route.link.id.localeCompare(b.route.link.id));
   const overlaps = (a,b) => a.left < b.right+gap && a.right > b.left-gap && a.top < b.bottom+gap && a.bottom > b.top-gap;
@@ -348,7 +463,7 @@ function applyRoleControls() {
     ? 'Choose Open file to read a Markdown (.md) or text (.txt) exercise.'
     : 'The administrator has not published an exercise yet.';
   for (const id of ['upload-image','import','export','starter','link-tool','apply-node','delete-node','lab-name','link-actions-delete',
-                    'node-name','node-image','node-memory','node-ethernet','node-iol-l1','node-ipv4','node-gateway']) {
+                    'group-notes','group-width','group-height','group-color','group-label-position','group-move-contents','node-size','node-color','node-name','node-image','node-memory','node-ethernet','node-iol-l1','node-ipv4','node-gateway']) {
     if (!admin && $(id)) $(id).disabled = true;
   }
   document.querySelectorAll('.device-template').forEach(el => { if (!admin) { el.disabled = true; el.draggable = false; } });
@@ -359,21 +474,28 @@ function applyRoleControls() {
 function updateControls() {
   $("upload-image").disabled = busy || !loaded;
   for (const id of ["start-all", "stop-all", "import", "export", "starter", "link-tool", "select-tool", "multi-select-tool", "apply-node", "start-node", "stop-node", "open-console", "delete-node", "logs"]) $(id).disabled = busy || !loaded;
-  $("start-all").disabled ||= !topology.nodes.length || topology.nodes.every(n => state(n.id) === "running");
+  $("start-all").disabled ||= !topology.nodes.some(n => !isDiagram(n) && state(n.id) !== "running");
   $("stop-all").disabled ||= !hasRunning();
   $("import").disabled ||= hasRunning();
   $("link-tool").disabled ||= hasRunning();
   $("lab-name").disabled = busy || !loaded;
+  $("node-name").disabled = busy || !loaded || !authCan("admin");
   document.querySelectorAll(".device-template").forEach(el => { el.disabled = busy || !loaded || hasRunning(); el.draggable = !el.disabled; });
   $("delete-node").disabled ||= hasRunning();
   if (selected) {
     $("start-node").disabled ||= state(selected) === "running";
     $("stop-node").disabled ||= state(selected) !== "running";
-    $("open-console").disabled ||= state(selected) !== "running" && !consoleSessions.has(selected);
+    $("open-console").textContent = nodeById(selected)?.type === 'cloud' ? 'Cloud settings' : '>_ Open console';
+    $("open-console").disabled ||= nodeById(selected)?.type !== 'cloud' && state(selected) !== "running" && !consoleSessions.has(selected);
+    if (nodeById(selected)?.type === 'cloud' && !authCan('admin')) $('start-node').disabled = true;
   }
-  for (const id of ["node-image", "node-memory", "node-ethernet", "node-iol-l1"]) $(id).disabled = busy || hasRunning();
+  for (const id of ["node-image", "node-memory", "node-ethernet", "node-iol-l1"]) $(id).disabled = busy || hasRunning() || isDiagram(nodeById(selected));
+  for (const id of ['group-notes','group-width','group-height','group-color','group-label-position','group-move-contents','node-size','node-color']) $(id).disabled = busy || !loaded || !authCan('admin');
+  const diagram = isDiagram(nodeById(selected));
+  for (const id of ['start-node','stop-node','open-console','logs']) {$(id).hidden = diagram; if (diagram) $(id).disabled = true;}
   const pc = nodeById(selected);
   for (const id of ["node-ipv4", "node-gateway"]) $(id).disabled = busy || !loaded || !pc || pc.type !== "pc" || state(pc.id) === "running";
+  window.weblabInternet?.refresh();
   updateViewControls();
   applyRoleControls();
 }
@@ -412,11 +534,17 @@ function fitMap() {
   if (!topology.nodes.length || dragging) return;
   const area = $("canvas-scroll");
   // Bézier curves lie inside their control-point bounds. Include the outer lanes.
-  const bounds = [...topology.nodes, ...linkBundles().flat().map(route => route.control)];
-  const left = Math.min(...bounds.map(n => n.x)) - 75;
-  const right = Math.max(...bounds.map(n => n.x)) + 75;
-  const top = Math.min(...bounds.map(n => n.y)) - 65;
-  const bottom = Math.max(...bounds.map(n => n.y)) + 65;
+  const origin = $('canvas').getBoundingClientRect();
+  const labels = [...$('diagram-groups').querySelectorAll('.group-label')].map(el => {
+    const rect = el.getBoundingClientRect();
+    return {type:'group', x:(rect.left+rect.right-2*origin.left)/(2*mapZoom),
+      y:(rect.top+rect.bottom-2*origin.top)/(2*mapZoom),width:rect.width/mapZoom,height:rect.height/mapZoom};
+  });
+  const bounds = [...topology.nodes, ...labels, ...linkBundles().flat().map(route => route.control)];
+  const left = Math.min(...bounds.map(n => n.x - (n.type === "group" ? n.width/2 : n.type === "network" ? .9*n.size : 75)));
+  const right = Math.max(...bounds.map(n => n.x + (n.type === "group" ? n.width/2 : n.type === "network" ? .9*n.size : 75)));
+  const top = Math.min(...bounds.map(n => n.y - (n.type === "group" ? n.height/2 : n.type === "network" ? .6*n.size : 65)));
+  const bottom = Math.max(...bounds.map(n => n.y + (n.type === "group" ? n.height/2 : n.type === "network" ? .6*n.size : 65)));
   setMapZoom(Math.min((area.clientWidth - 48) / (right - left), (area.clientHeight - 48) / (bottom - top)));
   area.scrollLeft = (left + right) / 2 * mapZoom - area.clientWidth / 2;
   area.scrollTop = (top + bottom) / 2 * mapZoom - area.clientHeight / 2;
@@ -446,7 +574,7 @@ function startRectangleSelection(event) {
   let moved = false;
   dragging = true; area.setPointerCapture(event.pointerId); updateViewControls();
   const highlight = () => {
-    for (const node of $("nodes").children) node.classList.toggle('selected',selectedNodes.has(node.dataset.id));
+    for (const node of $("canvas").querySelectorAll(".map-node")) node.classList.toggle('selected',selectedNodes.has(node.dataset.id));
   };
   const move = e => {
     if (e.pointerId !== event.pointerId) return;
@@ -543,17 +671,38 @@ function renderInspector() {
   $("selected-icon").innerHTML = icons[n.type];
   $("selected-title").textContent = n.name;
   $("node-name").value = n.name;
-  $("node-image").innerHTML = (n.type === "pc" ? [{name: n.image}] : images.filter(i => n.type === "router" ? (!isLl2s({image:i.name}) && (!noConfigExport({image:i.name}) || isJunosEvolved({image:i.name}))) : !isFrr({image:i.name}) && !isJunosEvolved({image:i.name}))).map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join("");
+  $('node-name-label').textContent = n.type === 'group' ? 'Title' : 'Device name';
+  $("node-image").innerHTML = (["pc","cloud","network","group"].includes(n.type) ? [{name: n.image}] : images.filter(i => n.type === "router" ? (!isLl2s({image:i.name}) && (!noConfigExport({image:i.name}) || isJunosEvolved({image:i.name}))) : !isFrr({image:i.name}) && !isJunosEvolved({image:i.name}))).map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join("");
   $("node-image").value = n.image;
   $("node-image").dataset.previousImage = n.image;
   $("node-memory").value = n.memory; renderEthernetSettings(n);
   $("node-ipv4").value = n.ipv4; $("node-gateway").value = n.gateway;
-  $("iol-settings").hidden = n.type === "pc"; $("pc-settings").hidden = n.type !== "pc";
+  $("iol-settings").hidden = ["pc","cloud","network","group"].includes(n.type);
+  $("node-image").closest('label').hidden = ['cloud','network','group'].includes(n.type);
+  $('cloud-settings-open').hidden = n.type !== 'cloud'; $("pc-settings").hidden = n.type !== "pc";
+  $('group-settings').hidden = n.type !== 'group';
+  $('group-notes').value = n.notes || ''; $('group-width').value = n.width || 480; $('group-height').value = n.height || 300;
+  $('group-color').value = n.color || '#94a3b8'; $('group-label-position').value = n.label_position || 'inside';
+  $('group-move-contents').checked = n.move_contents !== false;
+  $('interfaces-title').closest('.interfaces-heading').hidden = n.type === 'group';
+  $('interfaces').hidden = n.type === 'group';
+  $('delete-node').textContent = n.type === 'group' ? 'Delete group' : 'Delete device';
+  $('network-settings').hidden = n.type !== 'network';
+  $('node-size').value = n.size || 100; $('node-color').value = n.color || '#94a3b8';
+  $('interfaces-title').textContent = n.type === 'network' ? 'CONNECTIONS' : 'INTERFACES';
   $("interface-count").textContent = nodePorts(n).length;
   $("interfaces").innerHTML = nodePorts(n).map(port => {
     const link = portLink(n.id, port), other = link && (link.a.node === n.id ? link.b : link.a);
     return `<div class="interface ${link ? "connected" : ""}"><code>${port}</code><span>${link ? `${esc(nodeById(other.node).name)} · ${esc(other.port)}` : "Available"}</span>${link ? `<button type="button" data-unlink="${esc(link.id)}" title="Remove cable" ${hasRunning() ? "disabled" : ""}>×</button>` : ""}</div>`;
   }).join("");
+  if (n.type === 'network') {
+    const links = topology.links.filter(l => [l.a.node,l.b.node].includes(n.id));
+    $('interface-count').textContent = links.length;
+    $('interfaces').innerHTML = links.map(l => {
+      const other = l.a.node === n.id ? l.b : l.a;
+      return `<div class="interface"><span>${esc(nodeById(other.node).name)} · ${other.port === 'connection' ? 'Cloud' : esc(other.port)}</span><button type="button" data-unlink="${esc(l.id)}" title="Remove connection" ${hasRunning() ? 'disabled' : ''}>×</button></div>`;
+    }).join('') || '<p class="field-help">Use Connect to draw links to this network.</p>';
+  }
   updateInspectorStatus(); updateControls();
 }
 
@@ -581,7 +730,7 @@ $("node-image").addEventListener("change", () => {
 
 function updateInspectorStatus() {
   if (!selected) return;
-  $("selected-status").textContent = state(selected);
+  $("selected-status").textContent = isDiagram(nodeById(selected)) ? "Diagram only" : state(selected);
   $("node-error").textContent = statuses[selected]?.error || "";
   $("node-error").hidden = !statuses[selected]?.error;
   const warning = statuses[selected]?.warning || (isFrr(nodeById(selected) || {}) && allowUntestedFrr
@@ -610,7 +759,7 @@ function selectionGesture(event) {
 function selectNode(id, open = true) {
   setSelection(id); render(); renderInspector();
   if (panelMedia.matches && state(id) !== "running") setPanel("inspector", true);
-  if (open && (state(id) === "running" || consoleSessions.has(id))) openConsole(id);
+  if (open && (nodeById(id)?.type === "cloud" || state(id) === "running" || consoleSessions.has(id))) openConsole(id);
 }
 
 function setMode(next) {
@@ -632,6 +781,7 @@ function setMode(next) {
 }
 
 function connectNode(id) {
+  if (nodeById(id)?.type === "group") return toast("Diagram groups have no interfaces. Connect the devices inside them.");
   if (!linkSource) { linkSource = id; render(); $("canvas-hint").textContent = "Now choose a second device"; return; }
   if (linkSource === id) { linkSource = null; render(); return; }
   const a = nodeById(linkSource), b = nodeById(id);
@@ -639,7 +789,10 @@ function connectNode(id) {
   if (!freePorts(a).length || !freePorts(b).length) return toast("One of these devices has no available interfaces.", true);
   pendingLink = {a: a.id, b: b.id};
   $("link-a-name").textContent = a.name; $("link-b-name").textContent = b.name;
-  for (const [side, node] of [["a", a], ["b", b]]) $("link-" + side + "-port").innerHTML = freePorts(node).map(p => `<option>${p}</option>`).join("");
+  for (const [side, node] of [["a", a], ["b", b]]) {
+    $("link-" + side + "-port").innerHTML = freePorts(node).map(p => `<option value="${p}">${p === 'connection' ? 'Connection (diagram only)' : p}</option>`).join('');
+    $("link-" + side + "-port").disabled = node.type === 'network';
+  }
   $("link-dialog").showModal();
 }
 
@@ -649,24 +802,23 @@ document.querySelectorAll(".device-template").forEach(el => {
 });
 $("canvas-scroll").addEventListener("dragover", e => { if (!hasRunning() && !busy) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } });
 $("canvas-scroll").addEventListener("drop", e => { e.preventDefault(); const type = e.dataTransfer.getData("application/x-iol-device"); if (!icons[type]) return; const point = mapPoint(e.clientX, e.clientY); addNode(type, point.x, point.y); });
-$("nodes").addEventListener("pointerdown", e => {
+$("canvas").addEventListener("pointerdown", e => {
   const target = e.target.closest(".map-node");
   if (!target || e.button !== 0 || busy || dragging) return;
   e.preventDefault();
   const id = target.dataset.id;
+  if (e.target.closest('.group-resize')) { resizeDiagramGroup(e, target); return; }
   // Keep the pressed element attached until release, even for view-only roles.
   // Redrawing on pointerdown can retarget the subsequent click to the canvas.
   const canMove = authCan("admin");
   if (mode === "link") { connectNode(id); return; }
   const additive = selectionGesture(e);
   const ids = selectedNodes.has(id) ? [...selectedNodes] : additive ? [...selectedNodes, id] : [id];
-  const originals = ids.map(id => {
+  const originals = groupMoveIds(ids).map(id => {
     const n = nodeById(id);
-    return {n, x:n.x, y:n.y, element:[...$("nodes").children].find(el => el.dataset.id === id)};
+    return {n, x:n.x, y:n.y, margin:nodeMargin(n), element:mapNodeElement(id)};
   });
   const start = {x:e.clientX, y:e.clientY};
-  const minX = Math.min(...originals.map(o => o.x)), maxX = Math.max(...originals.map(o => o.x));
-  const minY = Math.min(...originals.map(o => o.y)), maxY = Math.max(...originals.map(o => o.y));
   let moved = false;
   dragging = true; target.setPointerCapture(e.pointerId);
   updateViewControls();
@@ -675,8 +827,8 @@ $("nodes").addEventListener("pointerdown", e => {
     const dx = event.clientX - start.x, dy = event.clientY - start.y;
     if (Math.hypot(dx, dy) > 4) moved = true;
     if (!moved) return;
-    const x = Math.round(Math.max(70-minX, Math.min(2330-maxX, dx/mapZoom)));
-    const y = Math.round(Math.max(60-minY, Math.min(1540-maxY, dy/mapZoom)));
+    const x = Math.round(Math.max(...originals.map(o => o.margin.x-o.x), Math.min(...originals.map(o => MAP_WIDTH-o.margin.x-o.x), dx/mapZoom)));
+    const y = Math.round(Math.max(...originals.map(o => o.margin.y-o.y), Math.min(...originals.map(o => MAP_HEIGHT-o.margin.y-o.y), dy/mapZoom)));
     for (const o of originals) {
       o.n.x = o.x+x; o.n.y = o.y+y;
       o.element.style.left = o.n.x+"px"; o.element.style.top = o.n.y+"px";
@@ -689,6 +841,7 @@ $("nodes").addEventListener("pointerdown", e => {
     target.removeEventListener("pointermove", move);
     for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) target.removeEventListener(type, finish);
     if (target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId);
+    document.removeEventListener("keydown", cancelMove, true);
     dragging = false; updateViewControls();
     if (event.type !== "pointerup") {
       for (const o of originals) { o.n.x = o.x; o.n.y = o.y; }
@@ -699,10 +852,16 @@ $("nodes").addEventListener("pointerdown", e => {
     } else if (additive) toggleSelection(id);
     else selectNode(id);
   };
+  const cancelMove = event => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault(); event.stopImmediatePropagation(); finish({pointerId:e.pointerId,type:'pointercancel'});
+  };
+  document.addEventListener('keydown', cancelMove, true);
   target.addEventListener("pointermove", move);
   for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) target.addEventListener(type, finish);
 });
-$("nodes").addEventListener("keydown", e => {
+$("canvas").addEventListener("keydown", e => {
+  if (diagramGroupKey(e)) return;
   const target = e.target.closest(".map-node");
   if (target && ["Enter", " "].includes(e.key)) {
     e.preventDefault();
@@ -732,7 +891,7 @@ function requestDelete(kind, id) {
     if (!node) return;
     const count = topology.links.filter(link => link.a.node === id || link.b.node === id).length;
     $("delete-title").textContent = `Delete ${node.name}?`;
-    $("delete-description").textContent = count ? `This removes the device and its ${count} connected ${count === 1 ? "cable" : "cables"} from the topology.` : "This removes the device from the topology.";
+    $("delete-description").textContent = count ? `This removes the device and its ${count} connected ${count === 1 ? "cable" : "cables"} from the topology.` : node.type === "group" ? "This removes only the group rectangle and notes. Enclosed devices stay in place." : "This removes the device from the topology.";
   } else {
     const link = topology.links.find(link => link.id === id);
     if (!link) return;
@@ -769,7 +928,7 @@ function updateLinkActions() {
   const value = linkStates[link.id] || {}, label = side => `${nodeById(link[side].node).name} ${link[side].port}`;
   $('link-actions-endpoints').textContent = `A: ${label('a')} ↔ B: ${label('b')}`;
   $('link-actions-state').textContent = linkDescription(link);
-  $('link-actions-help').textContent = linkError || (value.available ? 'Closing this window leaves faults active. Stopping the whole lab clears them.' : 'Start a connected node to enable traffic controls.');
+  $('link-actions-help').textContent = diagramLink(link) ? 'This line documents a connection to an unmanaged network. It does not carry packets.' : linkError || (value.available ? 'Closing this window leaves faults active. Stopping the whole lab clears them.' : 'Start a connected node to enable traffic controls.');
   document.querySelectorAll('[data-link-traffic]').forEach(button => {
     const mode = button.dataset.linkTraffic;
     button.disabled = busy || !value.available;
@@ -777,8 +936,8 @@ function updateLinkActions() {
     if (mode === 'a') button.textContent = `Block ${label('a')} → ${label('b')}`;
     if (mode === 'b') button.textContent = `Block ${label('b')} → ${label('a')}`;
   });
-  $('link-carrier-actions').hidden = !['a','b'].some(side => value['carrier_capable_'+side] || value['carrier_supported_'+side]);
-  $('link-iol-l1-help').hidden = !['a','b'].some(side => {
+  $('link-carrier-actions').hidden = diagramLink(link) || !['a','b'].some(side => value['carrier_capable_'+side] || value['carrier_supported_'+side]);
+  $('link-iol-l1-help').hidden = diagramLink(link) || !['a','b'].some(side => {
     const node = nodeById(link[side].node);
     return hasIolL1Profile(node) && !node.iol_l1;
   });
@@ -876,7 +1035,17 @@ $("image-form").addEventListener("submit", async event => {
 
 $("node-form").addEventListener("submit", e => {
   e.preventDefault();
-  edit(() => { const n = nodeById(selected); n.name = $("node-name").value.trim(); n.image = $("node-image").value; n.memory = Number($("node-memory").value); n.ethernet = Number($("node-ethernet").value); n.ipv4 = $("node-ipv4").value.trim(); n.gateway = $("node-gateway").value.trim(); if (hasIolL1Profile(n)) n.iol_l1 = $('node-iol-l1').checked; else delete n.iol_l1; });
+  edit(() => { const n = nodeById(selected); n.name = $("node-name").value.trim(); if (n.type === 'group') {
+    n.width = Number($('group-width').value); n.height = Number($('group-height').value);
+    n.notes = $('group-notes').value; n.color = $('group-color').value;
+    n.label_position = $('group-label-position').value; n.move_contents = $('group-move-contents').checked;
+    const margin = nodeMargin(n); n.x = Math.round(Math.max(margin.x,Math.min(MAP_WIDTH-margin.x,n.x)));
+    n.y = Math.round(Math.max(margin.y,Math.min(MAP_HEIGHT-margin.y,n.y))); return;
+  } if (n.type === 'network') {
+    n.size = Number($('node-size').value); n.color = $('node-color').value;
+    const halfWidth = Math.max(70,.9*n.size), halfHeight = Math.max(60,.6*n.size);
+    n.x = Math.max(halfWidth, Math.min(MAP_WIDTH-halfWidth,n.x)); n.y = Math.max(halfHeight, Math.min(MAP_HEIGHT-halfHeight,n.y)); return;
+  } n.image = $("node-image").value; n.memory = Number($("node-memory").value); n.ethernet = n.type === "cloud" ? 1 : Number($("node-ethernet").value); n.ipv4 = $("node-ipv4").value.trim(); n.gateway = $("node-gateway").value.trim(); if (hasIolL1Profile(n)) n.iol_l1 = $('node-iol-l1').checked; else delete n.iol_l1; });
 });
 $("lab-name").addEventListener("change", () => edit(() => topology.name = $("lab-name").value.trim()));
 $("delete-node").onclick = () => requestDelete("node", selected);
@@ -968,8 +1137,8 @@ $("confirm-reset-lab").onclick = async () => {
 };
 function updateExportControls() {
   $("reset-without-export").disabled = $("export-reset").disabled = busy || hasRunning() || !authCan('admin');
-  $("export-initial").disabled = busy || topology.nodes.some(n => noConfigExport(n) || isFrr(n) || isLl2s(n) || n.type !== "pc" && state(n.id) !== "running");
-  $("export-saved").disabled = busy || topology.nodes.some(n => noConfigExport(n) || n.type !== "pc" && state(n.id) === "running");
+  $("export-initial").disabled = busy || topology.nodes.some(n => noConfigExport(n) || isFrr(n) || isLl2s(n) || !["pc","cloud","network","group"].includes(n.type) && state(n.id) !== "running");
+  $("export-saved").disabled = busy || topology.nodes.some(n => noConfigExport(n) || !["pc","cloud","network","group"].includes(n.type) && state(n.id) === "running");
   $("export-zip").disabled = busy || hasRunning();
   $("export-json").disabled = $("cancel-export").disabled = $("export-logs").disabled = $("export-compact").disabled = $("export-agent").disabled = busy;
   $("export-compact-option").hidden = !topology.nodes.some(isVeos);
@@ -1472,6 +1641,8 @@ function activateConsole(id, focusTerminal = true) {
 }
 
 function openConsole(id) {
+  if (isDiagram(nodeById(id))) return;
+  if (nodeById(id)?.type === 'cloud') return window.weblabInternet?.open(id);
   dismissCompactPanel();
   // Raise the group above a floating map only in default/tabbed mode. Individual
   // windows already float; opening one must not also detach the shared panel.

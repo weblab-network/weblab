@@ -254,14 +254,14 @@ def running_config(port, handler=None):
 
 def export(lab):
     with lab.lock:
-        devices = [node for node in lab.topology['nodes'] if node['type'] != 'pc']
+        devices = [node for node in lab.topology['nodes'] if node['type'] not in ('pc', 'cloud', 'network', 'group')]
         handlers = {node['id']: handler_for(node) for node in devices}
         for node in devices:
             if node['id'] not in lab.runtime:
                 raise ValueError(f"Start {node['name']} before exporting current configurations as initial configs")
         result = copy.deepcopy(lab.topology)
         for node in result['nodes']:
-            if node['type'] != 'pc':
+            if node['type'] not in ('pc', 'cloud', 'network', 'group'):
                 try:
                     node['startup_config'] = running_config(lab.runtime[node['id']]['port'], handlers[node['id']])
                 except (ValueError, OSError) as error:

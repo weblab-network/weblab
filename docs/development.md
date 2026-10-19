@@ -80,6 +80,8 @@ node tests/console_clipboard.cjs
 node tests/instructions.cjs
 node tests/workspace_features.cjs
 node tests/storage_ui.cjs
+node tests/network_cloud_ui.cjs
+node tests/diagram_groups_ui.cjs
 ```
 
 Linux browsers also need system libraries; Playwright's `install --with-deps
@@ -630,3 +632,17 @@ only to reach a random loopback HTTP test port; it mounts the tests read-only,
 with no Docker socket, guest images or lab data. It verifies decoded BGP/DTP,
 protocol filters, mouse/keyboard splitter resizing and PCAP bytes. The ordinary
 browser mode checks the no-TShark fallback when it is absent locally.
+
+## Internet gateway checks
+
+`python3 -m unittest discover -s tests -p test_internet.py -v` covers topology
+validation, export semantics, forwarding policy and cleanup ownership.
+`node tests/internet_ui.cjs` checks the floating settings window using an empty
+disposable HTTP fixture. The role boundary is in `test_web_auth.py`.
+
+After building the gateway image and pulling Alpine/Weblab FRR, run
+`python3 tests/internet_native.py --run` to opt into real disposable Docker/TAP
+tests. It checks direct PC and routed FRR NAT/DNS, inbound denial, relay capture,
+Stop/Start and resource removal. It makes Internet probes to 1.1.1.1 and resolves
+dl-cdn.alpinelinux.org. This test never uses the current lab's data directory.
+Run it sequentially with other native/fixture suites.

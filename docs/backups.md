@@ -11,6 +11,14 @@
 | JSON + live configs | Topology with current Cisco running text | Share unsaved configuration; requires ready, unlocked privileged consoles |
 | Saved lab ZIP | Topology and supported persistent device storage | Resume a saved lab, including IOL VLAN databases, QEMU disks and FRR/LL2S configuration; stop all nodes first |
 
+Internet cloud address/return-route settings are part of the topology in JSON
+and ZIP. Its temporary container state and connections are not preserved.
+Diagram-only network clouds preserve their name, size, color and drawn links
+in both formats; they have no device storage to export or restore.
+Diagram groups also preserve their title, notes, rectangle dimensions, color,
+label position and move-enclosed-nodes setting. They contain no device storage;
+the positions of their enclosed nodes are ordinary saved topology positions.
+
 A ZIP is a saved-storage backup, not a VM memory snapshot. Device images and
 licenses are not included. Instructions documents and window positions are not
 part of topology/ZIP exports. EXOS/Arista/Junos support topology JSON and saved ZIP,

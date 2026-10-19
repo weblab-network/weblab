@@ -15,6 +15,7 @@
   <script src="/storage.js" defer></script>
   <script src="/agent.js" defer></script>
   <script src="/traffic.js" defer></script>
+  <script src="/internet.js" defer></script>
   <script src="/workspace.js" defer></script>
 </head>
 <body>
@@ -26,11 +27,14 @@
   </header>
   <div class="workspace" id="workspace">
     <aside class="palette" id="device-library" aria-label="Device library">
-      <div class="panel-heading"><div class="section-label">DEVICE LIBRARY <span>03</span></div><button class="panel-close" id="close-palette" aria-label="Hide device library" title="Hide device library">‹</button></div>
+      <div class="panel-heading"><div class="section-label">DEVICE LIBRARY <span>06</span></div><button class="panel-close" id="close-palette" aria-label="Hide device library" title="Hide device library">‹</button></div>
       <p class="muted intro">Drag a device onto the canvas<br>to start building.</p>
       <button class="device-template" draggable="true" data-type="switch"><span class="device-icon switch" data-icon="switch"></span><span><strong>Switch</strong><small>Cisco / LL2S · Layer 2</small></span><span class="drag-dots">⠿</span></button>
       <button class="device-template" draggable="true" data-type="router"><span class="device-icon router" data-icon="router"></span><span><strong>Router</strong><small>Cisco / FRR / Junos · Layer 3</small></span><span class="drag-dots">⠿</span></button>
       <button class="device-template" draggable="true" data-type="pc"><span class="device-icon pc" data-icon="pc"></span><span><strong>PC</strong><small>Alpine Linux</small></span><span class="drag-dots">⠿</span></button>
+      <button class="device-template" draggable="true" data-type="cloud"><span class="device-icon cloud" data-icon="cloud"></span><span><strong>Internet</strong><small>IPv4 gateway · NAT</small></span><span class="drag-dots">⠿</span></button>
+      <button class="device-template" draggable="true" data-type="network"><span class="device-icon network" data-icon="network"></span><span><strong>Network cloud</strong><small>Diagram only · unmanaged network</small></span><span class="drag-dots">⠿</span></button>
+      <button class="device-template" draggable="true" data-type="group"><span class="device-icon" data-icon="group"></span><span><strong>Diagram group</strong><small>Notes · move enclosed nodes</small></span><span class="drag-dots">⠿</span></button>
       <button class="wide" id="upload-image">↑ Upload image</button>
       <div class="palette-divider"></div>
       <div class="section-label">IN THIS LAB <span id="node-count">00</span></div>
@@ -45,6 +49,7 @@
       <div class="canvas-scroll" id="canvas-scroll">
         <div class="canvas-extent" id="canvas-extent">
         <div class="canvas" id="canvas">
+          <div id="diagram-groups"></div>
           <svg id="links" width="2400" height="1600" aria-label="Topology connections"></svg>
           <div id="nodes"></div>
           <div class="empty-state" id="empty-state"><div class="empty-art">⌘</div><span class="eyebrow">YOUR NEXT NETWORK STARTS HERE</span><h1>A blank canvas.<br>Endless possibilities.</h1><p>Drop in a switch, router or PC.<br>Connect the interfaces, then bring your lab to life.</p><button class="primary" id="starter">Create a starter topology <span>→</span></button><small>Router + switch + Alpine PC</small></div>
@@ -83,17 +88,27 @@
       <div id="inspector-empty"><div class="inspect-symbol">↖</div><h3>A closer look</h3><p>Select a device to configure its interfaces, manage its power and open a console.</p><div class="tip"><strong>A little room to experiment</strong><p>Topology changes are available when all devices are stopped. Positions and names can be changed at any time.</p></div></div>
       <form id="node-form" hidden>
         <div class="selected-heading"><span class="device-icon" id="selected-icon"></span><div><h2 id="selected-title"></h2><span id="selected-status" class="muted"></span></div></div>
-        <label>Device name<input id="node-name" maxlength="40" required></label>
+        <label><span id="node-name-label">Device name</span><input id="node-name" maxlength="40" required></label>
         <label>Image<select id="node-image"></select></label>
         <div id="iol-settings"><div class="field-row"><label>Memory (MB)<input id="node-memory" type="number" min="256" max="8192" step="1"></label><label><span id="ethernet-label">Ethernet slots</span><select id="node-ethernet"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label></div><p class="field-help" id="ethernet-help">Four Ethernet ports per slot. Interfaces are shown as slot/port.</p></div>
         <div id="iol-l1-settings" hidden><label class="setting-checkbox"><input id="node-iol-l1" type="checkbox" aria-describedby="iol-l1-help">Enable cable unplug control (IOL L1)</label><p class="field-help" id="iol-l1-help">Off by default. Enabling this may use a full CPU core per IOL node. Frame blocking works without it. Stop all nodes before changing this setting.</p></div>
+        <button type="button" id="cloud-settings-open" class="wide" hidden>Internet gateway settings</button>
+        <div id="group-settings" hidden>
+          <label>Notes<textarea id="group-notes" rows="4" maxlength="2000" placeholder="AS 65000 · OSPF area 0"></textarea></label>
+          <div class="group-dimensions"><label>Width<input id="group-width" type="number" min="160" max="1600" value="480"></label><label>Height<input id="group-height" type="number" min="100" max="1200" value="300"></label></div>
+          <label>Outline color<input id="group-color" type="color" value="#94a3b8"></label>
+          <label>Title and notes<select id="group-label-position"><option value="inside">Inside, top left</option><option value="above">Above rectangle</option><option value="right">Right side</option></select></label>
+          <label class="group-sticky"><input id="group-move-contents" type="checkbox" checked> Move enclosed nodes with group</label>
+          <p class="field-help">Drag the title or border to move. Drag the corner to resize. Only fully enclosed objects move with the group; resizing and deleting it leave devices in place.</p>
+        </div>
+        <div id="network-settings" hidden><label>Size (%)<input id="node-size" type="number" min="60" max="200" step="1" value="100"></label><label>Cloud color<input id="node-color" type="color" value="#94a3b8"></label><p class="field-help">Diagram only. Connections share a drawing point; no interfaces, forwarding or Internet access.</p></div>
         <div id="pc-settings" hidden><label>IPv4 address / prefix<input id="node-ipv4" placeholder="10.0.10.10/24"></label><label>Default gateway <span class="optional">optional</span><input id="node-gateway" placeholder="10.0.10.1"></label><p class="field-help">Applied to eth0 on startup. Stop this PC to edit, even while other devices run. You can also configure it from its shell.</p></div>
         <button class="wide" type="submit" id="apply-node">Apply settings</button>
         <div class="node-actions"><button type="button" class="primary" id="start-node">▶ Start</button><button type="button" id="stop-node">■ Stop</button></div>
         <button type="button" class="wide" id="open-console">&gt;_ Open console</button>
         <div class="error-box" id="node-error" hidden></div>
         <div class="warning-box" id="node-warning" role="status" hidden></div>
-        <div class="section-label interfaces-heading">INTERFACES <span id="interface-count"></span></div>
+        <div class="section-label interfaces-heading"><span id="interfaces-title">INTERFACES</span> <span id="interface-count"></span></div>
         <div id="interfaces"></div>
         <div class="inspector-bottom"><button type="button" id="logs">Launcher logs</button><button type="button" class="danger-text" id="delete-node">Delete device</button></div>
       </form>

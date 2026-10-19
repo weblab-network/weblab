@@ -21,6 +21,7 @@ import time
 import uuid
 import vios
 import frr
+import internet_cloud
 import ll2s_device
 import lab_backup
 import traffic_capture
@@ -73,7 +74,11 @@ def process_stamp(pid):
 
 
 def ports(node):
-    if node["type"] == "pc":
+    if node["type"] == "group":
+        return []
+    if node["type"] == "network":
+        return ["connection"]
+    if node["type"] in ("pc", "cloud"):
         return ["eth0"]
     if frr.is_frr(node) or ll2s_device.is_ll2s(node):
         return [f"eth{i}" for i in range(node["ethernet"])]
@@ -92,7 +97,7 @@ def ports(node):
 
 
 def netmap_port(node, port):
-    if node["type"] == "pc":
+    if node["type"] in ("pc", "cloud"):
         return "0/0"
     if vios.is_qemu(node) or frr.is_frr(node) or ll2s_device.is_ll2s(node):
         index = ports(node).index(port)
@@ -226,7 +231,7 @@ class Lab:
                     "iol_l1_profiles": sorted(iol_l1.PROFILES),
                     "allow_untested_frr": self.allow_untested_frr,
                     "storage": {"filesystems": storage.filesystems(self.directory, self.image_dir)},
-                    "status": {n["id"]: {"state": "running" if n["id"] in self.runtime else
+                    "status": {n["id"]: {"state": "diagram" if n["type"] in ("network", "group") else "running" if n["id"] in self.runtime else
                                          "error" if self.errors.get(n["id"]) else "stopped",
                                          "error": self.errors.get(n["id"], ""),
                                          "warning": 'Running an untested FRR image. Compatibility is not guaranteed.'
@@ -271,13 +276,51 @@ class Lab:
                 raise node_error(f"Invalid or duplicate node ID {node_id!r}; use 1–40 letters, digits, underscores or hyphens")
             ids.add(node_id)
             kind = raw.get("type")
-            if kind not in ("switch", "router", "pc"):
+            if kind not in ("switch", "router", "pc", "cloud", "network", "group"):
                 raise node_error("Unknown device type")
             label = str(raw.get("name", "")).strip()
             if not 1 <= len(label) <= 40:
                 raise node_error("Node names must contain 1–40 characters")
             node = {"id": node_id, "type": kind, "name": label}
-            image = str(raw.get("image", "alpine:latest" if kind == "pc" else ""))
+            diagram = kind in ('network', 'group')
+            if diagram:
+                if any(raw.get(k) for k in ('image', 'internet', 'startup_config', 'ipv4', 'gateway', 'iol_l1')):
+                    raise node_error('Diagram objects cannot have images, addressing or runtime settings')
+                size, color = raw.get('size', 100), raw.get('color', '#94a3b8')
+                if type(size) is not int or not 60 <= size <= 200:
+                    raise node_error('Cloud size must be an integer between 60 and 200 percent')
+                if not isinstance(color, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', color):
+                    raise node_error('Cloud color must be a six-digit hex color')
+                node['color'] = color.lower()
+                if kind == 'network':
+                    node['size'] = size
+                else:
+                    for key, default, low, high in [('width', 480, 160, 1600), ('height', 300, 100, 1200)]:
+                        value = raw.get(key, default)
+                        if type(value) is not int or not low <= value <= high:
+                            raise node_error(f'{key} must be an integer between {low} and {high}')
+                        node[key] = value
+                    notes = raw.get('notes', '')
+                    if not isinstance(notes, str) or len(notes) > 2000 or any(ord(c) < 32 and c not in '\n\t' for c in notes):
+                        raise node_error('Group notes must be plain text of at most 2000 characters')
+                    position = raw.get('label_position', 'inside')
+                    if position not in ('inside', 'above', 'right'):
+                        raise node_error('Group label_position must be inside, above or right')
+                    sticky = raw.get('move_contents', True)
+                    if type(sticky) is not bool:
+                        raise node_error('move_contents must be a boolean')
+                    node.update(notes=notes, label_position=position, move_contents=sticky)
+            cloud = kind == 'cloud'
+            if cloud:
+                try:
+                    node['internet'] = internet_cloud.settings(raw.get('internet', {}))
+                except (ValueError, TypeError, KeyError) as exc:
+                    raise node_error(str(exc)) from exc
+                if raw.get('startup_config') or raw.get('ipv4') or raw.get('gateway'):
+                    raise node_error('Cloud addressing belongs in internet settings; no shell/startup snippets')
+                if raw.get('image', '') not in ('', internet_cloud.IMAGE):
+                    raise node_error('Cloud uses the server-managed Internet gateway image')
+            image = internet_cloud.IMAGE if cloud else str(raw.get("image", "alpine:latest" if kind == "pc" else ""))
             qcow = kind != "pc" and image.endswith(".qcow2")
             exos = vios.is_exos({"type":kind,"image":image})
             veos = vios.is_veos({"type":kind,"image":image})
@@ -296,14 +339,23 @@ class Lab:
             for key, default, low, high in [("x", 350, 70, 2330), ("y", 250, 60, 1540),
                                            ("memory", 8192 if evolved else 5120 if junos else 512 if is_frr else 256 if is_ll2s else 6144 if veos else 1024, 8192 if evolved else 5120 if junos else 256, 8192),
                                            ("ethernet", 5 if junos else 4 if is_frr or is_ll2s else 5 if veos else 13 if exos else 4 if qcow else 2, 2 if exos or veos or junos else 1, 13 if exos else 16 if qcow else 8)]:
+                if diagram and key in ('memory', 'ethernet'):
+                    default = low = high = 0
+                if cloud and key in ('memory', 'ethernet'):
+                    default = low = high = 256 if key == 'memory' else 1
                 value = raw.get(key, default)
                 if type(value) not in (int, float) or not low <= value <= high or int(value) != value:
                     raise node_error(f"{key} must be an integer between {low} and {high}")
                 node[key] = int(value)
+            if kind == 'group':
+                # Keep the whole rectangle on the map, including imported drawings.
+                for axis, dimension, extent in [('x', 'width', 2400), ('y', 'height', 1600)]:
+                    half = (node[dimension] + 1) // 2
+                    node[axis] = max(half, min(extent - half, node[axis]))
             if kind == "pc":
                 if not re.fullmatch(r"alpine(?::[a-zA-Z0-9_.-]+)?", image):
                     raise node_error("PC image must be alpine or alpine:TAG")
-            elif not is_frr and not is_ll2s and image not in {i["name"] for i in self.catalog()}:
+            elif not cloud and not diagram and not is_frr and not is_ll2s and image not in {i["name"] for i in self.catalog()}:
                 raise node_error("Select an IOL .bin, supported .qcow2 image, or a supported FRR/LL2S container")
             node["image"] = image
             l1 = raw.get('iol_l1', False)
@@ -373,7 +425,7 @@ class Lab:
                 if not isinstance(port, str) or port not in available:
                     raise LabError(f"links[{index}].{side}.port: unknown interface {port!r} on {by_id[node_id]['name']!r}; "
                                    f"valid ports for ethernet={by_id[node_id]['ethernet']}: {available!r}")
-                if (node_id, port) in used:
+                if (node_id, port) in used and by_id[node_id]["type"] != "network":
                     raise LabError(f"links[{index}].{side}: interface {by_id[node_id]['name']!r} {port!r} is already used by "
                                    f"{used[node_id, port]}; each interface can have only one cable")
                 used[node_id, port] = f'links[{index}].{side}'
@@ -381,12 +433,14 @@ class Lab:
             a, b = by_id[link["a"]["node"]], by_id[link["b"]["node"]]
             if a["id"] == b["id"] or a["type"] == b["type"] == "pc":
                 raise LabError(f"links[{index}]: connect different nodes; a PC must connect to a router or switch")
+            if a['type'] == b['type'] == 'cloud':
+                raise LabError('Connect a cloud to a lab device, not another cloud')
             result["links"].append(link)
         return result
 
     @staticmethod
     def structure(topology):
-        return {"nodes": sorted([{k: v for k, v in n.items() if k not in ("x", "y", "name")}
+        return {"nodes": sorted([{k: v for k, v in n.items() if k not in ("x", "y", "name") and not (n["type"] in ("network", "group") and k in ("size", "color", "width", "height", "notes", "label_position", "move_contents"))}
                                   for n in topology["nodes"]], key=lambda n: n["id"]),
                 "links": sorted(topology["links"], key=lambda link: link["id"])}
 
@@ -486,10 +540,13 @@ class Lab:
                 raise LabError('Could not save published instructions. Refresh to check the server version before retrying.') from exc
             return result
 
+    def diagram_link(self, link):
+        return any(self.node(link[side]['node'])['type'] == 'network' for side in ('a', 'b'))
+
     def link_states(self):
         faults = self.fabric.states() if self.fabric else {}
         l1_states = self.l1.states() if self.l1 else {}
-        return {link['id']: {**faults.get(link['id'], {'blocked_a_to_b': False, 'blocked_b_to_a': False,
+        return {link['id']: ({'available': False, 'diagram_only': True} if self.diagram_link(link) else {**faults.get(link['id'], {'blocked_a_to_b': False, 'blocked_b_to_a': False,
                                                      'carrier_a': 'up', 'carrier_b': 'up'}),
                             'available': bool(self.fabric and not self.fabric.error and
                                               any(link[side]['node'] in self.runtime for side in ('a', 'b'))),
@@ -504,7 +561,7 @@ class Lab:
                                for field, value in {
                                    'carrier_iol': (link['id'], side) in l1_states,
                                    'carrier_pending': l1_states.get((link['id'], side), {}).get('pending', 0),
-                                   'carrier_error': l1_states.get((link['id'], side), {}).get('error', '')}.items()}}
+                                   'carrier_error': l1_states.get((link['id'], side), {}).get('error', '')}.items()}})
                 for link in self.topology['links']}
 
     def set_link_carrier(self, link_id, data):
@@ -548,6 +605,8 @@ class Lab:
             link = next((item for item in self.topology['links'] if item['id'] == link_id), None)
             if not link:
                 raise LabError('Link does not exist')
+            if self.diagram_link(link):
+                raise LabError('Diagram-only connections have no traffic to capture')
             if (not self.fabric or self.fabric.error or not self.fabric.thread.is_alive() or
                     not any(link[end]['node'] in self.runtime for end in ('a', 'b'))):
                 raise LabError('Start a connected node before monitoring traffic')
@@ -577,6 +636,8 @@ class Lab:
             return
         links = []
         for cable in self.topology['links']:
+            if self.diagram_link(cable):
+                continue
             record = {'id': cable['id']}
             for side in ('a', 'b'):
                 endpoint = cable[side]
@@ -599,6 +660,8 @@ class Lab:
             raise LabError(f"Lab hostname {hostname!r} does not resolve to IPv4; add a local /etc/hosts entry (Compose: extra_hosts)") from exc
         lines = []
         for link in self.topology["links"]:
+            if self.diagram_link(link):
+                continue
             if self.fabric:
                 for side in ('a', 'b'):
                     endpoint = link[side]
@@ -670,14 +733,18 @@ class Lab:
 
     def pc_peer(self, node_id):
         for link in self.topology["links"]:
+            if self.diagram_link(link):
+                continue
             for side, other in (("a", "b"), ("b", "a")):
                 if link[side]["node"] == node_id:
                     return self.node(link[other]["node"])
-        raise LabError("Connect the PC eth0 interface to a switch or router first")
+        raise LabError("Connect the PC eth0 interface to a running-capable switch, router or Internet gateway first; diagram-only clouds provide no connection")
 
     def start(self, node_id):
         with self.lock:
             node = self.node(node_id)
+            if node["type"] in ("network", "group"):
+                raise LabError("Network clouds and groups are diagram-only and cannot be started")
             if node_id in self.runtime:
                 return
             storage.require_space(self.directory, operation='starting a node',
@@ -716,6 +783,9 @@ class Lab:
             try:
                 self.ensure_fabric()
                 self.write_netmap()
+                if internet_cloud.is_cloud(node):
+                    internet_cloud.start(self, node, run, LabError, ROOT)
+                    return
                 if node["type"] == "pc":
                     self.start_pc(node)
                     image, arguments = sys.executable, [str(ROOT / 'container_console.py'),
@@ -769,6 +839,8 @@ class Lab:
         self.journal()
         routes = {}
         for link in self.topology["links"]:
+            if self.diagram_link(link):
+                continue
             for side, other in (("a", "b"), ("b", "a")):
                 if link[side]["node"] == node["id"]:
                     peer = self.node(link[other]["node"])
@@ -815,10 +887,18 @@ class Lab:
         runtime["container_created"] = True
         self.journal()
         run("docker", "exec", stem, "ip", "-4", "addr", "flush", "dev", "eth0")
-        if node["ipv4"]:
-            run("docker", "exec", stem, "ip", "addr", "add", node["ipv4"], "dev", "eth0")
-        if node["gateway"]:
-            run("docker", "exec", stem, "ip", "route", "replace", "default", "via", node["gateway"])
+        address, gateway = node['ipv4'], node['gateway']
+        peer = self.pc_peer(node_id)
+        if internet_cloud.is_cloud(peer):
+            if not address:
+                address, gateway = internet_cloud.pc_address(peer)
+            # DNS belongs to this PC; the core and Agent resolver settings stay intact.
+            run('docker', 'exec', stem, 'sh', '-c', 'printf "%s\\n" "$1" > /etc/resolv.conf',
+                'sh', 'nameserver ' + str(ipaddress.IPv4Interface(peer['internet']['address']).ip))
+        if address:
+            run('docker', 'exec', stem, 'ip', 'addr', 'add', address, 'dev', 'eth0')
+        if gateway:
+            run('docker', 'exec', stem, 'ip', 'route', 'replace', 'default', 'via', gateway)
 
     def terminate(self, record):
         if self.alive(record):
@@ -867,11 +947,13 @@ class Lab:
                     raise LabError(f"LL2S saved config could not be preserved; container retained. Retry Stop: {exc}") from exc
             if self.l1:
                 self.l1.remove_node(node_id)
-            for key in ("console", "bridge"):
+            for key in ("console", "bridge", "gateway"):
                 if key in runtime:
                     self.terminate(runtime[key])
                     runtime.pop(key)
                     self.journal()
+            if runtime.get('cloud'):
+                internet_cloud.cleanup(self, runtime, run, LabError)
             errors = []
             for flag, command in [
                 ("container_created", ["docker", "rm", "-f", runtime.get("ll2s_container_id") or runtime.get("container", "")]),
@@ -928,7 +1010,7 @@ class Lab:
                     self.pc_peer(node["id"])
             started = []
             try:
-                for node in sorted(self.topology["nodes"], key=lambda n: n["type"] == "pc"):
+                for node in sorted((n for n in self.topology["nodes"] if n["type"] not in ("network", "group")), key=lambda n: 0 if n["type"] == "cloud" else 2 if n["type"] == "pc" else 1):
                     if node["id"] not in self.runtime:
                         self.start(node["id"])
                         started.append(node["id"])
@@ -957,7 +1039,7 @@ class Lab:
     def logs(self, node_id):
         self.node(node_id)
         chunks = []
-        for key in ("console", "bridge"):
+        for key in ("console", "bridge", "gateway"):
             path = self.directory / "nodes" / node_id / f"{key}.log"
             if path.exists():
                 with path.open("rb") as stream:
@@ -973,7 +1055,7 @@ class Lab:
                 for node_id, runtime in list(self.runtime.items()):
                     if node_id not in self.runtime:
                         continue
-                    failed = next((key for key in ("console", "bridge") if key in runtime and not self.alive(runtime[key])), None)
+                    failed = next((key for key in ("console", "bridge", "gateway") if key in runtime and not self.alive(runtime[key])), None)
                     if failed:
                         child = self.children.get(runtime[failed]['pid'])
                         code = child.poll() if child else None
@@ -1342,15 +1424,22 @@ class Handler(BaseHTTPRequestHandler):
             elif self.command == "POST" and path == "/api/lab/reset":
                 result = self.lab.reset_workspace(data)
             elif self.command == "POST" and path == "/api/lab/start":
-                self.lab.start_all()
+                with self.lab.lock:
+                    if self.auth and self.principal['role'] != 'admin' and any(
+                            internet_cloud.is_cloud(n) and n['id'] not in self.lab.runtime for n in self.lab.topology['nodes']):
+                        raise web_auth.Denied('An administrator must start the Internet cloud first')
+                    self.lab.start_all()
                 result = self.lab.snapshot()
             elif self.command == "POST" and path == "/api/lab/stop":
                 self.lab.stop_all()
                 result = self.lab.snapshot()
             elif self.command == "POST" and re.fullmatch(r"/api/nodes/[\w-]+/(start|stop)", path):
                 _, _, _, node_id, action = path.split("/")
-                self.lab.node(node_id)
-                getattr(self.lab, action)(node_id)
+                with self.lab.lock:
+                    node = self.lab.node(node_id)
+                    if action == 'start' and internet_cloud.is_cloud(node) and self.auth and self.principal['role'] != 'admin':
+                        raise web_auth.Denied('Only administrators can enable Internet access')
+                    getattr(self.lab, action)(node_id)
                 result = self.lab.snapshot()
             else:
                 self.reply(404, {"error": "Not found"})

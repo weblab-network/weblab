@@ -87,7 +87,7 @@ def conversation_markdown(record):
     return ('\n\n'.join(parts) + '\n').encode()
 
 
-LOG_NAMES = ('console-output.log.1', 'console-output.log', 'console.log', 'bridge.log')
+LOG_NAMES = ('console-output.log.1', 'console-output.log', 'console.log', 'bridge.log', 'gateway.log')
 LOG_README = '''Lab logs (optional; not device state)
 
 Console-output.log.1 precedes console-output.log. These are raw terminal output,
@@ -98,7 +98,7 @@ be recovered. Each device retains two 4 MiB segments across starts. UTC start/en
 markers separate runs; device-generated timestamps use the device's own clock.
 Hidden input (such as non-echoed passwords) is not recorded separately.
 
-Console.log and bridge.log are launcher diagnostics. This archive includes at
+Console.log, bridge.log and gateway.log are launcher diagnostics. This archive includes at
 most the last 8 MiB of each file. Manifest log entries give original sizes and
 byte offsets, so omitted prefixes are explicit. Missing files mean no retained
 log was available. These are the logs for the node IDs in topology.json; history
@@ -135,7 +135,7 @@ def safe_path(name):
 
 def saved_path(node, relative):
     """Allow device storage only; never import launcher inputs, logs or symlinks."""
-    if not safe_path(relative) or node['type'] == 'pc':
+    if not safe_path(relative) or node['type'] in ('pc', 'cloud', 'network', 'group'):
         return False
     if ll2s_device.is_ll2s(node):
         config = ll2s_device.config_path(node, Path('.'))

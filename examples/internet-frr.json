@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "name": "FRR Internet gateway",
+  "nodes": [
+    {
+      "id": "inet_cloud",
+      "name": "Internet",
+      "type": "cloud",
+      "x": 1100,
+      "y": 350,
+      "internet": {
+        "address": "192.0.2.1/24",
+        "routes": [
+          {
+            "destination": "10.44.0.0/24",
+            "via": "192.0.2.2"
+          }
+        ],
+        "uplink_subnet": ""
+      }
+    },
+    {
+      "id": "inet_router",
+      "name": "R1",
+      "type": "router",
+      "image": "ghcr.io/weblab-network/weblab-frr:10.7.1-wl1",
+      "ethernet": 2,
+      "memory": 512,
+      "x": 700,
+      "y": 350,
+      "startup_config": "hostname R1\ninterface eth0\n ip address 10.44.0.1/24\nexit\ninterface eth1\n ip address 192.0.2.2/24\nexit\nip route 0.0.0.0/0 192.0.2.1\nend\n"
+    },
+    {
+      "id": "inet_pc",
+      "name": "PC1",
+      "type": "pc",
+      "image": "alpine:latest",
+      "x": 300,
+      "y": 350,
+      "ipv4": "10.44.0.10/24",
+      "gateway": "10.44.0.1"
+    }
+  ],
+  "links": [
+    {
+      "id": "inet_lan",
+      "a": {
+        "node": "inet_pc",
+        "port": "eth0"
+      },
+      "b": {
+        "node": "inet_router",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "inet_wan",
+      "a": {
+        "node": "inet_router",
+        "port": "eth1"
+      },
+      "b": {
+        "node": "inet_cloud",
+        "port": "eth0"
+      }
+    }
+  ]
+}

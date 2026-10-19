@@ -510,3 +510,54 @@ body.map-workspace>.topbar{display:none}
 #map-workspace-menu #lab-name{max-width:none}
 
 .map-selection-box{position:fixed;pointer-events:none;border:1px solid var(--accent);background:#67d8bc20;z-index:5}
+
+/* Internet gateway: uses the existing floating document window controls. */
+.device-icon.cloud { color: var(--accent, #69d5bf); }
+.internet-panel { display:flex; flex-direction:column; }
+.internet-content { padding:16px 20px 28px; overflow:auto; flex:1; min-height:0; }
+.internet-content label { display:block; margin:12px 0; }
+.internet-content input { width:100%; min-width:0; }
+.internet-content h3 { margin:20px 0 8px; }
+.internet-content details { margin-top:16px; }
+.internet-content p { line-height:1.5; }
+.internet-routes { overflow-x:auto; }
+.internet-routes table { width:100%; border-collapse:collapse; }
+.internet-routes th { text-align:left; font-size:12px; color:var(--muted); }
+.internet-routes td { padding:4px 6px 4px 0; }
+.internet-panel .console-toolbar > strong { min-width:60px; }
+
+/* Unmanaged network annotations: the cloud itself is the node, with no card. */
+.device-icon.network { color:#94a3b8; }
+.map-node.network-cloud { width:calc(180px * var(--cloud-size,1)); height:calc(120px * var(--cloud-size,1)); padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; color:var(--cloud-color,#94a3b8); }
+.map-node.network-cloud > svg { width:100%; height:100%; overflow:visible; fill:#12171e; flex-shrink:0; }
+.map-node.network-cloud:hover > svg { filter:brightness(1.25); }
+.map-node.network-cloud.selected > svg,.map-node.network-cloud:focus-visible > svg { filter:drop-shadow(0 0 4px var(--cloud-color)); stroke-width:2.5; }
+.map-node.network-cloud.linking > svg { stroke:#ecaf72; stroke-width:2.5; }
+.map-node.network-cloud .node-label { position:absolute; top:48%; left:20%; width:60%; max-width:60%; margin:0; color:var(--text); white-space:normal; overflow:hidden; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; font-size:12px; line-height:1.25; text-align:center; }
+.cable.diagram-cable { stroke-dasharray:7 5; }
+#node-color { height:36px; padding:3px; }
+
+/* Diagram rectangles sit below cables/devices; only borders, labels and handles take input. */
+#diagram-groups { position:absolute; inset:0; pointer-events:none; }
+#links { pointer-events:none; }
+#links .cable-group { pointer-events:auto; }
+#nodes { position:absolute; inset:0; pointer-events:none; }
+#nodes > .map-node { pointer-events:auto; }
+.map-node.diagram-group { display:block; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; pointer-events:none; color:var(--group-color); }
+.diagram-group .group-outline { position:absolute; inset:0; overflow:visible; pointer-events:none; }
+.diagram-group .group-outline rect { fill:none; stroke:var(--group-color); stroke-width:2; stroke-dasharray:7 5; pointer-events:stroke; cursor:grab; }
+.diagram-group .group-outline .group-hit { stroke:transparent; stroke-width:14; stroke-dasharray:none; }
+.diagram-group.selected .group-outline rect:not(.group-hit) { stroke-width:3; stroke-dasharray:none; }
+.diagram-group .group-label { position:absolute; top:8px; left:10px; max-width:calc(100% - 30px); padding:3px 6px; border:0; border-radius:2px; background:#12171e; color:var(--group-color); text-align:left; cursor:grab; pointer-events:auto; touch-action:none; }
+.diagram-group .group-label strong { display:block; overflow-wrap:anywhere; font-size:14px; }
+.diagram-group .group-notes { display:block; color:var(--text); font-size:12px; font-weight:normal; white-space:pre-wrap; overflow-wrap:anywhere; max-height:180px; overflow:hidden; }
+.diagram-group .label-above { top:auto; bottom:calc(100% + 6px); }
+.diagram-group .label-right { top:0; left:calc(100% + 8px); width:240px; max-width:240px; }
+.diagram-group .group-resize { position:absolute; right:-6px; bottom:-6px; width:24px; height:24px; padding:0; border-color:var(--group-color); color:var(--group-color); pointer-events:auto; touch-action:none; cursor:nwse-resize; visibility:hidden; }
+.diagram-group.selected .group-resize,.diagram-group:focus-within .group-resize { visibility:visible; }
+#group-settings textarea { width:100%; min-height:80px; resize:vertical; font:inherit; padding:8px; background:#12171e; color:var(--text); border:1px solid var(--border); border-radius:5px; }
+#group-settings .group-dimensions { display:flex; gap:10px; }
+#group-settings .group-dimensions > label { flex:1; min-width:0; }
+#group-settings .group-sticky { display:flex; align-items:center; gap:8px; }
+#group-move-contents { width:auto; }
+#group-color { height:36px; padding:3px; }

@@ -271,12 +271,24 @@ class AutomationTests(unittest.TestCase):
             with self.assertRaises(lab_server.LabError):
                 self.api.preview(self.topology, instructions)
 
+    def test_cloud_preview_preserves_settings_and_orders_start(self):
+        source={'name':'Cloud preview','nodes':[
+            {'id':'p','name':'PC','type':'pc'},
+            {'id':'c','name':'Internet','type':'cloud','internet':{'address':'192.0.2.1/24','routes':[]}}],
+            'links':[{'a':{'node':'p','port':'eth0'},'b':{'node':'c','port':'eth0'}}]}
+        proposal=self.api.preview(source,'Connect to the Internet')
+        cloud_id=proposal['node_id_map']['c']
+        self.assertEqual(proposal['start_order'][0],cloud_id)
+        self.assertEqual(next(n for n in proposal['topology']['nodes'] if n['id']==cloud_id)['internet']['address'],'192.0.2.1/24')
+
     def test_profile_catalog_includes_actual_ports_without_launch(self):
         for name in ('EXOS-VM_test.qcow2', 'vJunos-switch-test.qcow2', 'vJunosEvolved-test.qcow2', 'vEOS-lab-test.qcow2'):
             (self.lab.image_dir / name).touch()
         with patch.object(self.api, 'run', return_value='alpine:latest\n'), patch.object(self.lab, 'start') as start:
             catalog = self.api.catalog()
         by_family = {p['family']: p for p in catalog['profiles']}
+        self.assertEqual(by_family['internet']['ports_at_default'], ['eth0'])
+        self.assertFalse(by_family['internet']['startup_config'])
         self.assertEqual(by_family['exos']['ports_at_default'], ['Mgmt'] + [str(i) for i in range(1, 13)])
         self.assertIn('ge-0/0/0', by_family['vjunos-switch']['ports_at_default'])
         self.assertIn('et-0/0/0', by_family['vjunos-evolved']['ports_at_default'])

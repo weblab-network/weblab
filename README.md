@@ -90,7 +90,20 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
-## New in v0.9.1 — More room for your topology
+## New in v0.10.0 — Internet connectivity and network diagrams
+
+**Internet** adds an IPv4 NAT gateway with DNS forwarding and return routes.
+It requires a [locally built gateway helper](docs/internet.md); the installer
+and prebuilt core image do not include that separate helper image.
+
+**Network cloud** represents an unmanaged network without forwarding traffic.
+**Diagram group** adds editable rectangles and notes, with optional movement
+of enclosed devices. Both are preserved in JSON and ZIP exports.
+
+See [v0.10.0 release notes](docs/releases/v0.10.0.md) and the
+[topology guide](docs/topology.md).
+
+## Introduced in v0.9.1 — More room for your topology
 
 **Map workspace** fills the screen below a compact toolbar, with floating
 consoles, Agent and Instructions. **Multi-select** now supports rectangle
@@ -113,7 +126,7 @@ export…**, with confirmation, stopped-device checks and stale-workspace protec
 See [release notes](docs/releases/v0.9.0.md), [traffic monitoring](docs/link-actions.md#monitor-traffic)
 and [backup/reset behavior](docs/backups.md#export-and-reset-the-workspace).
 
-Use **0.9.1** for matching core, Agent and EXOS images. The installer retains the
+Use **0.10.0** for matching core, Agent and EXOS images. The installer retains the
 optional core-only DNS override from v0.8.3.
 
 ## Weblab FRR

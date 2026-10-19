@@ -87,3 +87,12 @@ GPL-2.0-or-later terms. See [the image notice](packaging/frr/NOTICE).
 The IPv4 VRRP variant includes Weblab's MIT-licensed `vrrp_backend.py`.
 Upstream FRR continues to implement VRRP elections and protocol state unchanged.
 See [NOTICE](packaging/frr/NOTICE).
+
+## Optional Internet gateway helper
+
+The locally built helper in `packaging/internet/` installs unmodified Python,
+iproute2, iptables and dnsmasq packages from Alpine. Those components retain
+their upstream licenses; Weblab's MIT license covers only its original gateway
+code. See [the helper notes](packaging/internet/README.md) for source references
+and the separate binary-publication requirements. No prebuilt gateway image is
+included in the existing release.

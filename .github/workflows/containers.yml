@@ -42,6 +42,9 @@ jobs:
           node tests/workspace_layouts.cjs
           node tests/topology_multiselect.cjs
           node tests/map_controls.cjs
+          node tests/internet_ui.cjs
+          node tests/network_cloud_ui.cjs
+          node tests/diagram_groups_ui.cjs
           node tests/instructions.cjs
           node tests/auth_ui.cjs
           node tests/auth_console_locks.cjs

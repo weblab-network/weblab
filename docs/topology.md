@@ -2,6 +2,58 @@
 
 [Help index](README.md) · [Project overview](../README.md)
 
+## Network clouds for diagrams
+
+Use **Network cloud** in the library to represent an unmanaged network, a
+provider network or a part of the topology outside the lab. It is a plain
+cloud outline with its name inside, without a device card or Internet arrow.
+Inspector lets you change its name, size (60–200%) and outline color, including
+while other devices are running.
+
+Use **Connect** to draw a line from a device interface to the cloud's shared
+**Connection (diagram only)** point. Several lines can end on one cloud; they
+appear dashed and do not forward packets between connected devices. The real
+device interface still belongs to only one line. These connections have no
+traffic capture, frame-loss or cable-unplug controls.
+
+A network cloud uses no image or process and is skipped by **Start lab**.
+Its appearance and connections are saved in JSON and ZIP. An Alpine PC still
+needs an operational connection to a switch, router or Internet gateway to
+start; a diagram line alone does not supply that connection.
+
+For actual outbound connectivity, choose **Internet**, the separate
+[NAT gateway cloud](internet.md).
+
+## Diagram groups and notes
+
+Add **Diagram group** from the library to draw a rectangle around a network
+area, such as a site, routing domain or access network. Inspector provides a
+title, plain-text notes, outline color, width and height. Put the title and
+notes inside the rectangle, above it or on its right side. The rectangle sits
+behind devices and cables; its empty interior remains usable for panning and
+rectangle selection.
+
+Drag its title or border to move it. **Move enclosed nodes with group** is on
+by default: objects fully inside the rectangle when the drag starts move by
+the same distance. Partially overlapping objects stay put. Membership is
+positional, not permanent; moving a device outside the rectangle removes it
+from the next group move. Nested rectangles can move with an outer rectangle.
+Overlapping selections move each object only once. Turn the checkbox off for
+a standalone note or to reposition the rectangle without moving devices.
+
+Select a group to reveal its lower-right resize handle. Resizing changes only
+the rectangle, never device positions. Escape cancels a move or resize. The
+title and resize handle also accept arrow keys, with Shift for larger steps.
+Deleting a group removes only its rectangle and notes, keeping all devices
+and links. Rectangle selection selects devices/clouds; select group titles
+explicitly to move several groups together with Shift/Ctrl/⌘ or Multi-select.
+
+Groups have no interfaces, console or runtime. Their notes and settings are
+preserved in JSON and ZIP. Administrators can edit and move them while devices
+run; adding or deleting a group requires the lab to be stopped, like other
+topology objects. Notes accept up to 2,000 characters; the map shows a compact
+preview and Inspector contains the full text.
+
 ## Create your first lab
 
 A fresh data directory starts empty. Upload suitable router and switch images,

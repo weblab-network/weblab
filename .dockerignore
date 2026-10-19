@@ -46,3 +46,7 @@
 !packaging/agent/
 !packaging/agent/Codex-LICENSE.txt
 !packaging/agent/Codex-NOTICE.txt
+
+!internet_cloud.py
+!packaging/internet/
+!packaging/internet/**

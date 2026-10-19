@@ -19,6 +19,17 @@ network feature works. Supply your own images and any required licenses.
 | Juniper vJunosEvolved | `vJunosEvolved-26.2R1.7-EVO.qcow2` | 8192 MB / 4 | re0:mgmt-0 + et-0/0/0–14 | Yes; UEFI | No / no | Disk overlay |
 | Alpine PC | locally installed `alpine:latest` | Host Docker container | eth0 | No | IPv4/gateway fields only | Settings only; no PC filesystem |
 
+## Internet cloud
+
+For a drawing of an unmanaged network, use **Network cloud** instead. It needs
+no image and has editable name, size and color, with diagram-only connections.
+See [network clouds](topology.md#network-clouds-for-diagrams).
+
+The **Internet** library item is an IPv4 NAT gateway with one eth0 lab port. It
+uses a locally built helper image and a dedicated Docker uplink network. Clicking
+it opens settings, not a console. See [Internet cloud](internet.md) for direct-PC
+setup and routed FRR examples.
+
 ## Installing images
 
 Use **Upload image** or copy files to the configured image directory (`images/`

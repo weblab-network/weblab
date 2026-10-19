@@ -15,6 +15,7 @@ PAGES = {
     'containers.md': 'Container-images-and-EXOS-demo',
     'devices.md': 'Device-profiles',
     'topology.md': 'Topology',
+    'internet.md': 'Internet-cloud',
     'consoles.md': 'Consoles',
     'instructions.md': 'Instructions',
     'link-actions.md': 'Link-failures',

@@ -15,6 +15,7 @@ import time
 
 import console_capture
 import frr
+import internet_cloud
 import ll2s_device
 import vios
 
@@ -128,7 +129,8 @@ class Automation:
     def _console(self, node_id, cursor):
         # Caller holds the lab lock until the wrapper connection is bound to the
         # current runtime. A restart later closes this socket, never redirects it.
-        self.lab.node(node_id)
+        if self.lab.node(node_id)['type'] in ('cloud', 'network', 'group'):
+            raise self.error('Clouds and diagram groups have no console')
         runtime = self.lab.runtime.get(node_id)
         if not runtime or 'console' not in runtime or not self.lab.alive(runtime['console']):
             raise self.error('Start this node before accessing its console')
@@ -200,13 +202,18 @@ class Automation:
         with self.lab.lock:
             entries = self.lab.catalog()
             alpines = sorted(n for n in (installed or []) if n == 'alpine' or n.startswith('alpine:') and '<' not in n)
+            entries += [{'name': internet_cloud.IMAGE, 'type': 'cloud'}, {'name': '', 'type': 'network'}, {'name': '', 'type': 'group'}]
             entries += [{'name': n, 'type': 'pc'} for n in alpines or ['alpine:latest']]
             profiles = []
             for entry in entries:
                 node = self.lab.validate({'name': 'Profile', 'nodes': [{
                     'id': 'profile_' + secrets.token_hex(8), 'name': 'Device',
                     'image': entry['name'], 'type': entry['type']}], 'links': []})['nodes'][0]
-                if node['type'] == 'pc':
+                if node['type'] in ('network', 'group'):
+                    family, maximum = 'diagram', 0
+                elif node['type'] == 'cloud':
+                    family, maximum = 'internet', 1
+                elif node['type'] == 'pc':
                     family, maximum = 'alpine', 1
                 elif ll2s_device.is_ll2s(node):
                     family, maximum = 'll2s', 8
@@ -223,17 +230,17 @@ class Automation:
                 else:
                     family, maximum = 'iol', 8
                 max_node = {**node, 'ethernet': maximum}
-                container = family in ('alpine', 'frr', 'll2s')
+                container = family in ('alpine', 'frr', 'll2s', 'internet')
                 profiles.append({
                     'image': node['image'], 'type': node['type'], 'family': family,
-                    'image_present': (node['image'] in installed if installed is not None else None) if container else True,
+                    'image_present': ((os.environ.get('WL_INTERNET_IMAGE', internet_cloud.IMAGE) if family == 'internet' else node['image']) in installed if installed is not None else None) if container else True,
                     'defaults': {k: node[k] for k in ('memory', 'ethernet')},
                     'ports_at_default': self.ports(node), 'ports_at_maximum': self.ports(max_node),
                     'ethernet_maximum': maximum,
-                    'ethernet_meaning': 'four-port slots' if family == 'iol' else 'total interfaces (includes management on EXOS, vEOS and Junos)',
+                    'ethernet_meaning': 'no interfaces or forwarding; network clouds have a shared drawing anchor' if family == 'diagram' else 'four-port slots' if family == 'iol' else 'total interfaces (includes management on EXOS, vEOS and Junos)',
                     'startup_config': family in ('iol', 'iosv', 'frr', 'll2s'),
                     'kvm_required': vios.is_qemu(node),
-                    'requirements': (f'Install {node["image"]} on the Docker host and load openvswitch. Commit, then write memory before Stop.' if family == 'll2s' else
+                    'requirements': ('Diagram-only object. No image, runtime, console or forwarding. Groups have no connections.' if family == 'diagram' else 'Build packaging/internet/Dockerfile locally. IPv4 NAT gateway; settings instead of a console. See docs/internet.md.' if family == 'internet' else f'Install {node["image"]} on the Docker host and load openvswitch. Commit, then write memory before Stop.' if family == 'll2s' else
                                      'Bare-metal Intel KVM. Commit and request system power-off before Stop.' if family == 'vjunos-switch' else
                                      'OVMF UEFI. Commit and request system power-off before Stop.' if family == 'vjunos-evolved' else
                                      f'Companion {vios.ABOOT_IMAGE} required.' if family == 'veos' else ''),
@@ -286,7 +293,7 @@ class Automation:
         if not isinstance(data.get('nodes'), list) or not isinstance(data.get('links'), list):
             raise self.error('Expected nodes and links arrays')
         for index, n in enumerate(data['nodes']):
-            keys(n, ('id', 'name', 'type', 'image', 'x', 'y', 'memory', 'ethernet', 'ipv4', 'gateway', 'startup_config', 'iol_l1'), f'nodes[{index}]')
+            keys(n, ('id', 'name', 'type', 'image', 'x', 'y', 'memory', 'ethernet', 'ipv4', 'gateway', 'startup_config', 'iol_l1', 'internet', 'size', 'color', 'width', 'height', 'notes', 'label_position', 'move_contents'), f'nodes[{index}]')
         for index, link in enumerate(data['links']):
             keys(link, ('id', 'a', 'b'), f'links[{index}]')
             for side in ('a', 'b'):
@@ -387,7 +394,7 @@ class Automation:
                     'node_id_map': dict(p['node_id_map']),
                     'previous_topology': copy.deepcopy(p['previous_topology']),
                     'warnings': list(p['warnings']), 'resources': resources(p['topology']['nodes']),
-                    'start_order': [n['id'] for n in sorted(p['topology']['nodes'], key=lambda n: n['type'] == 'pc')],
+                    'start_order': [n['id'] for n in sorted((n for n in p['topology']['nodes'] if n['type'] not in ('network', 'group')), key=lambda n: 0 if n['type'] == 'cloud' else 2 if n['type'] == 'pc' else 1)],
                     'downloads': {'topology': f'/api/automation/proposals/{proposal_id}/topology',
                                   'instructions': f'/api/automation/proposals/{proposal_id}/instructions'},
                     'notice': 'Node aliases were replaced with fresh IDs; use node_id_map or start_order for subsequent node tools. Show this proposal to the user before calling apply_topology. Downloads are temporary: save JSON and Markdown before expiry or server restart.'}

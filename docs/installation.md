@@ -41,8 +41,8 @@ free disk space; 8 GiB RAM provides more room for other work.
 Download the versioned script and checksum, verify them, then inspect/run it:
 
 ```sh
-curl -fSL https://github.com/weblab-network/weblab/releases/download/v0.9.1/weblab-install.sh -o weblab-install.sh
-curl -fSL https://github.com/weblab-network/weblab/releases/download/v0.9.1/SHA256SUMS -o SHA256SUMS
+curl -fSL https://github.com/weblab-network/weblab/releases/download/v0.10.0/weblab-install.sh -o weblab-install.sh
+curl -fSL https://github.com/weblab-network/weblab/releases/download/v0.10.0/SHA256SUMS -o SHA256SUMS
 sha256sum -c SHA256SUMS
 sh weblab-install.sh --help
 sh weblab-install.sh --with-agent --start-example --dry-run
@@ -66,6 +66,11 @@ start nodes again following a host/container restart; use **Start lab** then.
 local directory. Add `--with-kvm` only when `/dev/kvm` is available and you intend
 to supply QEMU images later. `--name mylab --port 8081` selects another container/
 volume prefix and localhost web port.
+
+**Optional Internet access:** the Internet cloud requires a separate locally
+built helper image, even with prebuilt Weblab. Follow the complete
+[gateway helper build instructions](internet.md#build-the-gateway-image) on the
+Docker host. No gateway image is installed by this script.
 
 Starting with v0.8.3, the installer accepts `--dns IPV4` to override DNS for the
 Weblab core container.
@@ -225,8 +230,8 @@ sudo modprobe openvswitch
 docker pull alpine:latest
 docker pull ghcr.io/weblab-network/ll2s:0.2.0
 docker pull ghcr.io/weblab-network/weblab-frr:10.7.1-wl1
-docker pull ghcr.io/weblab-network/weblab:0.9.1
-docker pull ghcr.io/weblab-network/weblab-agent:0.9.1
+docker pull ghcr.io/weblab-network/weblab:0.10.0
+docker pull ghcr.io/weblab-network/weblab-agent:0.10.0
 
 # Start the isolated companion first, as in the Compose setup.
 docker run -d --name weblab-agent --platform linux/amd64 \
@@ -237,7 +242,7 @@ docker run -d --name weblab-agent --platform linux/amd64 \
   --tmpfs /workspace:rw,nosuid,nodev,uid=10001,gid=10001,size=32m \
   -v weblab-agent-sockets:/run/weblab-agent \
   -v weblab-agent-conversations:/home/agent \
-  ghcr.io/weblab-network/weblab-agent:0.9.1
+  ghcr.io/weblab-network/weblab-agent:0.10.0
 
 docker run -d --name weblab --platform linux/amd64 --init --stop-timeout 120 \
   --hostname weblab --add-host weblab:127.0.0.1 \
@@ -251,7 +256,7 @@ docker run -d --name weblab --platform linux/amd64 --init --stop-timeout 120 \
   -v weblab-agent-sockets:/run/weblab-agent \
   -v weblab-agent-bridge-state:/agent-state \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/weblab-network/weblab:0.9.1
+  ghcr.io/weblab-network/weblab:0.10.0
 ```
 
 Open **http://127.0.0.1:8080/**. Add a Switch with the LL2S image, a Router with

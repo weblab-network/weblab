@@ -42,7 +42,7 @@ def is_junos(node):
 
 
 def required_images(nodes):
-    names = {n['image'] for n in nodes if n['type'] != 'pc' and not frr.is_frr(n) and not ll2s_device.is_ll2s(n)}
+    names = {n['image'] for n in nodes if n['type'] not in ('pc', 'cloud', 'network', 'group') and not frr.is_frr(n) and not ll2s_device.is_ll2s(n)}
     if any(is_veos(n) for n in nodes):
         names.add(ABOOT_IMAGE)
     return names

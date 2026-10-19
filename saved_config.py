@@ -193,11 +193,11 @@ def export(lab, run):
                 raise ValueError("Arista vEOS configuration extraction is not supported yet; use Saved lab ZIP")
             if vios.is_exos(node):
                 raise ValueError("EXOS configuration extraction is not supported yet; use Saved lab ZIP")
-            if node['type'] != 'pc' and node['id'] in lab.runtime:
+            if node['type'] not in ('pc', 'cloud', 'network', 'group') and node['id'] in lab.runtime:
                 raise ValueError(f"Stop {node['name']} before reading saved configurations")
         result = copy.deepcopy(lab.topology)
         for node in result['nodes']:
-            if node['type'] == 'pc':
+            if node['type'] in ('pc', 'cloud', 'network', 'group'):
                 continue
             try:
                 node['startup_config'] = read_node(lab, node, run)
