@@ -267,7 +267,9 @@
     await syncPublished();
     if (localPreview) draftRevision = sharedRevision;
     updateSharingControls();
-    if (saved?.open) show();
+    // Split layouts restore their selected tool themselves. Restoring a document
+    // after the async fetch must not replace that selection (or a user's click).
+    if (saved?.open && !window.weblabLayout?.active()) show();
     // Poll metadata for every station, including hidden panes; unchanged replies
     // contain no document and never rerender/reset the reader's scroll position.
     setInterval(syncPublished, 2500);

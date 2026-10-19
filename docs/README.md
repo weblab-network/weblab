@@ -6,7 +6,7 @@ Start with [installation](installation.md), then build a small lab using the
 [starter exercise](../examples/starter.md). These pages describe the current
 workspace and its supported profiles.
 
-Release notes: [v0.10.0](releases/v0.10.0.md), [v0.9.1](releases/v0.9.1.md), [v0.9.0](releases/v0.9.0.md), [v0.8.3](releases/v0.8.3.md), [v0.8.2](releases/v0.8.2.md), [v0.8.1](releases/v0.8.1.md), [v0.8.0](releases/v0.8.0.md), [v0.7.0](releases/v0.7.0.md), [v0.6.0](releases/v0.6.0.md),
+Release notes: [v0.10.1](releases/v0.10.1.md), [v0.10.0](releases/v0.10.0.md), [v0.9.1](releases/v0.9.1.md), [v0.9.0](releases/v0.9.0.md), [v0.8.3](releases/v0.8.3.md), [v0.8.2](releases/v0.8.2.md), [v0.8.1](releases/v0.8.1.md), [v0.8.0](releases/v0.8.0.md), [v0.7.0](releases/v0.7.0.md), [v0.6.0](releases/v0.6.0.md),
 [v0.5.1](releases/v0.5.1.md). Authentication and shared instructions are available starting with v0.7.0.
 
 ## User guide

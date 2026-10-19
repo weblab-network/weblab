@@ -209,8 +209,19 @@ fixture.stderr.on('data', data => { fixtureLog += data; });
     assert.equal(await page.locator('#open-agent').evaluate(e=>e.parentElement.className),'header-actions');
     await preset('stack');
     const saved=await page.evaluate(()=>localStorage.getItem('weblab.workspace.v1'));
-    await page.reload(); await page.waitForFunction(()=>window.weblabLayout?.active());
+    // Force Instructions restoration to finish after Agent availability. A late
+    // saved-open document must not overwrite the workspace's selected tool.
+    let releaseInstructions;
+    const instructionsGate=new Promise(resolve=>{releaseInstructions=resolve;});
+    await page.route('**/api/instructions',async route=>{await instructionsGate;await route.continue();});
+    await page.reload();
+    await page.waitForFunction(()=>window.weblabLayout?.active() && !$('open-agent').hidden);
+    const instructionsResponse=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/instructions');
+    releaseInstructions(); await instructionsResponse;
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
     assert.deepEqual(JSON.parse(await page.evaluate(()=>localStorage.getItem('weblab.workspace.v1'))),JSON.parse(saved));
+    assert.equal(await page.locator('#workspace-agent-tab').getAttribute('aria-selected'),'true');
+    await page.unroute('**/api/instructions');
     // Agent unavailable: the saved preset remains useful through Instructions.
     await page.unroute('**/api/agent/*'); await page.reload();
     await page.waitForFunction(()=>window.weblabLayout?.active());

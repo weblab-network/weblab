@@ -28,9 +28,9 @@ If you installed Weblab using the installer or a prebuilt image, install Git
 if necessary, then fetch the matching release source into a new directory:
 
 ```sh
-git clone --depth 1 --branch v0.10.0 https://github.com/weblab-network/weblab.git weblab-0.10.0
-docker build -f weblab-0.10.0/packaging/internet/Dockerfile \
-  -t weblab-internet:dev weblab-0.10.0
+git clone --depth 1 --branch v0.10.1 https://github.com/weblab-network/weblab.git weblab-0.10.1
+docker build -f weblab-0.10.1/packaging/internet/Dockerfile \
+  -t weblab-internet:dev weblab-0.10.1
 ```
 
 If you already have the matching Weblab source checkout, run this from its root:
