@@ -24,7 +24,9 @@ class AuthConsoleLockTests(unittest.TestCase):
         self.enable()
         if self._testMethodName == 'test_expiry_duplicate_and_old_decision':
             wrapper = self.root / 'wrapper-ws.pl'
-            wrapper.write_text(wrapper.read_text().replace('my $takeover_timeout = 60;', 'my $takeover_timeout = 1;'))
+            # Perl time uses whole seconds: a one-second TTL can expire at the
+            # next clock boundary before the duplicate/barrier round trip.
+            wrapper.write_text(wrapper.read_text().replace('my $takeover_timeout = 60;', 'my $takeover_timeout = 3;'))
         self.admin, self.admin_csrf = self.login('admin')
         self.writer, self.writer_csrf = self.login('user')
         self.guest, _ = self.login('guest')
@@ -133,6 +135,7 @@ class AuthConsoleLockTests(unittest.TestCase):
             if opcode == 1:
                 state = json.loads(payload)
                 if state.get('pending_takeover'):
+                    self.assertEqual(state['pending_takeover']['id'], request)
                     self.assertEqual(state['pending_takeover']['expires_at'], expires)
         self.read_until(writer, lambda: 'expired' in writer.lock['notice'])
         self.read_until(admin, lambda: admin.lock['pending_takeover'] is None)
