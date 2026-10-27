@@ -76,6 +76,7 @@ class InstallerTests(unittest.TestCase):
             with self.subTest(options=options):
                 result = self.run_script(*options, '--name', 'test-lab', '--port', '18080')
                 self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(['docker', 'pull', 'ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1'], self.calls)
                 runs = [c for c in self.calls if c[:2] == ['docker', 'run']]
                 core = runs[-1]
                 self.assertIn('WL_PORT=18080', core)

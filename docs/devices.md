@@ -14,7 +14,7 @@ network feature works. Supply your own images and any required licenses.
 | Virtual EXOS | `EXOS-VM_33.1.1.31.qcow2` | 1024 MB / 1 | Mgmt + 1–12 | Yes | No / no | Yes |
 | Arista vEOS-lab | `vEOS64-lab-4.36.1F.qcow2` + serial Aboot 8.0.2 | 6144 MB / 2 | Management1 + Ethernet1–15 | Yes | No / no | Yes |
 | FRRouting container | `quay.io/frrouting/frr:10.7.1` | 512 MB container limit | eth0–eth7 | No | Yes / saved only | Saved frr.conf |
-| LL2S container | `ghcr.io/weblab-network/ll2s:0.2.0` (OVS-based 0.2.0) | 256 MB container limit | eth0–eth7; default four | No | Yes / saved only | Saved startup.conf |
+| LL2S container | `ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1` (OVS RSTP patch included) | 256 MB container limit | eth0–eth7; default four | No | Yes / saved only | Saved startup.conf |
 | Juniper vJunos-switch | `vJunos-switch-26.2R1.7.qcow2` | 5120 MB / 4 | fxp0 + ge-0/0/0–14 | Intel KVM, bare metal | No / no | Disk overlay |
 | Juniper vJunosEvolved | `vJunosEvolved-26.2R1.7-EVO.qcow2` | 8192 MB / 4 | re0:mgmt-0 + et-0/0/0–14 | Yes; UEFI | No / no | Disk overlay |
 | Alpine PC | locally installed `alpine:latest` | Host Docker container | eth0 | No | IPv4/gateway fields only | Settings only; no PC filesystem |
@@ -500,21 +500,25 @@ shutdowns bypass the browser warning.
 
 ## LL2S (Linux Layer 2 Switch)
 
-Select a **Switch**, choose **`ghcr.io/weblab-network/ll2s:0.2.0`** in the Inspector, then Apply and Start.
+Select a **Switch**, choose **`ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1`** in the Inspector, then Apply and Start.
 The profile defaults to 256 MB and four interfaces, with one to eight supported
 (`eth0`–`eth7`). It runs LL2S's independent `ll2sh` CLI and Open vSwitch; no FRR
 or KVM is required. The image must already exist on the Docker host:
 
 ```sh
-docker pull ghcr.io/weblab-network/ll2s:0.2.0
+docker pull ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1
 sudo modprobe openvswitch
 ```
 
-Use the OVS-based LL2S 0.2.0 image. The earlier mstpd-based prototype is not
-compatible with this profile. LL2S source and build instructions are available
+This image includes the OVS 3.7.1 RSTP root-selection patch. We retested the
+original Cisco MST / LL2S RSTP topology and confirmed that the lower-cost
+uplink is selected correctly. See the [LL2S release](https://github.com/weblab-network/ll2s/releases/tag/v0.2.0-ovs-rstp1).
+It still implements one STP/RSTP tree; MSTP and PVST+ are unsupported.
+The earlier mstpd-based prototype is not compatible with this profile. LL2S source and build instructions are available
 at [weblab-network/ll2s](https://github.com/weblab-network/ll2s). Existing labs
-using the local `ll2s:dev` selector remain supported with their original saved
-storage and exact image checks; it appears in the catalog when used by the lab.
+using `ghcr.io/weblab-network/ll2s:0.2.0` or local `ll2s:dev` remain supported
+with their original saved storage and exact image checks. Each selector appears
+in the catalog when used by the lab.
 Changing a node’s image selector selects separate saved storage, so retain its
 existing selector when preserving a configured lab. After updating Weblab's source,
 rebuild/recreate the Weblab service to make the profile available; stop and save your lab first.

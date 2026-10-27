@@ -286,8 +286,8 @@ Stop. Existing/restored saved configuration wins over initial snippets.
 
 Stop records the launch image ID and a checksum of the startup file in
 `ll2s-*/startup-image.json`. Both files enter ZIP backups. Export uses this saved
-identity even if its tag was replaced afterward. Legacy `ll2s:dev` archives keep
-their original selector and storage paths. Restore requires that exact
+identity even if its tag was replaced afterward. Existing
+`ghcr.io/weblab-network/ll2s:0.2.0` and `ll2s:dev` archives keep their original selector and storage paths. Restore requires that exact
 image installed under the tag; mixed FRR/LL2S archives verify both identities.
 A single ZIP cannot represent LL2S nodes sharing a selector but saved under
 different image IDs: verify all switches on the intended image and Stop them before exporting together.

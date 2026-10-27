@@ -295,7 +295,7 @@ when QEMU is unavailable.
 
 ## LL2S discovery and monitoring checks
 
-With `ghcr.io/weblab-network/ll2s:0.2.0` pulled on the Docker host,
+With `ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1` pulled on the Docker host,
 run this separately from other node-launching suites:
 
 ```sh

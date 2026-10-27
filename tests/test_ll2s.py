@@ -70,6 +70,8 @@ class Ll2sTests(unittest.TestCase):
         self.assertEqual(lab_server.netmap_port(node, 'eth3'), '0/3')
         self.assertEqual(vios.required_images([node]), set())
         self.assertIn({'name': ll2s.IMAGE, 'type': 'switch'}, self.lab.catalog())
+        self.assertNotIn({'name': ll2s.PREVIOUS_IMAGE, 'type': 'switch'}, self.lab.catalog())
+        self.assertNotIn({'name': ll2s.LEGACY_IMAGE, 'type': 'switch'}, self.lab.catalog())
         for change in ({'type': 'router'}, {'image': 'll2s:latest'}, {'ethernet': 9}):
             data = copy.deepcopy(self.lab.topology)
             data['nodes'][0].update(change)
@@ -93,8 +95,16 @@ class Ll2sTests(unittest.TestCase):
         data = copy.deepcopy(self.lab.topology)
         data['nodes'].append({'id': 'legacy', 'name': 'OLD', 'type': 'switch',
                               'image': ll2s.LEGACY_IMAGE})
+        data['nodes'].append({'id': 'previous', 'name': 'PREVIOUS', 'type': 'switch',
+                              'image': ll2s.PREVIOUS_IMAGE})
         self.lab.save(data)
         self.config()
+        previous = self.lab.node('previous')
+        previous_path = ll2s.config_path(previous, self.lab.node_dir('previous'))
+        previous_path.parent.mkdir()
+        previous_path.write_bytes(b'hostname PREVIOUS\n')
+        ll2s.write_identity(previous_path, previous_path.read_bytes(), 'sha256:'+'c'*64)
+        self.assertIn({'name': ll2s.PREVIOUS_IMAGE, 'type': 'switch'}, self.lab.catalog())
         node = self.lab.node('legacy')
         path = ll2s.config_path(node, self.lab.node_dir('legacy'))
         path.parent.mkdir()
@@ -111,11 +121,14 @@ class Ll2sTests(unittest.TestCase):
             calls = []
             def installed(run, error, name=ll2s.IMAGE):
                 calls.append(name)
-                return {'Id': 'sha256:' + ('b' if name == ll2s.LEGACY_IMAGE else 'a')*64}
+                return {'Id': 'sha256:' + {ll2s.IMAGE: 'a', ll2s.LEGACY_IMAGE: 'b', ll2s.PREVIOUS_IMAGE: 'c'}[name]*64}
             inspect.side_effect = installed
             lab_backup.restore(self.lab, io.BytesIO(content), lambda *a: None)
             self.assertEqual(set(calls), set(ll2s.IMAGES))
         self.assertEqual(path.read_bytes(), b'hostname LEGACY\n')
+        self.assertEqual(previous_path.read_bytes(), b'hostname PREVIOUS\n')
+        self.assertEqual(self.lab.node('previous')['image'], ll2s.PREVIOUS_IMAGE)
+        self.assertEqual(ll2s.saved_image(previous_path, ll2s.PREVIOUS_IMAGE)['digest'], 'sha256:'+'c'*64)
         self.assertEqual(self.lab.node('legacy')['image'], ll2s.LEGACY_IMAGE)
         self.assertEqual(ll2s.saved_image(path, ll2s.LEGACY_IMAGE)['name'], ll2s.LEGACY_IMAGE)
         # Legacy imports retain their old metadata name, not the new default.

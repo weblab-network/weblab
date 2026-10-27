@@ -2,8 +2,8 @@
 # Weblab fresh-install helper. Run on the Docker host, not inside a container.
 set -eu
 
-VERSION=0.10.1
-LL2S_IMAGE=ghcr.io/weblab-network/ll2s:0.2.0
+VERSION=0.10.2
+LL2S_IMAGE=ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1
 FRR_IMAGE=ghcr.io/weblab-network/weblab-frr:10.7.1-wl1
 name=weblab
 port=8080
@@ -89,7 +89,7 @@ if [ -n "$examples" ]; then
 fi
 
 printf 'Weblab %s: %s listening on %s:%s\n' "$VERSION" "$name" "$bind" "$port"
-printf 'Images: Alpine, LL2S 0.2.0, Weblab FRR 10.7.1-wl1; Agent=%s; KVM=%s\n' "$agent" "$kvm"
+printf 'Images: Alpine, LL2S 0.2.0-ovs-rstp1, Weblab FRR 10.7.1-wl1; Agent=%s; KVM=%s\n' "$agent" "$kvm"
 printf 'Persistent volumes: %s-images, %s-data\n' "$name" "$name"
 if [ "$agent" = 1 ]; then
     printf 'Agent volumes: %s-agent-sockets, %s-agent-conversations, %s-agent-bridge-state\n' "$name" "$name" "$name"

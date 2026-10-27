@@ -30,7 +30,7 @@ let log='';fixture.stderr.on('data',data=>log+=data);
   await page.goto(info.url);await page.waitForFunction(()=>loaded);
   await page.locator('.device-template[data-type="switch"]').click();
   await page.waitForFunction(()=>!busy && topology.nodes.length===1);
-  await page.locator('#node-image').selectOption('ghcr.io/weblab-network/ll2s:0.2.0');
+  await page.locator('#node-image').selectOption('ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1');
   assert.equal(await page.locator('#node-memory').inputValue(),'256');
   assert.equal(await page.locator('#node-ethernet').inputValue(),'4');
   assert.match(await page.locator('#ethernet-help').innerText(),/ll2sh/);
@@ -64,7 +64,7 @@ let log='';fixture.stderr.on('data',data=>log+=data);
     'eth0,eth1,eth2,eth3,eth4,eth5,eth6,eth7');
   await page.locator('.device-template[data-type="router"]').click();
   await page.waitForFunction(()=>!busy && topology.nodes.length===2);
-  assert.equal(await page.locator('#node-image option[value="ghcr.io/weblab-network/ll2s:0.2.0"]').count(),0);
+  assert.equal(await page.locator('#node-image option[value="ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1"]').count(),0);
   await page.evaluate(()=>{
     setMode('link'); connectNode(topology.nodes[0].id); connectNode(topology.nodes[1].id);
   });
@@ -76,16 +76,18 @@ let log='';fixture.stderr.on('data',data=>log+=data);
   assert.equal(await page.evaluate(()=>topology.links[0].a.port),'eth7');
   await page.reload();await page.waitForFunction(()=>loaded);
   assert.equal(await page.evaluate(()=>topology.links[0].a.port),'eth7');
-  // Existing labs keep their legacy selector and Ethernet mapping after reload.
-  await page.evaluate(async()=>{
-    topology.nodes[0].image='ll2s:dev';
-    await api('/api/topology','PUT',topology);
-  });
-  await page.reload();await page.waitForFunction(()=>loaded);
-  await page.evaluate(()=>selectNode(topology.nodes[0].id, false));
-  assert.equal(await page.locator('#node-image').inputValue(),'ll2s:dev');
-  assert.equal(await page.evaluate(()=>nodePorts(topology.nodes[0]).length),8);
-  assert.match(await page.locator('#interfaces').innerText(),/eth7/);
+  // Existing published and development selectors retain their Ethernet mapping.
+  for (const image of ['ghcr.io/weblab-network/ll2s:0.2.0', 'll2s:dev']) {
+    await page.evaluate(async image=>{
+      topology.nodes[0].image=image;
+      await api('/api/topology','PUT',topology);
+    }, image);
+    await page.reload();await page.waitForFunction(()=>loaded);
+    await page.evaluate(()=>selectNode(topology.nodes[0].id, false));
+    assert.equal(await page.locator('#node-image').inputValue(),image);
+    assert.equal(await page.evaluate(()=>nodePorts(topology.nodes[0]).length),8);
+    assert.match(await page.locator('#interfaces').innerText(),/eth7/);
+  }
   assert.deepEqual(errors,[]);
   console.log('LL2S UI passed');
  } finally {

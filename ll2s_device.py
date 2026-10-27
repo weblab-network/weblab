@@ -12,9 +12,10 @@ import tempfile
 import time
 import uuid
 
-IMAGE = 'ghcr.io/weblab-network/ll2s:0.2.0'
+IMAGE = 'ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1'
+PREVIOUS_IMAGE = 'ghcr.io/weblab-network/ll2s:0.2.0'
 LEGACY_IMAGE = 'll2s:dev'
-IMAGES = (IMAGE, LEGACY_IMAGE)
+IMAGES = (IMAGE, PREVIOUS_IMAGE, LEGACY_IMAGE)
 MAX_CONFIG = 1024 * 1024
 
 

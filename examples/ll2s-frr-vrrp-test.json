@@ -10,7 +10,7 @@
       "y": 294,
       "memory": 256,
       "ethernet": 8,
-      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1",
       "startup_config": "hostname SW1\nspanning-tree mode rstp\nspanning-tree priority 4096\nvlan 1,100,200\nlldp run\nmanagement vlan 1\nsnmp-server source 0.0.0.0/0\ninterface eth0\n switchport mode trunk\n switchport access vlan 1\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n no spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth1\n switchport mode trunk\n switchport access vlan 1\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n no spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth2\n switchport mode trunk\n switchport access vlan 100\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\n",
       "ipv4": "",
       "gateway": ""
@@ -36,7 +36,7 @@
       "y": 500,
       "memory": 256,
       "ethernet": 8,
-      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1",
       "startup_config": "hostname SW2\nspanning-tree mode rstp\nspanning-tree priority 8192\nvlan 1,100,200\nlldp run\nvlan 100 name TRANSPORT\nvlan 200 name SW-PCs\nmanagement vlan 200\nmanagement ip address 10.0.20.20/24\nip default-gateway 10.0.20.1\nsnmp-server community labMonitor ro\nsnmp-server source 0.0.0.0/0\nsnmp-server contact 'Lab Operations'\nsnmp-server location 'Rack A'\ninterface eth0\n switchport mode trunk\n switchport access vlan 1\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n no spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth1\n switchport mode trunk\n switchport access vlan 1\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n no spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth2\n switchport mode trunk\n switchport access vlan 100\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth3\n switchport mode access\n switchport access vlan 200\n switchport trunk native vlan 1\n switchport trunk allowed vlan 1\n spanning-tree cost 0\n lldp transmit\n lldp receive\n spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\n",
       "ipv4": "",
       "gateway": ""
@@ -62,7 +62,7 @@
       "y": 500,
       "memory": 256,
       "ethernet": 8,
-      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1",
       "startup_config": "hostname SW3\nspanning-tree mode rstp\nspanning-tree priority 12288\nvlan 1,100,200\nlldp run\nvlan 100 name TRANSPORT\nvlan 200 name SW-PCs\nmanagement vlan 1\nsnmp-server source 0.0.0.0/0\ninterface eth0\n switchport mode trunk\n switchport access vlan 1\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n no spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth1\n switchport mode trunk\n switchport access vlan 1\n switchport trunk native vlan 1\n switchport trunk allowed vlan 100,200\n spanning-tree cost 0\n lldp transmit\n lldp receive\n no spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth2\n switchport mode access\n switchport access vlan 100\n switchport trunk native vlan 1\n switchport trunk allowed vlan 1\n spanning-tree cost 0\n lldp transmit\n lldp receive\n spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth3\n switchport mode access\n switchport access vlan 100\n switchport trunk native vlan 1\n switchport trunk allowed vlan 1\n spanning-tree cost 0\n lldp transmit\n lldp receive\n spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\ninterface eth4\n switchport mode access\n switchport access vlan 200\n switchport trunk native vlan 1\n switchport trunk allowed vlan 1\n spanning-tree cost 0\n lldp transmit\n lldp receive\n spanning-tree portfast\n no spanning-tree bpduguard\n no shutdown\nexit\n",
       "ipv4": "",
       "gateway": ""

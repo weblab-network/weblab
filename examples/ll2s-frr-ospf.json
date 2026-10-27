@@ -10,7 +10,7 @@
       "y": 240,
       "memory": 256,
       "ethernet": 3,
-      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1",
       "startup_config": "hostname SW1\nspanning-tree mode rstp\nspanning-tree priority 4096\nvlan 1,100\ninterface eth0\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth1\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth2\n switchport mode access\n switchport access vlan 100\n spanning-tree portfast\n no shutdown\nexit\n",
       "ipv4": "",
       "gateway": ""
@@ -36,7 +36,7 @@
       "y": 500,
       "memory": 256,
       "ethernet": 3,
-      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1",
       "startup_config": "hostname SW2\nspanning-tree mode rstp\nspanning-tree priority 8192\nvlan 1,100\ninterface eth0\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth1\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth2\n switchport mode access\n switchport access vlan 100\n spanning-tree portfast\n no shutdown\nexit\n",
       "ipv4": "",
       "gateway": ""
@@ -62,7 +62,7 @@
       "y": 500,
       "memory": 256,
       "ethernet": 3,
-      "image": "ghcr.io/weblab-network/ll2s:0.2.0",
+      "image": "ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1",
       "startup_config": "hostname SW3\nspanning-tree mode rstp\nspanning-tree priority 12288\nvlan 1,100\ninterface eth0\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth1\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth2\n switchport mode access\n switchport access vlan 100\n spanning-tree portfast\n no shutdown\nexit\n",
       "ipv4": "",
       "gateway": ""

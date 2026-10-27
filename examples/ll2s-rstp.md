@@ -1,7 +1,7 @@
 # LL2S: RSTP and VLAN isolation
 
 Import [ll2s-rstp.json](ll2s-rstp.json) into a disposable lab. It contains three
-LL2S switches in a triangle and three Alpine PCs. Requires local `ghcr.io/weblab-network/ll2s:0.2.0`
+LL2S switches in a triangle and three Alpine PCs. Requires local `ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1`
 (OVS-based version 0.2.0), `alpine:latest`, and the host `openvswitch` module.
 
 | Device | Role |

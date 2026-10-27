@@ -38,7 +38,7 @@ jobs:
           sudo apt-get install -y perl libnet-pcap-perl iproute2 openvswitch-switch
           perl -c iou2net.pl
           sudo modprobe openvswitch
-          docker pull ghcr.io/weblab-network/ll2s:0.2.0
+          docker pull ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1
           docker pull alpine:latest
           python3 -m unittest discover -s tests -p 'test_frr*.py' -v
           sudo python3 tests/frr_vrrp_cli_native.py --release

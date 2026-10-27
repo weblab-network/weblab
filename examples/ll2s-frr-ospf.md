@@ -3,7 +3,7 @@
 Three LL2S switches form a triangle. Each switch connects one FRR router.
 Everything is preconfigured on fresh nodes; no manual configuration is required.
 The six containers have a combined memory limit of 2304 MiB, plus Weblab/host overhead.
-Requires `ghcr.io/weblab-network/ll2s:0.2.0`, `quay.io/frrouting/frr:10.7.1`,
+Requires `ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1`, `quay.io/frrouting/frr:10.7.1`,
 and the host `openvswitch` module. Pull both images on the Docker host first.
 
 ```text

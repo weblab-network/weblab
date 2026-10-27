@@ -240,7 +240,7 @@ startup scripts. See [FRR OSPF JSON](../examples/frr-ospf.json) and
 
 ## LL2S switches
 
-Use `type: "switch"`, `image: "ghcr.io/weblab-network/ll2s:0.2.0"`, 256 MB or more, and one to eight
+Use `type: "switch"`, `image: "ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1"`, 256 MB or more, and one to eight
 interfaces named `eth0`–`eth7` (default four). Build the OVS-based LL2S image on
 the Docker host and load its `openvswitch` kernel module first. No KVM is needed.
 The MCP catalog reports family `ll2s` and local image availability.

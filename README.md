@@ -90,12 +90,12 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
-## Latest release: v0.10.1
+## Latest release: v0.10.2
 
-Fixes a reload timing issue that could switch the selected Agent tab to
-Instructions in split layouts. This is the first published image/installer
-release for the 0.10 series; the v0.10.0 source tag remains available.
-See [v0.10.1 release notes](docs/releases/v0.10.1.md).
+New LL2S switches use `0.2.0-ovs-rstp1`, which includes the OVS RSTP
+root-selection patch verified with the original Cisco MST topology. Existing
+LL2S selectors, saved configuration and ZIP image checks are preserved.
+See [v0.10.2 release notes](docs/releases/v0.10.2.md).
 
 ## New in v0.10.0 — Internet connectivity and network diagrams
 
@@ -137,7 +137,7 @@ export…**, with confirmation, stopped-device checks and stale-workspace protec
 See [release notes](docs/releases/v0.9.0.md), [traffic monitoring](docs/link-actions.md#monitor-traffic)
 and [backup/reset behavior](docs/backups.md#export-and-reset-the-workspace).
 
-Use **0.10.1** for matching core, Agent and EXOS images. The installer retains the
+Use **0.10.2** for matching core, Agent and EXOS images. The installer retains the
 optional core-only DNS override from v0.8.3.
 
 ## Weblab FRR
@@ -225,7 +225,7 @@ On the Docker host used by Weblab:
 
 ```sh
 sudo modprobe openvswitch
-docker pull ghcr.io/weblab-network/ll2s:0.2.0
+docker pull ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1
 docker pull quay.io/frrouting/frr:10.7.1
 docker pull alpine:latest
 ```

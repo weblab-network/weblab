@@ -154,8 +154,9 @@ class Lab:
                 for p in sorted(self.image_dir.iterdir()) if p.is_file() and
                 ((p.suffix == ".bin" and os.access(p, os.X_OK)) or
                  (p.suffix == ".qcow2" and os.access(p, os.R_OK)))] + [{"name": frr.IMAGE, "type": "router"}, {"name": frr.PUBLIC_IMAGE, "type": "router"}, {"name": ll2s_device.IMAGE, "type": "switch"}]
-        if any(n.get("image") == ll2s_device.LEGACY_IMAGE for n in self.topology["nodes"]):
-            entries.append({"name": ll2s_device.LEGACY_IMAGE, "type": "switch"})
+        for image in ll2s_device.IMAGES[1:]:
+            if any(n.get("image") == image for n in self.topology["nodes"]):
+                entries.append({"name": image, "type": "switch"})
         if self.allow_untested_frr or any(n.get('image') == frr.LLDP_IMAGE for n in self.topology['nodes']):
             entries.append({'name': frr.LLDP_IMAGE, 'type': 'router'})
         if self.allow_untested_frr or any(n.get('image') == frr.SNMP_IMAGE for n in self.topology['nodes']):
