@@ -1,0 +1,11 @@
+{
+  "release_tag": "v0.10.2",
+  "tag_commit": "d954282229d2cef2829babc7ccce23e1d5133885",
+  "tested_commit": "062dbc6c48fc80e7b61a85f5e00f558fac508e76",
+  "tested_run": 40561905018,
+  "images": {
+    "ghcr.io/weblab-network/weblab": "sha256:10b903dcf5e46b33725963d28ef7eca11248c55ad7f9649e6f59709eda16b973",
+    "ghcr.io/weblab-network/weblab-agent": "sha256:6d135e8399f5695ac9192b1335b467ce58ad085b7957bad828794b9f1e786844",
+    "ghcr.io/weblab-network/weblab-exos": "sha256:af1cd309aa2933b34b1e97e5d9233b1eb411974abbe834ac3a80502357941dbe"
+  }
+}
