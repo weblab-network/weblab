@@ -41,6 +41,16 @@ preservation of custom Alpine tags. No Docker daemon or live lab is modified.
 disposable prefix, port and volumes on a suitable Linux Docker host; never reuse
 an active lab for these checks.
 
+## Release workflow recovery
+
+The **Publish container images** workflow accepts an optional `release_tag` when
+dispatched manually from `main`. The `v0.11.0` recovery choice rebuilds and tests
+the unchanged tagged source, with only the corrected workspace-scrollbar browser
+fixture taken from the workflow commit. Tests are excluded from Docker build
+contexts. Images and the helper's binary/source metadata retain the tagged source
+revision; the existing version tag is preserved. Ordinary pushes and dispatches
+with no release choice keep their usual branch/tag behavior.
+
 ## Backend tests
 
 From the repository root on Linux, with Python 3.11+ and Perl installed:

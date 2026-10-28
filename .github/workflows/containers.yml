@@ -6,16 +6,28 @@ on:
     tags: ['v*']
     paths-ignore: ['site/**', 'docs/**', '**.md']
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Recover the unchanged v0.11.0 source with its corrected browser fixture'
+        type: choice
+        default: ''
+        options: ['', v0.11.0]
 
 permissions:
   contents: read
 
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+  RELEASE_BUILD: ${{ startsWith(github.ref, 'refs/tags/') || inputs.release_tag == 'v0.11.0' }}
+  SOURCE_REVISION: ${{ inputs.release_tag == 'v0.11.0' && '92586b58f0c75b554ee4fbb2b8b8772b582dc769' || github.sha }}
+
 concurrency:
-  group: containers-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  group: containers-${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.release_tag }}
 
 jobs:
   standard:
+    if: ${{ !inputs.release_tag || (inputs.release_tag == 'v0.11.0' && github.repository == 'weblab-network/weblab' && github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     outputs:
@@ -25,6 +37,16 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.SOURCE_REVISION }}
+      - name: Use the reviewed browser fixture for v0.11.0 recovery
+        if: inputs.release_tag == 'v0.11.0'
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_REVISION"
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          git show "$GITHUB_SHA:tests/workspace_features.cjs" > tests/workspace_features.cjs
+          test "$(git diff --name-only)" = tests/workspace_features.cjs
+          # tests/ is excluded from every Docker build context.
       - name: Install test dependencies
         run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y perl qemu-system-x86 qemu-utils mtools tshark util-linux
       - name: Backend regression tests
@@ -67,9 +89,12 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=0.11.0,enable=${{ inputs.release_tag == 'v0.11.0' }}
+            type=raw,value=latest,enable=${{ inputs.release_tag == 'v0.11.0' }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' && !inputs.release_tag }}
             type=raw,value=preview,enable=${{ github.ref == 'refs/heads/feature/container-images' }}
-            type=sha
+            type=sha,enable=${{ !inputs.release_tag }}
+          labels: org.opencontainers.image.revision=${{ env.SOURCE_REVISION }}
       - name: Build test image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -110,6 +135,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.SOURCE_REVISION }}
       - name: Download and verify the pinned EXOS release
         run: python3 tools/fetch_exos_demo_image.py packaging/exos/build
       - name: Validate the bundled topology
@@ -126,9 +153,12 @@ jobs:
           images: ghcr.io/${{ github.repository }}-exos
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=0.11.0,enable=${{ inputs.release_tag == 'v0.11.0' }}
+            type=raw,value=latest,enable=${{ inputs.release_tag == 'v0.11.0' }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' && !inputs.release_tag }}
             type=raw,value=preview,enable=${{ github.ref == 'refs/heads/feature/container-images' }}
-            type=sha
+            type=sha,enable=${{ !inputs.release_tag }}
+          labels: org.opencontainers.image.revision=${{ env.SOURCE_REVISION }}
       - name: Build demo image for smoke test
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -162,6 +192,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.SOURCE_REVISION }}
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
@@ -174,9 +206,12 @@ jobs:
           images: ghcr.io/${{ github.repository }}-agent
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=0.11.0,enable=${{ inputs.release_tag == 'v0.11.0' }}
+            type=raw,value=latest,enable=${{ inputs.release_tag == 'v0.11.0' }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' && !inputs.release_tag }}
             type=raw,value=preview,enable=${{ github.ref == 'refs/heads/feature/container-images' }}
-            type=sha
+            type=sha,enable=${{ !inputs.release_tag }}
+          labels: org.opencontainers.image.revision=${{ env.SOURCE_REVISION }}
       - name: Build companion for smoke tests
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -216,12 +251,14 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.SOURCE_REVISION }}
       - name: Select helper identity
         run: |
           version=0.11.0-dev
-          selector=sha-${GITHUB_SHA}
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            version=${GITHUB_REF_NAME#v}
+          selector=sha-${SOURCE_REVISION}
+          if [ "$RELEASE_BUILD" = true ]; then
+            version=${RELEASE_TAG#v}
             selector=$version
           fi
           printf 'HELPER_VERSION=%s\nWL_INTERNET_IMAGE=ghcr.io/%s-internet:%s\n' \
@@ -229,10 +266,10 @@ jobs:
       - name: Build exact runtime sources and distribution image
         run: |
           docker build -f packaging/internet/Dockerfile.release --target sources \
-            --build-arg WEBLAB_VERSION="$HELPER_VERSION" --build-arg WEBLAB_REVISION="$GITHUB_SHA" \
+            --build-arg WEBLAB_VERSION="$HELPER_VERSION" --build-arg WEBLAB_REVISION="$SOURCE_REVISION" \
             -t weblab-internet-sources:ci .
           docker build -f packaging/internet/Dockerfile.release --target release \
-            --build-arg WEBLAB_VERSION="$HELPER_VERSION" --build-arg WEBLAB_REVISION="$GITHUB_SHA" \
+            --build-arg WEBLAB_VERSION="$HELPER_VERSION" --build-arg WEBLAB_REVISION="$SOURCE_REVISION" \
             -t "$WL_INTERNET_IMAGE" .
       - name: Test real gateway automation and TCP/UDP publications
         run: |
@@ -247,7 +284,7 @@ jobs:
           python3 tools/bundle_internet_release.py --image "$WL_INTERNET_IMAGE" \
             --sources-image weblab-internet-sources:ci --output internet-bundle
           python3 tools/verify_internet_bundle.py internet-bundle \
-            --version "$HELPER_VERSION" --revision "$GITHUB_SHA"
+            --version "$HELPER_VERSION" --revision "$SOURCE_REVISION"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: internet-binary-sources
@@ -257,7 +294,7 @@ jobs:
           retention-days: 90
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag == 'v0.11.0'
     needs: [standard, exos-demo, agent, internet]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -266,17 +303,18 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.SOURCE_REVISION }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: internet-binary-sources
           path: internet-bundle
       - name: Verify helper pair for this public release
-        run: python3 tools/verify_internet_bundle.py internet-bundle --version "${GITHUB_REF_NAME#v}" --revision "$GITHUB_SHA"
+        run: python3 tools/verify_internet_bundle.py internet-bundle --version "${RELEASE_TAG#v}" --revision "$SOURCE_REVISION"
       - name: Publish release notes
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           test -s "docs/releases/${RELEASE_TAG}.md"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
@@ -292,12 +330,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | grep -Fxq weblab-internet-SHA256SUMS; then
+          if gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | grep -Fxq weblab-internet-SHA256SUMS; then
             mkdir previous-internet
-            gh release download "$GITHUB_REF_NAME" --dir previous-internet --pattern weblab-internet-SHA256SUMS
+            gh release download "$RELEASE_TAG" --dir previous-internet --pattern weblab-internet-SHA256SUMS
             cmp previous-internet/weblab-internet-SHA256SUMS internet-bundle/weblab-internet-SHA256SUMS
           else
-            gh release upload "$GITHUB_REF_NAME" internet-bundle/weblab-internet-*
+            gh release upload "$RELEASE_TAG" internet-bundle/weblab-internet-*
           fi
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
@@ -309,8 +347,8 @@ jobs:
           docker load -i internet-bundle/weblab-internet-linux-amd64.tar.gz
           image_id=$(python3 -c 'import json; print(json.load(open("internet-bundle/weblab-internet-image.json"))["Id"])')
           image=ghcr.io/${GITHUB_REPOSITORY}-internet
-          docker tag "$image_id" "$image:${GITHUB_REF_NAME#v}"
-          docker push "$image:${GITHUB_REF_NAME#v}"
+          docker tag "$image_id" "$image:${RELEASE_TAG#v}"
+          docker push "$image:${RELEASE_TAG#v}"
           docker tag "$image_id" "$image:latest"
           docker push "$image:latest"
       - name: Verify the published helper and record its immutable pull reference
@@ -318,13 +356,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          image=ghcr.io/${GITHUB_REPOSITORY}-internet:${GITHUB_REF_NAME#v}
+          image=ghcr.io/${GITHUB_REPOSITORY}-internet:${RELEASE_TAG#v}
           docker pull "$image"
           python3 tools/verify_internet_bundle.py internet-bundle \
-            --version "${GITHUB_REF_NAME#v}" --revision "$GITHUB_SHA" --registry-image "$image"
-          if gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | grep -Fxq weblab-internet-registry.json; then
-            gh release download "$GITHUB_REF_NAME" --dir previous-internet --pattern weblab-internet-registry.json
+            --version "${RELEASE_TAG#v}" --revision "$SOURCE_REVISION" --registry-image "$image"
+          if gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | grep -Fxq weblab-internet-registry.json; then
+            gh release download "$RELEASE_TAG" --dir previous-internet --pattern weblab-internet-registry.json
             cmp previous-internet/weblab-internet-registry.json internet-bundle/weblab-internet-registry.json
           else
-            gh release upload "$GITHUB_REF_NAME" internet-bundle/weblab-internet-registry.json
+            gh release upload "$RELEASE_TAG" internet-bundle/weblab-internet-registry.json
           fi

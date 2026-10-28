@@ -45,10 +45,16 @@ let log=''; fixture.stderr.on('data',d=>log+=d);
     await page.request.post(url+'/api/nodes/r1/start',{data:{}});
     await page.evaluate(async()=>{accept(await api('/api/state'));openConsole('r1');});
     await page.waitForFunction(()=>consoleSessions.get('r1')?.status==='Connected');
-    const styles=await page.evaluate(()=>['.canvas-scroll','.palette','.inspector','.xterm-viewport','.console-tabs','#log-content'].map(selector=>{
+    const styles=await page.evaluate(()=>['.canvas-scroll','.palette','.inspector','.console-tabs','#log-content'].map(selector=>{
       const style=getComputedStyle(document.querySelector(selector));return [style.scrollbarWidth,style.scrollbarColor];
     }));
     assert.ok(styles.every(style=>JSON.stringify(style)===JSON.stringify(styles[0])),JSON.stringify(styles));
+    const terminalStyle=await page.locator('.xterm-viewport').evaluate(element=>{
+      const style=getComputedStyle(element);
+      return {width:style.scrollbarWidth,color:style.scrollbarColor,background:style.backgroundColor};
+    });
+    assert.equal(terminalStyle.width,styles[0][0]);
+    assert.ok(terminalStyle.color.endsWith(' '+terminalStyle.background),JSON.stringify(terminalStyle));
     await page.locator('#export').click();
     assert.equal(await page.locator('#export-zip').isDisabled(),true);
     assert.equal(await page.locator('#export-reset').isDisabled(),true);
