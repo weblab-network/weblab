@@ -2,6 +2,7 @@
 """Collect exact, unmodified Alpine runtime sources in a disposable build stage."""
 import argparse
 import fnmatch
+import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -86,6 +87,11 @@ def collect(database, output):
         'build/ contains Weblab helper source and its Dockerfile; build target release.\n'
         'Use matching Alpine/abuild tooling to rebuild runtime packages from APKBUILD.\n'
         'This is runtime source, not an offline toolchain or bit-identical build guarantee.\n')
+    # Retain the inventory alongside the runtime, so the offline verifier can
+    # detect missing/changed fetched distfiles without executing APKBUILD code.
+    hashes = {path.relative_to(output).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+              for path in sorted(output.rglob('*')) if path.is_file() and not path.is_symlink()}
+    (output / 'source-files.json').write_text(json.dumps(hashes, indent=2)+'\n')
 
 
 if __name__ == '__main__':

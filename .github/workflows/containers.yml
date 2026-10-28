@@ -6,28 +6,21 @@ on:
     tags: ['v*']
     paths-ignore: ['site/**', 'docs/**', '**.md']
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: 'Recover the unchanged v0.11.0 source with its corrected browser fixture'
-        type: choice
-        default: ''
-        options: ['', v0.11.0]
 
 permissions:
   contents: read
 
 env:
-  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
-  RELEASE_BUILD: ${{ startsWith(github.ref, 'refs/tags/') || inputs.release_tag == 'v0.11.0' }}
-  SOURCE_REVISION: ${{ inputs.release_tag == 'v0.11.0' && '92586b58f0c75b554ee4fbb2b8b8772b582dc769' || github.sha }}
+  RELEASE_TAG: ${{ github.ref_name }}
+  RELEASE_BUILD: ${{ startsWith(github.ref, 'refs/tags/') }}
+  SOURCE_REVISION: ${{ github.sha }}
 
 concurrency:
-  group: containers-${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.release_tag }}
+  group: containers-${{ startsWith(github.ref, 'refs/tags/') && 'releases' || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   standard:
-    if: ${{ !inputs.release_tag || (inputs.release_tag == 'v0.11.0' && github.repository == 'weblab-network/weblab' && github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     outputs:
@@ -39,14 +32,6 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ env.SOURCE_REVISION }}
-      - name: Use the reviewed browser fixture for v0.11.0 recovery
-        if: inputs.release_tag == 'v0.11.0'
-        run: |
-          test "$(git rev-parse HEAD)" = "$SOURCE_REVISION"
-          git fetch --depth=1 origin "$GITHUB_SHA"
-          git show "$GITHUB_SHA:tests/workspace_features.cjs" > tests/workspace_features.cjs
-          test "$(git diff --name-only)" = tests/workspace_features.cjs
-          # tests/ is excluded from every Docker build context.
       - name: Install test dependencies
         run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y perl qemu-system-x86 qemu-utils mtools tshark util-linux
       - name: Backend regression tests
@@ -83,18 +68,20 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Select image version
+        run: printf 'IMAGE_VERSION=%s\n' "${RELEASE_TAG#v}" >> "$GITHUB_ENV"
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         id: meta
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=0.11.0,enable=${{ inputs.release_tag == 'v0.11.0' }}
-            type=raw,value=latest,enable=${{ inputs.release_tag == 'v0.11.0' }}
-            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' && !inputs.release_tag }}
+            type=raw,value=ci-${{ github.run_id }}-${{ github.run_attempt }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=preview,enable=${{ github.ref == 'refs/heads/feature/container-images' }}
-            type=sha,enable=${{ !inputs.release_tag }}
-          labels: org.opencontainers.image.revision=${{ env.SOURCE_REVISION }}
+            type=sha,enable=${{ !startsWith(github.ref, 'refs/tags/') }}
+          labels: |
+            org.opencontainers.image.revision=${{ env.SOURCE_REVISION }}
+            org.opencontainers.image.version=${{ env.IMAGE_VERSION }}
       - name: Build test image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -102,6 +89,7 @@ jobs:
           platforms: linux/amd64
           load: true
           tags: weblab-smoke:ci
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Smoke test container
@@ -125,8 +113,15 @@ jobs:
           provenance: mode=max
           sbom: true
           cache-from: type=gha
+      - name: Verify staged runtime is the smoke-tested image
+        run: |
+          candidate=ghcr.io/${{ github.repository }}@${{ steps.publish.outputs.digest }}
+          docker pull "$candidate"
+          test "$(docker image inspect --format '{{.Id}}' weblab-smoke:ci)" = "$(docker image inspect --format '{{.Id}}' "$candidate")"
 
   exos-demo:
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
     needs: standard
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -147,18 +142,20 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Select image version
+        run: printf 'IMAGE_VERSION=%s\n' "${RELEASE_TAG#v}" >> "$GITHUB_ENV"
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         id: meta
         with:
           images: ghcr.io/${{ github.repository }}-exos
           tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=0.11.0,enable=${{ inputs.release_tag == 'v0.11.0' }}
-            type=raw,value=latest,enable=${{ inputs.release_tag == 'v0.11.0' }}
-            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' && !inputs.release_tag }}
+            type=raw,value=ci-${{ github.run_id }}-${{ github.run_attempt }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=preview,enable=${{ github.ref == 'refs/heads/feature/container-images' }}
-            type=sha,enable=${{ !inputs.release_tag }}
-          labels: org.opencontainers.image.revision=${{ env.SOURCE_REVISION }}
+            type=sha,enable=${{ !startsWith(github.ref, 'refs/tags/') }}
+          labels: |
+            org.opencontainers.image.revision=${{ env.SOURCE_REVISION }}
+            org.opencontainers.image.version=${{ env.IMAGE_VERSION }}
       - name: Build demo image for smoke test
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -168,9 +165,11 @@ jobs:
           build-args: WEBLAB_IMAGE=ghcr.io/${{ github.repository }}@${{ needs.standard.outputs.digest }}
           load: true
           tags: weblab-exos-smoke:ci
+          labels: ${{ steps.meta.outputs.labels }}
       - name: Check packaged initialization and persistence
         run: python3 tools/smoke_exos_container.py weblab-exos-smoke:ci
       - name: Publish tested EXOS edition
+        id: publish
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
@@ -182,8 +181,15 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           provenance: mode=max
           sbom: true
+      - name: Verify staged runtime is the smoke-tested image
+        run: |
+          candidate=ghcr.io/${{ github.repository }}-exos@${{ steps.publish.outputs.digest }}
+          docker pull "$candidate"
+          test "$(docker image inspect --format '{{.Id}}' weblab-exos-smoke:ci)" = "$(docker image inspect --format '{{.Id}}' "$candidate")"
 
   agent:
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
     needs: standard
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -200,18 +206,20 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Select image version
+        run: printf 'IMAGE_VERSION=%s\n' "${RELEASE_TAG#v}" >> "$GITHUB_ENV"
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         id: meta
         with:
           images: ghcr.io/${{ github.repository }}-agent
           tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=0.11.0,enable=${{ inputs.release_tag == 'v0.11.0' }}
-            type=raw,value=latest,enable=${{ inputs.release_tag == 'v0.11.0' }}
-            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' && !inputs.release_tag }}
+            type=raw,value=ci-${{ github.run_id }}-${{ github.run_attempt }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=preview,enable=${{ github.ref == 'refs/heads/feature/container-images' }}
-            type=sha,enable=${{ !inputs.release_tag }}
-          labels: org.opencontainers.image.revision=${{ env.SOURCE_REVISION }}
+            type=sha,enable=${{ !startsWith(github.ref, 'refs/tags/') }}
+          labels: |
+            org.opencontainers.image.revision=${{ env.SOURCE_REVISION }}
+            org.opencontainers.image.version=${{ env.IMAGE_VERSION }}
       - name: Build companion for smoke tests
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -220,6 +228,7 @@ jobs:
           platforms: linux/amd64
           load: true
           tags: weblab-agent-smoke:ci
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=agent
           cache-to: type=gha,scope=agent,mode=max
       - name: Check companion isolation, sessions and packaged tool transport
@@ -231,6 +240,7 @@ jobs:
           python3 tests/agent_native.py --tool-gateway-only --image weblab-agent-smoke:ci
           python3 tests/agent_native.py --tool-gateway-only --internet-management --image weblab-agent-smoke:ci
       - name: Publish tested companion
+        id: publish
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
@@ -242,6 +252,11 @@ jobs:
           provenance: mode=max
           sbom: true
           cache-from: type=gha,scope=agent
+      - name: Verify staged runtime is the smoke-tested image
+        run: |
+          candidate=ghcr.io/${{ github.repository }}-agent@${{ steps.publish.outputs.digest }}
+          docker pull "$candidate"
+          test "$(docker image inspect --format '{{.Id}}' weblab-agent-smoke:ci)" = "$(docker image inspect --format '{{.Id}}' "$candidate")"
 
   internet:
     needs: standard
@@ -255,7 +270,7 @@ jobs:
           ref: ${{ env.SOURCE_REVISION }}
       - name: Select helper identity
         run: |
-          version=0.11.0-dev
+          version=0.11.1-dev
           selector=sha-${SOURCE_REVISION}
           if [ "$RELEASE_BUILD" = true ]; then
             version=${RELEASE_TAG#v}
@@ -274,7 +289,8 @@ jobs:
       - name: Test real gateway automation and TCP/UDP publications
         run: |
           sudo apt-get update
-          sudo apt-get install -y perl libnet-pcap-perl iproute2
+          sudo apt-get install -y perl libnet-pcap-perl iproute2 iptables iputils-ping util-linux
+          sudo python3 tests/internet_icmp_native.py --run
           docker pull alpine:latest
           docker pull ghcr.io/weblab-network/weblab-frr:10.7.1-wl1
           sudo env WL_INTERNET_IMAGE="$WL_INTERNET_IMAGE" \
@@ -294,7 +310,7 @@ jobs:
           retention-days: 90
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag == 'v0.11.0'
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: [standard, exos-demo, agent, internet]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -320,37 +336,49 @@ jobs:
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             exit 0
           fi
-          sha256sum weblab-install.sh > SHA256SUMS
           gh release create "$RELEASE_TAG" --verify-tag \
-            --title "Weblab ${RELEASE_TAG}" \
-            --notes-file "docs/releases/${RELEASE_TAG}.md" \
-            weblab-install.sh SHA256SUMS
+            --prerelease --latest=false --title "Weblab ${RELEASE_TAG}" \
+            --notes-file "docs/releases/${RELEASE_TAG}.md"
       - name: Publish matching helper sources before its registry image
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | grep -Fxq weblab-internet-SHA256SUMS; then
-            mkdir previous-internet
-            gh release download "$RELEASE_TAG" --dir previous-internet --pattern weblab-internet-SHA256SUMS
-            cmp previous-internet/weblab-internet-SHA256SUMS internet-bundle/weblab-internet-SHA256SUMS
-          else
-            gh release upload "$RELEASE_TAG" internet-bundle/weblab-internet-*
-          fi
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' > /tmp/release-assets
+          mkdir -p previous-internet
+          sha256sum weblab-install.sh > SHA256SUMS
+          for asset in weblab-install.sh SHA256SUMS internet-bundle/weblab-internet-*; do
+            name=$(basename "$asset")
+            if grep -Fxq "$name" /tmp/release-assets; then
+              gh release download "$RELEASE_TAG" --dir previous-internet --pattern "$name"
+              cmp "previous-internet/$name" "$asset"
+            else
+              gh release upload "$RELEASE_TAG" "$asset"
+            fi
+          done
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish the exact tested helper without rebuilding
+      - name: Stage the exact tested helper without rebuilding
         run: |
           docker load -i internet-bundle/weblab-internet-linux-amd64.tar.gz
           image_id=$(python3 -c 'import json; print(json.load(open("internet-bundle/weblab-internet-image.json"))["Id"])')
           image=ghcr.io/${GITHUB_REPOSITORY}-internet
-          docker tag "$image_id" "$image:${RELEASE_TAG#v}"
-          docker push "$image:${RELEASE_TAG#v}"
-          docker tag "$image_id" "$image:latest"
-          docker push "$image:latest"
+          stage="$image:ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker tag "$image_id" "$stage"
+          docker push "$stage"
+          python3 tools/verify_internet_bundle.py internet-bundle \
+            --version "${RELEASE_TAG#v}" --revision "$SOURCE_REVISION" --registry-image "$stage"
+          digest=$(python3 -c 'import json; print(json.load(open("internet-bundle/weblab-internet-registry.json"))["image"].split("@",1)[1])')
+          printf 'HELPER_DIGEST=%s\n' "$digest" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Promote all tested images with version and latest guards
+        run: |
+          python3 tools/promote_release.py --tag "$RELEASE_TAG" --revision "$SOURCE_REVISION" \
+            --core '${{ needs.standard.outputs.digest }}' --agent '${{ needs.agent.outputs.digest }}' \
+            --exos '${{ needs.exos-demo.outputs.digest }}' --internet "$HELPER_DIGEST" --publish
       - name: Verify the published helper and record its immutable pull reference
         env:
           GH_TOKEN: ${{ github.token }}
@@ -361,8 +389,14 @@ jobs:
           python3 tools/verify_internet_bundle.py internet-bundle \
             --version "${RELEASE_TAG#v}" --revision "$SOURCE_REVISION" --registry-image "$image"
           if gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | grep -Fxq weblab-internet-registry.json; then
+            mkdir -p previous-internet
             gh release download "$RELEASE_TAG" --dir previous-internet --pattern weblab-internet-registry.json
             cmp previous-internet/weblab-internet-registry.json internet-bundle/weblab-internet-registry.json
           else
             gh release upload "$RELEASE_TAG" internet-bundle/weblab-internet-registry.json
           fi
+      - name: Publish the completed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit "$RELEASE_TAG" --prerelease=false --latest

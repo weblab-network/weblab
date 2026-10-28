@@ -8,7 +8,7 @@ COPY packaging/internet/collect_sources.py /collect_sources.py
 RUN python3 -u /collect_sources.py /usr/share/weblab-internet/apk-installed.txt /sources
 
 FROM packages AS runtime
-ARG WEBLAB_VERSION=0.11.0-dev
+ARG WEBLAB_VERSION=0.11.1-dev
 ARG WEBLAB_REVISION=unpublished
 LABEL network.weblab.internet="1"
 LABEL network.weblab.internet.firewall="1"
@@ -29,7 +29,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 ENTRYPOINT ["python3", "/opt/weblab/gateway.py"]
 
 FROM source-packages AS sources
-ARG WEBLAB_VERSION=0.11.0-dev
+ARG WEBLAB_VERSION=0.11.1-dev
 ARG WEBLAB_REVISION=unpublished
 LABEL org.opencontainers.image.source="https://github.com/weblab-network/weblab" \
       org.opencontainers.image.version="$WEBLAB_VERSION" \
@@ -38,6 +38,7 @@ COPY --from=runtime /usr/share/weblab-internet/build /sources/build
 
 FROM runtime AS release
 COPY --from=source-packages /sources/packages.json /usr/share/weblab-internet/packages.json
+COPY --from=source-packages /sources/source-files.json /usr/share/weblab-internet/source-files.json
 COPY --from=source-packages /sources/licenses/ /usr/share/weblab-internet/licenses/upstream/
 LABEL network.weblab.internet.distribution="1"
 

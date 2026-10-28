@@ -65,6 +65,8 @@ def bundle(image, sources_image, output):
             raise ValueError('Source inventory does not match the runtime APK snapshot')
         if json.loads((content/'packages.json').read_text()) != json.loads((installed/'packages.json').read_text()):
             raise ValueError('Source package inventory does not match the release image')
+        if (content/'source-files.json').read_bytes() != (installed/'source-files.json').read_bytes():
+            raise ValueError('Retained source files do not match the release image')
         build_files = file_map(content/'build')
         if build_files != file_map(installed/'build'):
             raise ValueError('Source build inputs differ from the release image')
@@ -73,12 +75,20 @@ def bundle(image, sources_image, output):
                         packages=json.loads((content/'packages.json').read_text()))
         (output / (PREFIX+'image.json')).write_text(json.dumps(identity, indent=2)+'\n')
         shutil.copyfile(installed/'NOTICE', output/(PREFIX+'NOTICE.txt'))
-        with tarfile.open(output/(PREFIX+'sources.tar.gz'), 'w:gz') as archive:
-            for child in sorted(content.iterdir()):
-                archive.add(child, arcname=child.name)
+        with (output/(PREFIX+'sources.tar.gz')).open('wb') as raw:
+            with gzip.GzipFile(filename='', fileobj=raw, mode='wb', mtime=0) as zipped:
+                with tarfile.open(fileobj=zipped, mode='w') as archive:
+                    def normalized(member):
+                        member.mtime = member.uid = member.gid = 0
+                        member.uname = member.gname = ''
+                        member.pax_headers = {}
+                        return member
+                    for child in sorted(content.iterdir()):
+                        archive.add(child, arcname=child.name, filter=normalized)
     if inspect(image)['Id'] != runtime['Id'] or inspect(sources_image)['Id'] != sources['Id']:
         raise ValueError('Image tag changed during source bundling')
-    with gzip.open(output/(PREFIX+'linux-amd64.tar.gz'), 'wb', compresslevel=6) as stream:
+    with (output/(PREFIX+'linux-amd64.tar.gz')).open('wb') as raw, gzip.GzipFile(
+            filename='', fileobj=raw, mode='wb', compresslevel=6, mtime=0) as stream:
         process = subprocess.Popen(['docker', 'save', image], stdout=subprocess.PIPE)
         try:
             shutil.copyfileobj(process.stdout, stream)

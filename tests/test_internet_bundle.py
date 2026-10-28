@@ -51,23 +51,38 @@ class InternetBundleTests(unittest.TestCase):
         labels = {'network.weblab.internet.distribution': '1',
                   'org.opencontainers.image.source': 'https://github.com/weblab-network/weblab',
                   'org.opencontainers.image.version': '0.11.0', 'org.opencontainers.image.revision': 'a'*40}
-        config = json.dumps({'config': {'Labels': labels}}).encode()
-        identity = 'sha256:' + hashlib.sha256(config).hexdigest()
         package = {'name': 'example', 'version': '1-r0', 'origin': 'example', 'commit': 'b'*40, 'license': 'MIT'}
         source = b'print("gateway")\n'
-        info = {'Id': identity, 'Os': 'linux', 'Architecture': 'amd64', 'labels': labels,
-                'image': 'ghcr.io/weblab-network/weblab-internet:0.11.0', 'packages': [package],
-                'build_files': {'gateway.py': hashlib.sha256(source).hexdigest()}}
-        def archive(path, files):
-            with tarfile.open(path, 'w:gz') as output:
+        sources = {'packages.json': json.dumps([package]).encode(),
+                   'aports/example/'+'b'*40+'/APKBUILD': b'pkgname=example\n',
+                   'aports/example/'+'b'*40+'/distfiles/example.tar.gz': b'retained upstream source'}
+        hashes = {name: hashlib.sha256(data).hexdigest() for name, data in sources.items()}
+        sources['source-files.json'] = json.dumps(hashes).encode()
+        build_files = {name: hashlib.sha256(source).hexdigest() for name in
+                       ('internet_cloud.py', 'packaging/internet/gateway.py')}
+        def archive_bytes(files):
+            stream = io.BytesIO()
+            with tarfile.open(fileobj=stream, mode='w') as output:
                 for name, data in files.items():
                     entry = tarfile.TarInfo(name); entry.size = len(data)
                     output.addfile(entry, io.BytesIO(data))
-        archive(root/'weblab-internet-linux-amd64.tar.gz', {
-            'config.json': config, 'manifest.json': json.dumps([{'Config': 'config.json', 'RepoTags': [info['image']]}]).encode()})
-        archive(root/'weblab-internet-sources.tar.gz', {
-            'build/gateway.py': source, 'packages.json': json.dumps([package]).encode(),
-            'aports/example/'+'b'*40+'/APKBUILD': b'pkgname=example\n'})
+            return stream.getvalue()
+        runtime = {'usr/share/weblab-internet/'+name: sources[name] for name in ('packages.json', 'source-files.json')}
+        for name in build_files:
+            sources['build/'+name] = source
+            runtime['usr/share/weblab-internet/build/'+name] = source
+        runtime.update({'opt/weblab/gateway.py': source, 'opt/weblab/internet_cloud.py': source})
+        layer = archive_bytes(runtime)
+        config = json.dumps({'config': {'Labels': labels}, 'rootfs': {
+            'type': 'layers', 'diff_ids': ['sha256:'+hashlib.sha256(layer).hexdigest()]}}).encode()
+        identity = 'sha256:'+hashlib.sha256(config).hexdigest()
+        info = {'Id': identity, 'Os': 'linux', 'Architecture': 'amd64', 'labels': labels,
+                'image': 'ghcr.io/weblab-network/weblab-internet:0.11.0', 'packages': [package],
+                'build_files': build_files}
+        (root/'weblab-internet-linux-amd64.tar.gz').write_bytes(archive_bytes({
+            'layer.tar': layer, 'config.json': config, 'manifest.json': json.dumps([
+                {'Config': 'config.json', 'RepoTags': [info['image']], 'Layers': ['layer.tar']}]).encode()}))
+        (root/'weblab-internet-sources.tar.gz').write_bytes(archive_bytes(sources))
         (root/'weblab-internet-image.json').write_text(json.dumps(info))
         (root/'weblab-internet-NOTICE.txt').write_text('Component licenses retained')
         self.checksums(root)
@@ -88,6 +103,28 @@ class InternetBundleTests(unittest.TestCase):
             (root/'weblab-internet-NOTICE.txt').write_text('tampered')
             with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
                 verifier.verify(root)
+
+    def test_missing_or_changed_layer_and_distfile_rejected(self):
+        for filename, member, replacement in (
+            ('linux-amd64.tar.gz', 'layer.tar', None),
+            ('linux-amd64.tar.gz', 'layer.tar', b'corrupt layer'),
+            ('sources.tar.gz', 'aports/example/'+'b'*40+'/distfiles/example.tar.gz', None),
+            ('sources.tar.gz', 'aports/example/'+'b'*40+'/distfiles/example.tar.gz', b'wrong source')):
+            with self.subTest(member=member, replacement=replacement), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); self.fixture(root)
+                path = root/('weblab-internet-'+filename)
+                with tarfile.open(path) as archive:
+                    contents = {entry.name: archive.extractfile(entry).read() for entry in archive}
+                contents.pop(member)
+                if replacement is not None:
+                    contents[member] = replacement
+                with tarfile.open(path, 'w:gz') as archive:
+                    for name, data in contents.items():
+                        entry = tarfile.TarInfo(name); entry.size = len(data)
+                        archive.addfile(entry, io.BytesIO(data))
+                self.checksums(root)  # Outer checksums alone must not hide missing contents.
+                with self.assertRaises((ValueError, KeyError)):
+                    verifier.verify(root)
 
     def test_binary_identity_mismatch_and_incomplete_bundle_refused(self):
         with tempfile.TemporaryDirectory() as temporary:

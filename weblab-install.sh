@@ -2,7 +2,7 @@
 # Weblab fresh-install helper. Run on the Docker host, not inside a container.
 set -eu
 
-VERSION=0.11.0
+VERSION=0.11.1
 LL2S_IMAGE=ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1
 FRR_IMAGE=ghcr.io/weblab-network/weblab-frr:10.7.1-wl1
 name=weblab

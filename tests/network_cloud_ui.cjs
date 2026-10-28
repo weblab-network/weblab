@@ -71,6 +71,7 @@ let log='';fixture.stderr.on('data',d=>log+=d);
  assert.equal(await page.locator('#node-size').isDisabled(),false);
  assert.equal(await page.locator('#node-color').isDisabled(),false);
  await page.setViewportSize({width:390,height:740});
+ await page.waitForFunction(()=>document.getElementById('workspace').classList.contains('panels-compact'));
  await page.evaluate(()=>setPanel('inspector',true));
  await page.locator('#node-size').scrollIntoViewIfNeeded();
  assert.equal(await page.locator('#node-size').isVisible(),true);

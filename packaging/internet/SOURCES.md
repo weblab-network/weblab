@@ -40,6 +40,12 @@ The output directory must be new. A completed checksum file is written last;
 failure never produces a completed pair. The bundler compares APK snapshots,
 package inventories and build-input hashes before archiving the selected image.
 It refuses a development image or image tags that change during collection.
+From 0.11.1, the offline verifier hashes every image layer, verifies retained
+source files against an inventory embedded in the runtime, and checks executable
+helper code against the retained build inputs. Missing or altered upstream
+distfiles fail verification even when the outer archive checksums are regenerated.
+This stricter verifier requires the 0.11.1 source inventory; use an older release's
+own verifier for its original bundles.
 
 For publication, CI sets `WEBLAB_VERSION` to the release version and
 `WEBLAB_REVISION` to the public GitHub commit, tests the release image, and uploads

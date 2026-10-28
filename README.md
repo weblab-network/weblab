@@ -90,7 +90,14 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
-## Latest release: v0.11.0
+## Latest release: v0.11.1
+
+This patch fixes related ICMP errors for Internet port forwards under an outbound
+Deny policy, protects release version tags during retries, strengthens helper
+binary/source verification, and clarifies how to select a locally built helper.
+See [v0.11.1 release notes](docs/releases/v0.11.1.md).
+
+## Introduced in v0.11.0
 
 Choose **Dark**, **Light** or **System** for the workspace, with a separate
 console theme that changes the terminal area while toolbars follow the workspace.
@@ -153,7 +160,7 @@ export…**, with confirmation, stopped-device checks and stale-workspace protec
 See [release notes](docs/releases/v0.9.0.md), [traffic monitoring](docs/link-actions.md#monitor-traffic)
 and [backup/reset behavior](docs/backups.md#export-and-reset-the-workspace).
 
-Use **0.11.0** for matching core, Agent, EXOS and optional Internet helper images. The installer retains the
+Use **0.11.1** for matching core, Agent, EXOS and optional Internet helper images. The installer retains the
 optional core-only DNS override from v0.8.3.
 
 ## Weblab FRR

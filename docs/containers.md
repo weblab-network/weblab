@@ -38,7 +38,7 @@ weights or network-device images and has no Docker socket or lab-data mount.
 
 ## Optional Internet helper
 
-Use the matching **0.11.0** helper with core for Internet nodes, or add
+Use the matching **0.11.1** helper with core for Internet nodes, or add
 `--with-internet` to a fresh installer invocation. Existing deployments pull the
 helper separately on the Docker host and set `WL_INTERNET_IMAGE`. It is not a
 standalone Compose service. See [Internet setup](internet.md#install-a-prebuilt-gateway)

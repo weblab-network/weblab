@@ -25,10 +25,10 @@ unmanaged network. It has no forwarding or Internet access. See
 Starting with 0.11.0, pull the helper on the **Docker host**, separately from core:
 
 ```sh
-docker pull ghcr.io/weblab-network/weblab-internet:0.11.0
+docker pull ghcr.io/weblab-network/weblab-internet:0.11.1
 ```
 
-Set `WL_INTERNET_IMAGE=ghcr.io/weblab-network/weblab-internet:0.11.0` in the
+Set `WL_INTERNET_IMAGE=ghcr.io/weblab-network/weblab-internet:0.11.1` in the
 deployment's `.env` before creating/recreating core. The matching prebuilt Compose
 file uses that image by default. For a fresh installation, `weblab-install.sh
 --with-internet` pulls it and sets the variable. Source builds remain available
@@ -56,9 +56,9 @@ If you installed Weblab using the installer or a prebuilt image, install Git
 if necessary, then fetch the matching release source into a new directory:
 
 ```sh
-git clone --depth 1 --branch v0.11.0 https://github.com/weblab-network/weblab.git weblab-0.11.0
-docker build -f weblab-0.11.0/packaging/internet/Dockerfile \
-  -t weblab-internet:dev weblab-0.11.0
+git clone --depth 1 --branch v0.11.1 https://github.com/weblab-network/weblab.git weblab-0.11.1
+docker build -f weblab-0.11.1/packaging/internet/Dockerfile \
+  -t weblab-internet:dev weblab-0.11.1
 ```
 
 These commands build the gateway with firewall and forwarding support. If you
@@ -74,12 +74,21 @@ Use `sudo docker` if your account requires it. Verify the resulting image:
 docker image inspect weblab-internet:dev --format '{{index .Config.Labels "network.weblab.internet"}}'
 ```
 
-The command should print `1`. Keep the `weblab-internet:dev` tag: it is the
-helper name Weblab expects by default. You do not need to run the helper yourself,
-add a Compose service or restart a Weblab 0.10.0 container just to make this
-image available. Weblab creates and removes gateway containers when you start
-and stop Internet nodes. Continue with [Direct PC access](#direct-pc-access)
-or [A network behind FRR](#a-network-behind-frr).
+The command should print `1`. Source deployments use `weblab-internet:dev` by
+default. Prebuilt Compose and installer deployments can select a registry image
+instead: building the local tag does **not** change that selection.
+
+To switch to the local build, set `WL_INTERNET_IMAGE=weblab-internet:dev` in
+your deployment configuration. For Compose, set it in `.env`; for a direct
+`docker run`, change the corresponding `-e WL_INTERNET_IMAGE=...` option.
+Save and stop the lab, then recreate core with the same volumes and other
+settings. Do not rerun the fresh-install script over an existing installation.
+If core already selects `weblab-internet:dev`, only stop/start the Internet node
+after rebuilding; core recreation is unnecessary.
+
+Do not run the helper yourself or add a Compose service. Weblab creates and
+removes gateway containers when you start and stop Internet nodes. Continue
+with [Direct PC access](#direct-pc-access) or [A network behind FRR](#a-network-behind-frr).
 
 If your core is older than 0.10.0, follow the
 [upgrade instructions](installation.md#upgrade-or-move-an-installation) first. Source installations

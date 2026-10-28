@@ -23,7 +23,7 @@ services:
     environment:
       WL_BIND: ${WL_BIND:-127.0.0.1}
       WL_PORT: ${WL_PORT:-8080}
-      WL_INTERNET_IMAGE: ${WL_INTERNET_IMAGE:-ghcr.io/weblab-network/weblab-internet:0.11.0}
+      WL_INTERNET_IMAGE: ${WL_INTERNET_IMAGE:-ghcr.io/weblab-network/weblab-internet:0.11.1}
       WL_ALLOW_UNTESTED_FRR: ${WL_ALLOW_UNTESTED_FRR:-0}
       WL_AUTH: ${WL_AUTH:-0}
       WL_AUTH_ADMIN_PASSWORD: ${WL_AUTH_ADMIN_PASSWORD:-}

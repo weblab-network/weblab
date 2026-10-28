@@ -63,6 +63,13 @@ def port_forward_rules(config, lan, wan, wan_address, wan_gateway):
         # Replies to explicitly admitted forwards are independent of outbound policy.
         filters.append(f'-A FORWARD -i {lan} -o {wan} -p {protocol} -s {target} --sport {target_port} '
                        f'-m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY {original} -j ACCEPT')
+        # Errors can come from the target or a router on its path. Match the
+        # admitted connection's original tuple, not the ICMP packet's source or
+        # transport protocol. Keep unrelated ICMP subject to outbound policy.
+        for icmp_type in (3, 11, 12):
+            filters.append(f'-A FORWARD -i {lan} -o {wan} -p icmp --icmp-type {icmp_type} '
+                           f'-m conntrack --ctstate RELATED --ctdir REPLY --ctproto {protocol} '
+                           f'{original} -j ACCEPT')
     if config.get('port_forwards'):
         # Make the return path reliable even for directly connected targets without
         # a default route. Targets see the gateway's lab address as the client.

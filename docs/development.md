@@ -41,15 +41,24 @@ preservation of custom Alpine tags. No Docker daemon or live lab is modified.
 disposable prefix, port and volumes on a suitable Linux Docker host; never reuse
 an active lab for these checks.
 
-## Release workflow recovery
+## Release publication and retries
 
-The **Publish container images** workflow accepts an optional `release_tag` when
-dispatched manually from `main`. The `v0.11.0` recovery choice rebuilds and tests
-the unchanged tagged source, with only the corrected workspace-scrollbar browser
-fixture taken from the workflow commit. Tests are excluded from Docker build
-contexts. Images and the helper's binary/source metadata retain the tagged source
-revision; the existing version tag is preserved. Ordinary pushes and dispatches
-with no release choice keep their usual branch/tag behavior.
+Tag workflows stage core, Agent and EXOS images under per-run CI tags. Smoke
+checks verify that the staged runtime is the tested image. Only after all editions
+and the helper pass does the release job upload matching helper sources, stage
+that exact helper archive, and promote the four immutable digests.
+`tools/promote_release.py` checks every candidate before publishing aliases:
+version/source identity must match, an existing version must have the same digest,
+and `latest` must not identify a newer or conflicting release. Release workflows
+are serialized across version tags. Source downloads are published as a prerelease before the helper is staged; the
+release becomes stable/latest only after completion.
+
+Retry failed jobs in the same run to reuse tested digests and the original bundle.
+A full rebuild can produce different dependencies or provenance and is deliberately
+refused if a version already exists; use a new patch version in that case. Do not
+move published tags or delete assets to bypass these checks. The one-off v0.11.0
+recovery input has been retired. Historical workflow revisions still exist in
+GitHub; do not rerun their old publication jobs.
 
 ## Backend tests
 
@@ -708,3 +717,11 @@ claim that SSH/SNMP is enabled or tested on every vendor profile.
 For a separate test image, build with `-t weblab-internet:firewall-check`, then set
 `WL_INTERNET_IMAGE=weblab-internet:firewall-check` for the native command. This avoids
 replacing the helper tag used by an installed lab.
+
+### Gateway ICMP regression
+
+`sudo python3 tests/internet_icmp_native.py --run` runs kernel packet checks in
+fresh network namespaces; it never attaches to the host network or an existing
+lab. It needs Python, iproute2, iptables, iputils-ping and util-linux. It verifies
+UDP port-unreachable and fragmentation-needed errors for admitted forwards under
+outbound Deny, plus denial of unrelated ICMP and an Allow control.

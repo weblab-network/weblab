@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify helper binary/source checksums, image identity and build provenance."""
 import argparse
+import gzip
 import hashlib
 import json
 import posixpath
@@ -13,6 +14,41 @@ import urllib.request
 
 PREFIX = 'weblab-internet-'
 FILES = {PREFIX + suffix for suffix in ('image.json', 'NOTICE.txt', 'sources.tar.gz', 'linux-amd64.tar.gz')}
+
+
+def runtime_files(archive, manifest, config, wanted):
+    """Verify uncompressed layer identities and read selected final rootfs files."""
+    layers = manifest.get('Layers', [])
+    digests = config.get('rootfs', {}).get('diff_ids', [])
+    if not layers or len(layers) != len(digests):
+        raise ValueError('Missing or inconsistent image layers')
+    result = {}
+    for name, digest in zip(layers, digests):
+        raw = archive.extractfile(name)
+        compressed = raw.read(2) == b'\x1f\x8b'
+        raw.seek(0)
+        stream = gzip.GzipFile(fileobj=raw) if compressed else raw
+        if 'sha256:'+hashlib.file_digest(stream, 'sha256').hexdigest() != digest:
+            raise ValueError('Image layer content mismatch: '+name)
+        stream.seek(0)
+        with tarfile.open(fileobj=stream) as layer:
+            for member in layer:
+                path = str(PurePosixPath(member.name.removeprefix('./')))
+                base = PurePosixPath(path).name
+                parent = str(PurePosixPath(path).parent)
+                if base.startswith('.wh.'):
+                    removed = parent if base == '.wh..wh..opq' else str(PurePosixPath(parent)/base[4:])
+                    result = {key: value for key, value in result.items()
+                              if key != removed and not key.startswith(removed+'/')}
+                elif path in wanted:
+                    if not member.isfile() or member.size > 8*1024*1024:
+                        raise ValueError('Unsafe runtime metadata file: '+path)
+                    result[path] = layer.extractfile(member).read()
+        stream.close()
+        raw.close()
+    if set(result) != wanted:
+        raise ValueError('Missing runtime source/build metadata')
+    return result
 
 
 def safe_source_members(members):
@@ -63,6 +99,13 @@ def verify(directory, version=None, revision=None):
         raise ValueError('Image version differs from the release')
     if revision is not None and labels.get('org.opencontainers.image.revision') != revision:
         raise ValueError('Image source revision differs from the reviewed public commit')
+    build_files = info['build_files']
+    if not {'internet_cloud.py', 'packaging/internet/gateway.py'} <= set(build_files):
+        raise ValueError('Missing gateway build inputs')
+    prefix = 'usr/share/weblab-internet/'
+    wanted = {prefix+'source-files.json', prefix+'packages.json',
+              'opt/weblab/gateway.py', 'opt/weblab/internet_cloud.py'}
+    wanted.update(prefix+'build/'+name for name in build_files)
     with tarfile.open(directory/(PREFIX+'linux-amd64.tar.gz')) as archive:
         manifests = json.load(archive.extractfile('manifest.json'))
         if len(manifests) != 1:
@@ -74,11 +117,29 @@ def verify(directory, version=None, revision=None):
             raise ValueError('Archived image labels do not match metadata')
         if info['image'] not in manifests[0].get('RepoTags', []):
             raise ValueError('Archived image tag differs from metadata')
+        runtime = runtime_files(archive, manifests[0], json.loads(config), wanted)
+        for name, digest in build_files.items():
+            if hashlib.sha256(runtime[prefix+'build/'+name]).hexdigest() != digest:
+                raise ValueError('Runtime build input mismatch: '+name)
+        for name, source in (('gateway.py', 'packaging/internet/gateway.py'), ('internet_cloud.py', 'internet_cloud.py')):
+            if hashlib.sha256(runtime['opt/weblab/'+name]).hexdigest() != build_files[source]:
+                raise ValueError('Executable helper differs from retained source: '+name)
     with tarfile.open(directory/(PREFIX+'sources.tar.gz')) as archive:
         members = {member.name: member for member in archive}
         safe_source_members(members)
+        source_hashes = json.load(archive.extractfile('source-files.json'))
+        if not source_hashes or source_hashes != json.loads(runtime[prefix+'source-files.json']):
+            raise ValueError('Retained source inventory differs from runtime')
+        actual_files = {name for name, member in members.items() if member.isfile()
+                        and name != 'source-files.json' and not name.startswith('build/')}
+        if actual_files != set(source_hashes):
+            raise ValueError('Missing or unexpected retained source files')
+        for name, digest in source_hashes.items():
+            with archive.extractfile(name) as stream:
+                if hashlib.file_digest(stream, 'sha256').hexdigest() != digest:
+                    raise ValueError('Retained source content mismatch: '+name)
         packages = json.load(archive.extractfile('packages.json'))
-        if not packages or packages != info['packages']:
+        if not packages or packages != info['packages'] or packages != json.loads(runtime[prefix+'packages.json']):
             raise ValueError('Source inventory differs from image metadata')
         for package in packages:
             recipe = f'aports/{package["origin"]}/{package["commit"]}/APKBUILD'

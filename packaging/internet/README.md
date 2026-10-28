@@ -1,7 +1,7 @@
 # Internet gateway helper
 
 Starting with Weblab 0.11.0, the release workflow publishes a tested Linux amd64
-helper as `ghcr.io/weblab-network/weblab-internet:0.11.0`, with matching binary,
+helper as `ghcr.io/weblab-network/weblab-internet:0.11.1`, with matching binary,
 source and checksum downloads. The tag is available after that release is
 published. See [complete setup](../../docs/internet.md#install-a-prebuilt-gateway)
 and [source distribution](SOURCES.md).
