@@ -16,6 +16,7 @@ import agent_companion
 
 class Model(BaseHTTPRequestHandler):
     calls = 0
+    management = False
 
     def log_message(self, *_):
         pass
@@ -26,6 +27,7 @@ class Model(BaseHTTPRequestHandler):
             assert self.path == '/v1/responses'
             assert not self.headers.get('Authorization'), 'Fixture must not receive credentials'
             if not Model.calls:
+                Model.management = 'GATEWAY_MANAGEMENT_PROBE' in json.dumps(data['input'])
                 content=[part for item in data['input'] if item.get('role')=='user' for part in item.get('content',[]) if isinstance(part,dict)]
                 assert any('ATTACHMENT_TRANSPORT_PROBE' in part.get('text','') for part in content), 'Text attachment did not reach provider'
                 assert any(part.get('type')=='input_image' and part.get('image_url','').startswith('data:image/') for part in content), 'Image attachment did not reach provider'
@@ -39,6 +41,15 @@ class Model(BaseHTTPRequestHandler):
                             'require:typeof require}); '
                             'text(await tools.mcp__weblab__get_lab_state({}));'
                             r'text({commandValidation:await tools.mcp__weblab__send_console_command({node_id:"missing", command:"show clock\\r", expected_revision:"unused", expected_cursor:"unused"})});')}
+                if Model.management:
+                    item['input'] += (
+                        'const payload=r=>{if(r.isError)throw new Error(JSON.stringify(r));return JSON.parse(r.content[0].text);}; '
+                        'const page=payload(await tools.mcp__weblab__get_internet_settings({node_id:"gateway"})); '
+                        'const draft=payload(await tools.mcp__weblab__preview_internet_settings({node_id:"gateway",expected_revision:page.revision,internet:{'
+                        '...page.internet,routes:[{destination:"10.44.0.0/24",via:"192.0.2.2"}],'
+                        'firewall:{default_action:"deny",rules:[{action:"allow",protocol:"tcp",destination_port:"443"}]},'
+                        'port_forwards:[{protocol:"tcp",external_port:22022,target_address:"10.44.0.10",target_port:22}]}})); '
+                        'text({gatewayApplied:payload(await tools.mcp__weblab__apply_internet_settings({proposal_id:draft.proposal_id}))});')
             else:
                 assert Model.calls == 1
                 outputs = [i for i in data['input'] if i.get('type') == 'custom_tool_call_output']
@@ -55,7 +66,12 @@ class Model(BaseHTTPRequestHandler):
                 result = next(o for o in objects if isinstance(o,dict) and 'content' in o)
                 assert not result.get('isError'), result
                 payload = json.loads(next(c['text'] for c in result['content'] if c.get('type') == 'text'))
-                assert payload['topology']['nodes'] == []
+                if Model.management:
+                    assert payload['topology']['nodes'][0]['id'] == 'gateway'
+                    assert 'mcp__weblab__apply_internet_settings' in exposure['names']
+                    assert next(o['gatewayApplied'] for o in objects if isinstance(o,dict) and 'gatewayApplied' in o)['applied']
+                else:
+                    assert payload['topology']['nodes'] == []
                 rejected = next(o['commandValidation'] for o in objects if isinstance(o,dict) and 'commandValidation' in o)
                 assert rejected.get('isError'), rejected
                 assert 'omit Enter escapes' in json.dumps(rejected), rejected

@@ -6,6 +6,31 @@
 
 *Internet gateway on the left; HQ is a diagram-only cloud. The Switches rectangle groups devices visually. All nodes are stopped in this screenshot.*
 
+## Appearance
+
+Open **Layout → Theme** and choose **Dark**, **Light** or **System**. Dark keeps
+the original palette and is the initial choice. System follows your operating
+system's color preference, including changes while Weblab is open.
+
+The choice is saved in this browser for this Weblab address and synchronized
+between its tabs. It applies immediately, including while devices run and for
+readers. If browser storage is unavailable, the choice lasts for the current page.
+It is independent of the saved topology, exported labs and workspace layout reset.
+
+Themes change workspace colors, including dialogs, Instructions, Agent and traffic
+panels. Device icons, authored diagram colors, controls and layout are preserved.
+Device CLI terminals follow the theme too, including open, hidden and floating
+consoles. Light adjusts text, cursor, selection and ANSI colors for readability;
+Dark restores the original terminal palette. Switching does not reconnect consoles,
+clear history or change input locks.
+
+Use **Layout → Console theme** to choose **Follow workspace**, **Dark** or
+**Light** independently. Follow workspace is the default. This separate browser
+preference applies to the terminal area of all your consoles: background, text,
+cursor, selection and terminal scrollbar. Toolbars, tabs, menus and window controls
+always match the workspace. An explicit console choice stays fixed when the
+workspace or operating-system theme changes.
+
 ## Network clouds for diagrams
 
 Use **Network cloud** in the library to represent an unmanaged network, a
@@ -88,6 +113,11 @@ changes. Node names and positions remain editable while running.
 A stopped PC's IPv4 address/prefix and gateway can be edited even while other
 nodes run. Those values are applied each time that PC starts. A PC has one `eth0`
 interface; increasing its displayed resource values does not add more ports.
+
+Internet gateway firewall rules can be applied live through the cloud's settings
+window. Its address, return routes and Docker uplink subnet require only that
+Internet node to be stopped. Host port forwards also require that Internet node
+to be stopped before editing. See [Internet settings](internet.md#outbound-firewall-rules).
 
 Several cables between the same pair of nodes fan out into separate curves.
 To add another, select the same pair in Connect mode and choose unused ports.

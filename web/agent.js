@@ -82,9 +82,10 @@
       <label>Turn deadline (seconds)<input id="agent-deadline" type="number" min="30" max="3600" required></label>
       <p class="agent-hint">Total time for one message, including model generation, tools and approval waits. New sessions default to 900 seconds (15 minutes). Completed actions remain if time runs out; inspect and continue in another turn.</p>
       <label class="agent-permission"><input id="agent-lab-changes" type="checkbox"> Allow topology apply and node starts</label>
+      <label class="agent-permission"><input id="agent-internet-changes" type="checkbox"> Allow Internet gateway settings and stop/start</label>
       <label class="agent-permission"><input id="agent-console-input" type="checkbox"> Allow console input</label>
       <label class="agent-permission"><input id="agent-auto-approve" type="checkbox"> YOLO — automatically approve enabled actions</label>
-      <p class="agent-hint">YOLO lets the agent replace a stopped topology, start nodes and send console commands when those permissions are enabled, without asking each time. It applies to this session and is off by default. Operation details remain visible. Console input can configure or disrupt devices; topology checks and human console locks still apply. Stop prevents further actions, but cannot undo accepted work.</p>
+      <p class="agent-hint">YOLO preapproves only enabled actions for this session and is off by default. Gateway changes can interrupt Internet access or publish host ports. Operation details remain visible. Console input can configure or disrupt devices; topology checks and human console locks still apply. Stop prevents further actions, but cannot undo accepted work.</p>
       <p class="agent-hint">Prompts, discovered topology and console/tool results go to the selected provider. OpenAI sends them to the cloud. Sign-in tokens remain in this session's companion storage, outside lab exports. Ollama uses your installed models and their temperature configuration; Weblab does not pull models.</p>
       <p class="agent-hint">Changing provider, endpoint, model or context size starts a new conversation. Deadline and permission changes keep the conversation; save them between turns. Context size must fit your model server. This is an owner-operated workspace, not a public multi-user service.</p>
       <label class="agent-permission"><input id="agent-remember" type="checkbox"> Remember this Agent session on this browser</label>
@@ -110,7 +111,8 @@
   document.body.append(approvalDialog);
   let approvalId = '', deciding = false;
   const dismissedApprovals = new Set();
-  const operationNames = {'apply':'Replace topology','start-node':'Start node','console-send':'Send console input'};
+  const operationNames = {'apply':'Replace topology','start-node':'Start node','console-send':'Send console input',
+    'apply-internet':'Apply Internet settings','stop-internet':'Stop Internet gateway','start-internet':'Start Internet gateway'};
   function approvalDetail(item) { return JSON.stringify({arguments:item.arguments,context:item.context},null,2); }
   function syncApprovalDialog() {
     const pending = (state?.approvals || []).filter(item=>item.status==='pending' && item.expires_at*1000>Date.now());
@@ -214,6 +216,7 @@
     $('agent-context').value = settings.context_window;
     $('agent-deadline').value = settings.turn_timeout;
     $('agent-lab-changes').checked = !!settings.lab_changes;
+    $('agent-internet-changes').checked = !!settings.internet_changes;
     $('agent-console-input').checked = !!settings.console_input;
     $('agent-auto-approve').checked = !!settings.auto_approve;
     settingsDirty = false;
@@ -221,7 +224,7 @@
   function settings() {
     return {provider:$('agent-provider').value,endpoint:$('agent-endpoint').value,model:$('agent-model').value.trim(),
       context_window:Number($('agent-context').value),turn_timeout:Number($('agent-deadline').value),
-      lab_changes:$('agent-lab-changes').checked,console_input:$('agent-console-input').checked,
+      lab_changes:$('agent-lab-changes').checked,internet_changes:$('agent-internet-changes').checked,console_input:$('agent-console-input').checked,
       auto_approve:$('agent-auto-approve').checked};
   }
   function providerControls() {
@@ -489,6 +492,8 @@
     const labels = {get_lab_state:'Reading lab state',get_console_output:'Reading console',get_node_logs:'Reading launcher logs',
       get_storage_report:'Checking storage',list_device_profiles:'Reading device profiles',get_authoring_guide:'Reading authoring guide',
       preview_topology:'Validating topology',get_proposal:'Reading proposal',apply_topology:'Applying approved topology',
+      get_internet_settings:'Reading gateway settings',preview_internet_settings:'Validating gateway settings',
+      apply_internet_settings:'Applying approved gateway settings',stop_internet_node:'Stopping approved gateway',start_internet_node:'Starting approved gateway',
       start_node:'Starting approved node',send_console_input:'Sending approved input'};
     const raw = state.phase || 'Waiting for model';
     let phase = raw.startsWith('Using ') ? (labels[raw.slice(6)] || 'Using Weblab tool') : raw;
@@ -572,7 +577,7 @@
     renderUsage(next); renderApprovals(next.approvals || []); renderHistory(next.history || []); updateTabCounts(); progress(); syncApprovalDialog();
     const toolError = $('agent-tool-error'); toolError.hidden = !next.tool_error;
     toolError.querySelector('pre').textContent = next.tool_error ? `${next.tool_error.operation}: ${next.tool_error.message}` : '';
-    $('agent-mode').textContent = (next.settings.lab_changes || next.settings.console_input) ?
+    $('agent-mode').textContent = (next.settings.lab_changes || next.settings.internet_changes || next.settings.console_input) ?
       (next.settings.auto_approve ? 'YOLO' : 'Approval required') : 'Read & preview';
     const elapsed = turnDuration(next);
     $('agent-status').textContent = (next.error || `${next.settings.model} · ${next.status}${next.activity ? ' · '+next.activity : ''}`)

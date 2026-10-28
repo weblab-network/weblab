@@ -88,6 +88,7 @@ class Automation:
     def __init__(self, lab, error, ports, run):
         self.lab, self.error, self.ports, self.run = lab, error, ports, run
         self.proposals = {}
+        self.internet_proposals = {}
         self.observed_revisions = {}
         self.console_factory = console_capture.Console
 
@@ -240,7 +241,7 @@ class Automation:
                     'ethernet_meaning': 'no interfaces or forwarding; network clouds have a shared drawing anchor' if family == 'diagram' else 'four-port slots' if family == 'iol' else 'total interfaces (includes management on EXOS, vEOS and Junos)',
                     'startup_config': family in ('iol', 'iosv', 'frr', 'll2s'),
                     'kvm_required': vios.is_qemu(node),
-                    'requirements': ('Diagram-only object. No image, runtime, console or forwarding. Groups have no connections.' if family == 'diagram' else 'Build packaging/internet/Dockerfile locally. IPv4 NAT gateway; settings instead of a console. See docs/internet.md.' if family == 'internet' else f'Install {node["image"]} on the Docker host and load openvswitch. Commit, then write memory before Stop.' if family == 'll2s' else
+                    'requirements': ('Diagram-only object. No image, runtime, console or forwarding. Groups have no connections.' if family == 'diagram' else 'Install the configured WL_INTERNET_IMAGE on the Docker host: pull the matching published helper or build packaging/internet/Dockerfile. IPv4 NAT/firewall/port forwards; settings instead of a console. See docs/internet.md.' if family == 'internet' else f'Install {node["image"]} on the Docker host and load openvswitch. Commit, then write memory before Stop.' if family == 'll2s' else
                                      'Bare-metal Intel KVM. Commit and request system power-off before Stop.' if family == 'vjunos-switch' else
                                      'OVMF UEFI. Commit and request system power-off before Stop.' if family == 'vjunos-evolved' else
                                      f'Companion {vios.ABOOT_IMAGE} required.' if family == 'veos' else ''),
@@ -261,6 +262,123 @@ class Automation:
     def _expire(self):
         now = time.monotonic()
         self.proposals = {key: value for key, value in self.proposals.items() if value['expires'] > now}
+        self.internet_proposals = {key: value for key, value in self.internet_proposals.items() if value['expires'] > now}
+
+    def _internet_node(self, node_id):
+        node = self.lab.node(node_id)
+        if not internet_cloud.is_cloud(node):
+            raise self.error('Only Internet nodes support gateway operations')
+        return node
+
+    def internet_runtime_revision(self, node_id):
+        runtime = self.lab.runtime.get(node_id)
+        if runtime is None:
+            return 'stopped'
+        # A fresh runtime object invalidates approvals even if settings did not change.
+        return hashlib.sha256(f'{id(runtime)}:{runtime.get("cloud_container_id", "")}'.encode()).hexdigest()
+
+    def internet_proposal(self, proposal_id):
+        self._expire()
+        if not isinstance(proposal_id, str) or proposal_id not in self.internet_proposals:
+            raise self.error('Internet proposal not found or expired; preview again')
+        return copy.deepcopy(self.internet_proposals[proposal_id])
+
+    def internet_settings(self, node_id, route_offset=0, rule_offset=0, forward_offset=0,
+                          page_size=4, expected_revision=None, proposal_id=None):
+        with self.lab.lock:
+            node = self._internet_node(node_id)
+            for offset in (route_offset, rule_offset, forward_offset):
+                if type(offset) is not int or offset < 0:
+                    raise self.error('Settings offsets must be nonnegative integers')
+            if type(page_size) is not int or not 1 <= page_size <= 8:
+                raise self.error('page_size must be between 1 and 8')
+            current = self._observe_revision(self.lab.topology)
+            if expected_revision is not None and expected_revision != current:
+                raise self.error('Workspace changed between settings pages; read from the first page again')
+            config = internet_cloud.settings(node['internet'])
+            if proposal_id is not None:
+                proposal = self.internet_proposal(proposal_id)
+                if proposal['node_id'] != node_id:
+                    raise self.error('Internet proposal targets a different node')
+                config = proposal['after']
+            counts, offsets, continuation = {}, {}, {}
+            arrays = [('routes', config['routes'], route_offset),
+                      ('rules', config['firewall']['rules'], rule_offset),
+                      ('port_forwards', config['port_forwards'], forward_offset)]
+            for key, values, offset in arrays:
+                if offset > len(values):
+                    raise self.error('Settings offset is past the end; read from the first page again')
+                counts[key], offsets[key] = len(values), offset
+                end = min(offset + page_size, len(values))
+                continuation[key] = end if end < len(values) else None
+                values[:] = values[offset:end]
+            return {'node_id': node_id, 'name': node['name'], 'revision': current,
+                    'runtime_revision': self.internet_runtime_revision(node_id),
+                    'running': node_id in self.lab.runtime, 'proposal_id': proposal_id,
+                    'internet': config, 'totals': counts, 'offsets': offsets, 'next_offsets': continuation,
+                    'complete': all(v is None for v in continuation.values()) and not any(offsets.values()),
+                    'notice': 'Follow next_offsets, keeping exhausted offsets at their totals and the same revision. '
+                              'These are saved or proposed settings, not a connectivity test.'}
+
+    def preview_internet(self, node_id, internet, expected_revision):
+        with self.lab.lock:
+            self.require_execution_revision(expected_revision)
+            node = self._internet_node(node_id)
+            self._expire()
+            if sum(p['applied_revision'] is None for p in self.internet_proposals.values()) >= MAX_PROPOSALS:
+                raise self.error('Too many Internet proposals; wait for expiry')
+            while len(self.internet_proposals) >= 128:
+                completed = next(key for key, value in self.internet_proposals.items() if value['applied_revision'])
+                del self.internet_proposals[completed]
+            before = internet_cloud.settings(node['internet'])
+            after = internet_cloud.settings(internet)
+            internet_cloud.check_bindings(after if n['id'] == node_id else n['internet']
+                for n in self.lab.topology['nodes'] if internet_cloud.is_cloud(n))
+            network_changed = any(before[k] != after[k] for k in ('address', 'routes', 'uplink_subnet', 'port_forwards'))
+            if node_id in self.lab.runtime and network_changed:
+                raise self.error('Stop only this Internet node before changing address, return routes, uplink or port forwards; then read and preview again')
+            ident = secrets.token_hex(16)
+            self.internet_proposals[ident] = {
+                'node_id': node_id, 'node': copy.deepcopy(node), 'before': before, 'after': after,
+                'expires': time.monotonic() + PROPOSAL_TTL,
+                'fingerprint': execution_revision(self.lab.topology),
+                'runtime_revision': self.internet_runtime_revision(node_id), 'applied_revision': None}
+            return {'proposal_id': ident, 'node_id': node_id, 'expires_in_seconds': PROPOSAL_TTL,
+                    'live_firewall_update': node_id in self.lab.runtime,
+                    'summary': {'address': after['address'], 'routes': len(after['routes']),
+                                'firewall_rules': len(after['firewall']['rules']),
+                                'default_action': after['firewall']['default_action'],
+                                'port_forwards': len(after['port_forwards'])},
+                    'notice': 'No settings changed. Read the proposed settings with get_internet_settings(proposal_id=...) '
+                              'and review host bindings before applying. Apply does not restart any node.'}
+
+    def apply_internet(self, proposal_id):
+        with self.lab.lock:
+            proposal = self.internet_proposal(proposal_id)
+            node_id = proposal['node_id']
+            self._internet_node(node_id)
+            if proposal['applied_revision']:
+                self.require_execution_revision(proposal['applied_revision'])
+                return {'node_id': node_id, 'applied': True, 'revision': self._observe_revision(self.lab.topology)}
+            if execution_revision(self.lab.topology) != proposal['fingerprint']:
+                raise self.error('Workspace changed since Internet preview; read and preview again')
+            if self.internet_runtime_revision(node_id) != proposal['runtime_revision']:
+                raise self.error('Gateway runtime changed since preview; read and preview again')
+            self.lab.update_internet(node_id, {'internet': proposal['after'], 'expected_internet': proposal['before']})
+            current = self._observe_revision(self.lab.topology)
+            self.internet_proposals[proposal_id]['applied_revision'] = current
+            return {'node_id': node_id, 'applied': True, 'revision': current,
+                    'notice': 'Settings applied and saved. No nodes restarted; verify runtime/traffic separately.'}
+
+    def stop_internet(self, node_id, expected_revision, expected_runtime_revision):
+        with self.lab.lock:
+            self.require_execution_revision(expected_revision)
+            self._internet_node(node_id)
+            if self.internet_runtime_revision(node_id) != expected_runtime_revision:
+                raise self.error('Gateway runtime changed; read its settings and review before stopping')
+            self.lab.stop(node_id, dependents=False)
+            return {'node_id': node_id, 'stopped': True, 'revision': self._observe_revision(self.lab.topology),
+                    'runtime_revision': 'stopped', 'notice': 'Only this Internet node was stopped. Other devices remain running.'}
 
     def _get(self, proposal_id):
         self._expire()
@@ -431,3 +549,8 @@ class Automation:
             except self.error as exc:
                 return {'started': False, 'node_id': node_id, 'error': str(exc), 'state': self.state()}
             return {'started': True, 'node_id': node_id, 'state': self.state()}
+
+    def start_internet(self, node_id, expected_revision):
+        with self.lab.lock:
+            self._internet_node(node_id)
+            return self.start_node(node_id, expected_revision)

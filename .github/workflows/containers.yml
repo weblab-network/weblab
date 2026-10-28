@@ -39,6 +39,7 @@ jobs:
           npm ci --prefix tests
           npm exec --prefix tests -- playwright install --with-deps chromium
           node tests/agent_ui.cjs
+          node tests/themes_ui.cjs
           node tests/workspace_layouts.cjs
           node tests/topology_multiselect.cjs
           node tests/map_controls.cjs
@@ -193,6 +194,7 @@ jobs:
           docker pull "$WEBLAB_CORE_IMAGE"
           python3 tests/agent_packaging.py --core "$WEBLAB_CORE_IMAGE" --agent weblab-agent-smoke:ci
           python3 tests/agent_native.py --tool-gateway-only --image weblab-agent-smoke:ci
+          python3 tests/agent_native.py --tool-gateway-only --internet-management --image weblab-agent-smoke:ci
       - name: Publish tested companion
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -206,15 +208,70 @@ jobs:
           sbom: true
           cache-from: type=gha,scope=agent
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [standard, exos-demo, agent]
+  internet:
+    needs: standard
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 60
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Select helper identity
+        run: |
+          version=0.11.0-dev
+          selector=sha-${GITHUB_SHA}
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version=${GITHUB_REF_NAME#v}
+            selector=$version
+          fi
+          printf 'HELPER_VERSION=%s\nWL_INTERNET_IMAGE=ghcr.io/%s-internet:%s\n' \
+            "$version" "$GITHUB_REPOSITORY" "$selector" >> "$GITHUB_ENV"
+      - name: Build exact runtime sources and distribution image
+        run: |
+          docker build -f packaging/internet/Dockerfile.release --target sources \
+            --build-arg WEBLAB_VERSION="$HELPER_VERSION" --build-arg WEBLAB_REVISION="$GITHUB_SHA" \
+            -t weblab-internet-sources:ci .
+          docker build -f packaging/internet/Dockerfile.release --target release \
+            --build-arg WEBLAB_VERSION="$HELPER_VERSION" --build-arg WEBLAB_REVISION="$GITHUB_SHA" \
+            -t "$WL_INTERNET_IMAGE" .
+      - name: Test real gateway automation and TCP/UDP publications
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y perl libnet-pcap-perl iproute2
+          docker pull alpine:latest
+          docker pull ghcr.io/weblab-network/weblab-frr:10.7.1-wl1
+          sudo env WL_INTERNET_IMAGE="$WL_INTERNET_IMAGE" \
+            python3 tests/internet_native.py --run --port-forwards-only
+      - name: Bundle and verify the tested binary and matching sources
+        run: |
+          python3 tools/bundle_internet_release.py --image "$WL_INTERNET_IMAGE" \
+            --sources-image weblab-internet-sources:ci --output internet-bundle
+          python3 tools/verify_internet_bundle.py internet-bundle \
+            --version "$HELPER_VERSION" --revision "$GITHUB_SHA"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: internet-binary-sources
+          path: internet-bundle/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [standard, exos-demo, agent, internet]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: internet-binary-sources
+          path: internet-bundle
+      - name: Verify helper pair for this public release
+        run: python3 tools/verify_internet_bundle.py internet-bundle --version "${GITHUB_REF_NAME#v}" --revision "$GITHUB_SHA"
       - name: Publish release notes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -230,3 +287,44 @@ jobs:
             --title "Weblab ${RELEASE_TAG}" \
             --notes-file "docs/releases/${RELEASE_TAG}.md" \
             weblab-install.sh SHA256SUMS
+      - name: Publish matching helper sources before its registry image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | grep -Fxq weblab-internet-SHA256SUMS; then
+            mkdir previous-internet
+            gh release download "$GITHUB_REF_NAME" --dir previous-internet --pattern weblab-internet-SHA256SUMS
+            cmp previous-internet/weblab-internet-SHA256SUMS internet-bundle/weblab-internet-SHA256SUMS
+          else
+            gh release upload "$GITHUB_REF_NAME" internet-bundle/weblab-internet-*
+          fi
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the exact tested helper without rebuilding
+        run: |
+          docker load -i internet-bundle/weblab-internet-linux-amd64.tar.gz
+          image_id=$(python3 -c 'import json; print(json.load(open("internet-bundle/weblab-internet-image.json"))["Id"])')
+          image=ghcr.io/${GITHUB_REPOSITORY}-internet
+          docker tag "$image_id" "$image:${GITHUB_REF_NAME#v}"
+          docker push "$image:${GITHUB_REF_NAME#v}"
+          docker tag "$image_id" "$image:latest"
+          docker push "$image:latest"
+      - name: Verify the published helper and record its immutable pull reference
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          image=ghcr.io/${GITHUB_REPOSITORY}-internet:${GITHUB_REF_NAME#v}
+          docker pull "$image"
+          python3 tools/verify_internet_bundle.py internet-bundle \
+            --version "${GITHUB_REF_NAME#v}" --revision "$GITHUB_SHA" --registry-image "$image"
+          if gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | grep -Fxq weblab-internet-registry.json; then
+            gh release download "$GITHUB_REF_NAME" --dir previous-internet --pattern weblab-internet-registry.json
+            cmp previous-internet/weblab-internet-registry.json internet-bundle/weblab-internet-registry.json
+          else
+            gh release upload "$GITHUB_REF_NAME" internet-bundle/weblab-internet-registry.json
+          fi

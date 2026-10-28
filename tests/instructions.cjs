@@ -30,6 +30,7 @@ fixture.stderr.on('data', d => log += d);
     });
     browser = await chromium.launch({headless:true,args:['--no-sandbox']});
     const page = await browser.newPage({viewport:{width:1440,height:1000}});
+    await page.addInitScript(()=>localStorage.setItem('weblab.theme.v1','light'));
     const errors = [], writes = [], external = [];
     page.on('pageerror', e => errors.push(e.message));
     page.on('request', r => {

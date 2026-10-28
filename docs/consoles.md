@@ -23,6 +23,11 @@ native behavior; scrolling does not change the selected console.
 
 ## Controls, text size and window layout
 
+**Layout → Console theme** selects Follow workspace, Dark or Light for terminal
+backgrounds, text, cursor and selection. Console toolbars, tabs and window controls
+always use the workspace theme. This browser preference applies to docked and
+floating consoles without reconnecting them; see [appearance](topology.md#appearance).
+
 The **Actions** menu beside the font controls contains Float/Dock, Float all/
 Dock all, Map, Arrange, Reconnect, Clear, Expand/Maximize and Hide. The menu supports touch, ordinary keyboard tab
 navigation and Escape to close; it stays within the available viewport.

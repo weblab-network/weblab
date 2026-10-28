@@ -108,6 +108,8 @@ async def main(args):
                     names = {t.name for t in (await session.list_tools()).tools}
                     assert ('apply_topology' in names) == writable
                     assert ('start_node' in names) == writable
+                    assert not {'apply_internet_settings', 'stop_internet_node', 'start_internet_node'} & names
+                    assert {'get_internet_settings', 'preview_internet_settings'} <= names
                     assert 'get_console_output' in names
                     assert ('send_console_input' in names) == console_input
                     assert ('send_console_command' in names) == console_input
@@ -173,6 +175,29 @@ async def main(args):
                         shutil.rmtree(probe)
                         lab.storage.expires = 0
                     print('MCP storage: sparse/retained accounting, cache, partial/unknown results and opt-in passed.', flush=True)
+                    # The guide's actual JSON example must survive real SDK/HTTP
+                    # preview, download, apply and readback. No gateway is started.
+                    guide = payload(await session.call_tool('get_authoring_guide'))['markdown']
+                    internet = next(value for block in guide.split('```json\n')[1:]
+                                    if isinstance(value := json.loads(block.split('```')[0]), dict)
+                                    and 'port_forwards' in value)
+                    cloud_source = {'name': 'MCP gateway', 'nodes': [
+                        {'id': 'internet', 'name': 'Internet', 'type': 'cloud', 'internet': internet}], 'links': []}
+                    draft = payload(await session.call_tool('preview_topology', {
+                        'topology': cloud_source, 'instructions': '# Gateway settings\nStructural check only.'}))
+                    assert not lab.topology['nodes'] and not lab.runtime
+                    assert draft['topology']['nodes'][0]['internet'] == internet
+                    with urlopen(draft['downloads']['topology']) as response:
+                        assert json.load(response) == draft['topology']
+                    if writable:
+                        applied = payload(await session.call_tool('apply_topology', {'proposal_id': draft['proposal_id']}))
+                        observed = payload(await session.call_tool('get_lab_state'))
+                        assert observed['revision'] == applied['revision']
+                        assert observed['topology']['nodes'][0]['internet'] == internet
+                        assert not lab.runtime
+                        lab.save({'name': 'Empty', 'nodes': [], 'links': []})
+                    payload(await session.call_tool('discard_proposal', {'proposal_id': draft['proposal_id']}))
+                    print('MCP gateway guide, firewall/port-forward preview/download and guarded apply/readback passed (no ports published).', flush=True)
                     invalid = await session.call_tool('get_node_logs', {'node_id': '../state'})
                     assert invalid.is_error
                     assert 'Invalid node ID' in invalid.content[0].text
@@ -255,10 +280,52 @@ async def main(args):
                             (lab.image_dir / name).touch()
                         await model_test(session, args, initialization)
                         assert not lab.topology['nodes'], 'Model preview must not mutate the lab'
+        # Gateway writes are independently opt-in, without topology/console writes.
+        for internet_write in (False, True):
+            lab.save({'name': 'Gateway tools', 'nodes': [
+                {'id': 'gateway', 'name': 'Internet', 'type': 'cloud'}, fixture.node('router')], 'links': []})
+            params = StdioServerParameters(command=sys.executable, args=[str(ROOT/'tools/weblab_mcp.py'),
+                '--url', url, '--compact-responses'] + (['--allow-internet-write'] if internet_write else []))
+            async with stdio_client(params) as (reader, writer):
+                async with ClientSession(reader, writer) as session:
+                    await session.initialize()
+                    names = {t.name for t in (await session.list_tools()).tools}
+                    assert ('apply_internet_settings' in names) == internet_write
+                    assert ('stop_internet_node' in names) == internet_write
+                    assert ('start_internet_node' in names) == internet_write
+                    assert 'apply_topology' not in names and 'start_node' not in names and 'send_console_input' not in names
+                    page = payload(await session.call_tool('get_internet_settings', {'node_id': 'gateway'}))
+                    draft = payload(await session.call_tool('preview_internet_settings', {
+                        'node_id': 'gateway', 'internet': internet, 'expected_revision': page['revision']}))
+                    candidate = payload(await session.call_tool('get_internet_settings', {
+                        'node_id': 'gateway', 'proposal_id': draft['proposal_id']}))
+                    assert candidate['internet'] == internet
+                    if not internet_write:
+                        continue
+                    result = payload(await session.call_tool('apply_internet_settings', {'proposal_id': draft['proposal_id']}))
+                    assert result['applied'] and not lab.runtime
+                    # Lifecycle adapter plumbing uses a recording launcher. Native
+                    # gateway suites separately test real Docker/iptables behavior.
+                    def start_gateway(node_id):
+                        assert node_id == 'gateway'
+                        lab.runtime[node_id] = {'cloud': True, 'iol_id': lab.node(node_id)['iol_id']}
+                    with patch.object(lab, 'start', side_effect=start_gateway):
+                        result = payload(await session.call_tool('start_internet_node', {
+                            'node_id': 'gateway', 'expected_revision': result['revision']}))
+                    assert result['started'] and result['state']['compact']
+                    page = payload(await session.call_tool('get_internet_settings', {'node_id': 'gateway'}))
+                    stopped = payload(await session.call_tool('stop_internet_node', {
+                        'node_id': 'gateway', 'expected_revision': page['revision'],
+                        'expected_runtime_revision': page['runtime_revision']}))
+                    assert stopped['stopped'] and not lab.runtime
+                    rejected = await session.call_tool('start_internet_node', {
+                        'node_id': 'router', 'expected_revision': stopped['revision']})
+                    assert rejected.is_error and 'Only Internet' in rejected.content[0].text
         # Large saved snippets must not bury later node identities in the
         # local model's tool-output budget. Exercise real SDK serialization.
         nodes = [{**fixture.node('large_' + str(i)), 'name': 'SW' + str(i + 1),
                   'startup_config': '! saved baseline\n' * 700} for i in range(12)]
+        nodes.append({'id': 'gateway', 'name': 'Internet', 'type': 'cloud', 'internet': internet})
         links = [{'id': 'edge_' + str(i), 'a': {'node': nodes[i]['id'], 'port': '0/0'},
                   'b': {'node': nodes[(i+1)%12]['id'], 'port': '0/1'}} for i in range(12)]
         lab.save({'name': 'Large state', 'nodes': nodes, 'links': links})
@@ -275,14 +342,19 @@ async def main(args):
                         assert set(state) == set(ordinary)
                         assert {k:v for k,v in state.items() if k != 'storage'} == {
                             k:v for k,v in ordinary.items() if k != 'storage'}, 'Ordinary/OpenAI state must remain unchanged'
-                        assert all(n.get('startup_config') for n in state['topology']['nodes'])
+                        assert all(n.get('startup_config') for n in state['topology']['nodes'] if n['type'] != 'cloud')
+                        assert state['topology']['nodes'][-1]['internet'] == internet
                         continue
                     found_nodes, found_links = [], []
                     revision = state['revision']
                     for _ in range(30):
                         assert len(json.dumps(state, ensure_ascii=True, indent=2)) <= 8000
                         assert state['revision'] == revision
-                        assert all('startup_config' not in n and n['has_startup_config'] for n in state['topology']['nodes'])
+                        assert all('startup_config' not in n and n['has_startup_config'] == (n['type'] != 'cloud')
+                                   for n in state['topology']['nodes'])
+                        for n in state['topology']['nodes']:
+                            if n['type'] == 'cloud':
+                                assert n['internet_settings_omitted'] and n['internet']['port_forwards'] == 1
                         found_nodes.extend(n['id'] for n in state['topology']['nodes'])
                         found_links.extend(n['id'] for n in state['topology']['links'])
                         if state['next_node_offset'] is None and state['next_link_offset'] is None:
@@ -322,6 +394,27 @@ async def main(args):
                         'instructions': '# Disposable test', 'replace_existing': True}))
                     applied = payload(await session.call_tool('apply_topology', {'proposal_id': proposal['proposal_id']}))
                     assert applied['compact'] and applied['complete']
+                    oversized = copy.deepcopy(internet)
+                    oversized['firewall']['rules'] *= 64
+                    oversized['port_forwards'] = [
+                        {**internet['port_forwards'][0], 'external_port': 22022 + i} for i in range(32)]
+                    lab.save({'name': 'Large gateway settings', 'nodes': [
+                        {'id': 'gateway', 'name': 'Internet', 'type': 'cloud', 'internet': oversized}], 'links': []})
+                    large_state = payload(await session.call_tool('get_lab_state'))
+                    assert large_state['complete'] and len(json.dumps(large_state, ensure_ascii=True, indent=2)) <= 8000
+                    offsets, found_rules, found_forwards, current = {}, [], [], None
+                    for _ in range(20):
+                        page = payload(await session.call_tool('get_internet_settings', {
+                            'node_id': 'gateway', 'expected_revision': current, 'page_size': 8, **offsets}))
+                        assert len(json.dumps(page, ensure_ascii=True, indent=2)) <= 8000
+                        current = page['revision']
+                        found_rules += page['internet']['firewall']['rules']
+                        found_forwards += page['internet']['port_forwards']
+                        if all(v is None for v in page['next_offsets'].values()):
+                            break
+                        offsets = {arg: page['next_offsets'][key] if page['next_offsets'][key] is not None else page['totals'][key]
+                                   for arg, key in [('route_offset', 'routes'), ('rule_offset', 'rules'), ('forward_offset', 'port_forwards')]}
+                    assert found_rules == oversized['firewall']['rules'] and found_forwards == oversized['port_forwards']
         print('Compact state pagination preserves every node/link; console chunks roundtrip without loss; ordinary state unchanged.', flush=True)
     finally:
         fixture.tearDown()

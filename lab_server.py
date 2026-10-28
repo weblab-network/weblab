@@ -405,6 +405,10 @@ class Lab:
                 node["iol_id"] = available
                 occupied.add(available)
             result["nodes"].append(node)
+        try:
+            internet_cloud.check_bindings(n['internet'] for n in result['nodes'] if internet_cloud.is_cloud(n))
+        except ValueError as exc:
+            raise LabError(str(exc)) from exc
         by_id = {n["id"]: n for n in result["nodes"]}
         used, link_ids = {}, set()
         for index, raw in enumerate(data["links"]):
@@ -463,6 +467,50 @@ class Lab:
             self.topology = validated
             self.errors = {key: value for key, value in self.errors.items() if key in {n["id"] for n in validated["nodes"]}}
             self.persist()
+            return self.snapshot()
+
+    def update_internet(self, node_id, data):
+        with self.lock:
+            node = self.node(node_id)
+            if not internet_cloud.is_cloud(node):
+                raise LabError('Only Internet nodes have gateway settings')
+            if not isinstance(data, dict) or set(data) != {'internet', 'expected_internet'}:
+                raise LabError('Supply internet and expected_internet settings')
+            # Older saved topologies omit optional settings added in newer cores.
+            previous = internet_cloud.settings(node['internet'])
+            if internet_cloud.settings(data['expected_internet']) != previous:
+                raise LabConflict('Internet settings changed. Close and reopen settings before applying again.')
+            config = internet_cloud.settings(data['internet'])
+            live = node_id in self.runtime
+            if live and any(config[k] != previous[k] for k in ('address', 'routes', 'uplink_subnet', 'port_forwards')):
+                raise LabError('Stop this Internet node before changing its address, return routes, uplink subnet or port forwards')
+            internet_cloud.check_bindings(config if n['id'] == node_id else n['internet']
+                for n in self.topology['nodes'] if internet_cloud.is_cloud(n))
+            if config == previous:
+                return self.snapshot()
+            updated = copy.deepcopy(self.topology)
+            next(n for n in updated['nodes'] if n['id'] == node_id)['internet'] = config
+            # The immutable container ID remains pinned through apply/rollback.
+            cid = internet_cloud.firewall_container(self, node, run, LabError) if live else None
+            applied = False
+            try:
+                if live:
+                    # A failed/ambiguous exec is also rolled back to the saved policy.
+                    applied = True
+                    internet_cloud.update_firewall(cid, config['firewall'], run)
+                # Persist before replacing memory; a failed write leaves the old topology.
+                atomic_json(self.topology_path, updated)
+            except (LabError, OSError) as exc:
+                if applied:
+                    try:
+                        internet_cloud.update_firewall(cid, previous['firewall'], run)
+                    except LabError as rollback:
+                        raise LabError(f'Internet settings were not saved: {exc}. Could not restore the '
+                                       f'previous live policy: {rollback}. Stop this Internet node and '
+                                       'start it again to restore its saved policy.') from exc
+                raise LabError(f'Internet settings were not saved: {exc}') from exc
+            self.topology = updated
+            self.workspace_revision = uuid.uuid4().hex
             return self.snapshot()
 
     def reset_workspace(self, data):
@@ -929,7 +977,9 @@ class Lab:
 
     def stop(self, node_id, dependents=True):
         with self.lock:
-            if dependents:
+            target = next((n for n in self.topology['nodes'] if n['id'] == node_id), {})
+            # Direct PCs have their own TAP/network; a gateway restart need not stop them.
+            if dependents and not internet_cloud.is_cloud(target):
                 for node in self.topology["nodes"]:
                     if node["type"] == "pc" and node["id"] in self.runtime and self.pc_peer(node["id"])["id"] == node_id:
                         self.stop(node["id"], dependents=False)
@@ -1390,7 +1440,10 @@ class Handler(BaseHTTPRequestHandler):
                 service = self.automation()
                 operations = {'preview': service.preview, 'apply': service.apply,
                               'discard': service.discard, 'start-node': service.start_node,
-                              'console-read': service.console_read, 'console-send': service.console_send}
+                              'console-read': service.console_read, 'console-send': service.console_send,
+                              'internet-settings': service.internet_settings, 'preview-internet': service.preview_internet,
+                              'apply-internet': service.apply_internet, 'stop-internet': service.stop_internet,
+                              'start-internet': service.start_internet}
                 operation = operations.get(path.removeprefix('/api/automation/'))
                 if not operation:
                     self.reply(404, {'error': 'Unknown automation route'})
@@ -1402,6 +1455,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = self.lab.save(data)
             elif self.command == 'PUT' and path == '/api/instructions':
                 result = self.lab.publish_instructions(data)
+            elif self.command == 'PUT' and re.fullmatch(r'/api/nodes/[\w-]+/internet', path):
+                result = self.lab.update_internet(path.split('/')[3], data)
             elif self.command == "POST" and re.fullmatch(r"/api/links/[\w-]+/carrier", path):
                 result = self.lab.set_link_carrier(path.split('/')[3], data)
             elif self.command == "POST" and re.fullmatch(r"/api/links/[\w-]+/traffic", path):

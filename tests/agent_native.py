@@ -69,6 +69,8 @@ def main(args):
                 try: api('state');return
                 except Exception: time.sleep(.5)
             raise AssertionError('Companion did not become ready')
+        if args.internet_management:
+            lab.save({'name':'Gateway probe','nodes':[{'id':'gateway','name':'Internet','type':'cloud'}],'links':[]})
         before=copy.deepcopy(lab.topology)
         try:
             token=api('session',{})['token']
@@ -79,21 +81,34 @@ def main(args):
             if args.tool_gateway_only:
                 settings={**api('state')['settings'], 'provider':'openai',
                           'endpoint':agent_bridge.OPENAI_ENDPOINT, 'model':'gpt-5.6-sol', 'console_input':True}
+                if args.internet_management:
+                    settings.update(internet_changes=True, auto_approve=True)
                 api('settings',settings)
                 def png_chunk(kind, content):
                     return struct.pack('>I',len(content))+kind+content+struct.pack('>I',zlib.crc32(kind+content))
                 png=(b'\x89PNG\r\n\x1a\n'+png_chunk(b'IHDR',struct.pack('>IIBBBBB',1,1,8,2,0,0,0))+
                      png_chunk(b'IDAT',zlib.compress(b'\x00\xff\x00\x00'))+png_chunk(b'IEND',b''))
-                api('turn',{'prompt':'Read the disposable lab state and inspect the attached reference files.',
+                api('turn',{'prompt':'Read the disposable lab state and inspect the attached reference files.' +
+                            (' GATEWAY_MANAGEMENT_PROBE' if args.internet_management else ''),
                             'request_id':uuid.uuid4().hex,'attachments':[
                                 {'name':'reference.txt','data':base64.b64encode(b'ATTACHMENT_TRANSPORT_PROBE').decode()},
                                 {'name':'red-pixel.png','data':base64.b64encode(png).decode()}]})
                 state=await_state(lambda s:s['status'] not in ('starting','running','stopping'),60)
                 assert state['status']=='completed',state.get('error')
                 assert any('Fixture verified:' in m['text'] for m in state['messages']),state['messages']
-                assert lab.topology==before and not lab.runtime
-                assert not state['approvals'], 'Invalid command must not create an approval'
-                print('PASS: packaged text/image attachment transport and Code Mode model -> Weblab MCP -> gateway -> empty lab; only Weblab tools exposed, no credentials or cloud inference',flush=True)
+                assert not lab.runtime
+                if args.internet_management:
+                    config=lab.node('gateway')['internet']
+                    assert config['routes']==[{'destination':'10.44.0.0/24','via':'192.0.2.2'}]
+                    assert config['firewall']['default_action']=='deny' and len(config['firewall']['rules'])==1
+                    assert config['port_forwards'][0]['external_port']==22022
+                    assert len(state['approvals'])==1 and state['approvals'][0]['operation']=='apply-internet'
+                    assert state['approvals'][0]['status']=='completed' and state['approvals'][0]['auto_approved']
+                    print('PASS: packaged Code Mode agent -> real MCP -> session-scoped gateway preview/apply; routes, firewall and forwards saved; no guests, credentials or cloud inference',flush=True)
+                else:
+                    assert lab.topology==before
+                    assert not state['approvals'], 'Invalid command must not create an approval'
+                    print('PASS: packaged text/image attachment transport and Code Mode model -> Weblab MCP -> gateway -> empty lab; only Weblab tools exposed, no credentials or cloud inference',flush=True)
                 return
             if args.openai_login_only:
                 settings={**api('state')['settings'], 'provider':'openai',
@@ -318,6 +333,7 @@ if __name__=='__main__':
     parser.add_argument('--ollama-url',default='http://127.0.0.1:11434/v1')
     parser.add_argument('--model',action='append')
     parser.add_argument('--tool-gateway-only',action='store_true',help='Use a simulated Code Mode model and real packaged MCP against an empty lab')
+    parser.add_argument('--internet-management',action='store_true',help='With --tool-gateway-only, exercise independently enabled Internet preview/apply on a disposable stopped gateway')
     parser.add_argument('--openai-login-only',action='store_true',help='Request/cancel a device code with disposable storage; never authenticate or infer')
     parser.add_argument('--approvals-only',action='store_true',help='Run only approved operations and provider outage checks')
     parser.add_argument('--approvals',action='store_true',help='Also test approved starts/input on disposable echo nodes')
@@ -328,6 +344,8 @@ if __name__=='__main__':
     if not args.model: args.model=['gpt-oss:20b']
     if args.openai_login_only and args.tool_gateway_only:
         parser.error('Choose one isolated protocol test')
+    if args.internet_management and not args.tool_gateway_only:
+        parser.error('--internet-management requires --tool-gateway-only')
     if (args.openai_login_only or args.tool_gateway_only) and (args.approvals or args.approvals_only or args.protocol_preview or args.console_tail_only):
         parser.error('--openai-login-only cannot be combined with inference tests')
     main(args)

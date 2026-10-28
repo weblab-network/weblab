@@ -1,0 +1,82 @@
+/* Dark keeps each existing color fallback. Light replaces only color tokens. */
+:root { --terminal-bg: #0c1117; --terminal-scrollbar: #343d49; }
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f2f5f8;
+  --panel: #ffffff;
+  --border: #c2ccd8;
+  --text: #243244;
+  --muted: #526176;
+  --accent: #176c59;
+  --accent-dark: #e0f0e9;
+  --orange: #895016;
+  --blue: #325da7;
+  --control-bg: #eef2f6;
+  --hover-bg: #e0e8ef;
+  --hover-border: #718397;
+  --primary-text: #ffffff;
+  --primary-hover: #105441;
+  --text-muted: #526176;
+  --text-strong: #243244;
+  --text-secondary: #43566d;
+  --line: #bdc9d6;
+  --line-soft: #d5dde6;
+  --icon-bg: #e0f0e9;
+  --router-icon-bg: #fff0df;
+  --pc-icon-bg: #e5edfb;
+  --active-bg: #e0eee7;
+  --active-border: #9bb9ac;
+  --active-text: #176c59;
+  --status-stopped: #637387;
+  --error-text: #a62f3f;
+  --error-bg: #fff0f1;
+  --error-border: #d69aa5;
+  --toolbar-bg: #edf2f6;
+  --canvas-bg: #f8fafc;
+  --canvas-dot: #d1dbe6;
+  --cable: #627a94;
+  --cable-running: #347a65;
+  --cable-hover: #345c85;
+  --port-text: #465e77;
+  --node-bg: #ffffff;
+  --node-border: #9eafc1;
+  --node-hover: #edf3f9;
+  --node-hover-border: #5b738c;
+  --selection-ring: #176c5929;
+  --selection-fill: #176c5920;
+  --fault-ring: #a3611726;
+  --window-shadow: #20334933;
+  --soft-shadow: #20334918;
+  --overlay: #18283866;
+  --success-bg: #e3f4ec;
+  --success-border: #5c9f84;
+  --success-text: #1c5c43;
+  --sheet-bg: #ffffff;
+  --scrollbar-thumb: #9aabbd;
+  --fault-text: #925017;
+  --fault-bg: #fff0df;
+  --fault-border: #c08a50;
+  --code-bg: #edf2f7;
+  --inline-code-bg: #e6edf4;
+  --table-header: #edf2f7;
+  --warning-border: #b28237;
+  --warning-bg: #fff4db;
+  --warning-text: #775014;
+  --divider-bg: #d7e0e8;
+  --divider-active: #a2c7b6;
+  --divider-grip: #607a85;
+  --terminal-bg: #ffffff;
+}
+
+/* Only the terminal content follows Console theme; window controls inherit the workspace. */
+.console-panel[data-console-theme="dark"] { --terminal-bg:#0c1117; --terminal-scrollbar:#343d49; }
+.console-panel[data-console-theme="light"] { --terminal-bg:#ffffff; --terminal-scrollbar:#9aabbd; }
+.console-panel[data-console-theme="dark"] .xterm { color-scheme:dark; }
+.console-panel[data-console-theme="light"] .xterm { color-scheme:light; }
+#terminal,.floating-terminal-host { background:var(--terminal-bg); }
+.xterm .xterm-viewport { scrollbar-color:var(--terminal-scrollbar) var(--terminal-bg); }
+.xterm .xterm-viewport::-webkit-scrollbar-track { background:var(--terminal-bg); }
+.xterm .xterm-viewport::-webkit-scrollbar-thumb { background:var(--terminal-scrollbar); border-color:var(--terminal-bg); }
+.theme-preference { margin:6px 10px; color:var(--muted); }
+.theme-preference select { margin-top:4px; }

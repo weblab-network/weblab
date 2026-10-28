@@ -48,8 +48,10 @@ active lab. Do not delete saved storage to force snippets without a reset reques
   `python3 -m unittest discover -s tests -v`; browser/native instructions are in
   the development guide. Run suites that launch nodes sequentially to avoid ID
   collisions. Native tests require user-supplied images and any required licenses.
-- The optional Agent window defaults to read/preview. Apply/start and console
-  input need separate session settings. Default is one browser approval per exact
+- The optional Agent window defaults to read/preview. Topology apply/start,
+  Internet gateway changes and console input need separate session settings.
+  Gateway settings reads are paginated; preserve expected revision and runtime
+  identity guards for gateway-only stop/start and preview/apply. Default is one browser approval per exact
   action; an explicit session YOLO setting preapproves only enabled actions.
   Preserve turn expiry, single-use decisions, revision/cursor checks and human
   locks. Keep the gateway route/provider allowlists and session isolation; never

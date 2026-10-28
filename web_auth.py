@@ -46,6 +46,8 @@ def activity_operation(method, path):
         return 'capture.' + path.rsplit('/', 1)[1], ''
     if (method, path) in routes:
         return routes[method, path], ''
+    if method == 'PUT' and re.fullmatch(r'/api/nodes/[\w-]+/internet', path):
+        return 'internet.update', path.split('/')[3]
     if method == 'POST':
         match = re.fullmatch(r'/api/(nodes|links)/([a-zA-Z0-9_-]{1,40})/(start|stop|carrier|traffic)', path)
         if match:
@@ -117,7 +119,8 @@ def allowed(role, method, path):
         return role in ('admin', 'writer')
     if role != 'admin':
         return False
-    return ((method == 'PUT' and path in ('/api/topology', '/api/instructions')) or
+    return ((method == 'PUT' and (path in ('/api/topology', '/api/instructions') or
+                                  bool(re.fullmatch(r'/api/nodes/[\w-]+/internet', path)))) or
             (method == 'POST' and (path in ('/api/import', '/api/export', '/api/export/initial-configs',
                                            '/api/export/saved-configs', '/api/lab/reset') or path.startswith('/api/images/'))))
 

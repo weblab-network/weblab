@@ -90,9 +90,13 @@ See [NOTICE](packaging/frr/NOTICE).
 
 ## Optional Internet gateway helper
 
-The locally built helper in `packaging/internet/` installs unmodified Python,
+The optional helper in `packaging/internet/` installs unmodified Python,
 iproute2, iptables and dnsmasq packages from Alpine. Those components retain
 their upstream licenses; Weblab's MIT license covers only its original gateway
 code. See [the helper notes](packaging/internet/README.md) for source references
-and the separate binary-publication requirements. No prebuilt gateway image is
-included in the existing release.
+and [binary/source distribution](packaging/internet/SOURCES.md). Starting with
+0.11.0, the release workflow publishes the tested helper alongside a matching
+package inventory, Alpine recipes/patches, verified runtime distfiles, original
+Weblab sources and checksums. The release image retains upstream notices and
+license texts under `/usr/share/weblab-internet/`. The 0.10.x releases do not
+include a prebuilt helper.

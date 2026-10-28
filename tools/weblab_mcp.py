@@ -49,6 +49,14 @@ def compact_state(state, node_offset=0, link_offset=0, page_size=8):
     for node in nodes[node_offset:node_offset + page_size]:
         item = {k: v for k, v in node.items() if k != 'startup_config'}
         item['has_startup_config'] = bool(node.get('startup_config'))
+        if node.get('type') == 'cloud':
+            config = node['internet']
+            item['internet'] = {'address': config['address'], 'uplink_subnet': config.get('uplink_subnet', ''),
+                                'default_action': config.get('firewall', {}).get('default_action', 'allow'),
+                                'routes': len(config.get('routes', [])),
+                                'firewall_rules': len(config.get('firewall', {}).get('rules', [])),
+                                'port_forwards': len(config.get('port_forwards', []))}
+            item['internet_settings_omitted'] = True
         selected_nodes.append(item)
     selected_links = [{k: link[k] for k in ('id', 'a', 'b')} for link in links[link_offset:link_offset + page_size]]
     while True:
@@ -74,7 +82,8 @@ def compact_state(state, node_offset=0, link_offset=0, page_size=8):
                   'notice': 'Startup config text, exercise text and live link diagnostics are omitted from this discovery view. '
                             'Startup snippets are not running configuration. Follow next offsets for remaining entries; '
                             'keep an exhausted offset at its total. All pages must have the same revision. '
-                            'Missing entries on a page do not mean a node is absent or stopped.'}
+                            'Missing entries on a page do not mean a node is absent or stopped. '
+                            'Internet settings are summarized; use get_internet_settings and follow its offsets for every rule, route and forward.'}
         if len(json.dumps(result, ensure_ascii=True, indent=2)) <= COMPACT_CHARS:
             return result
         if len(selected_links) > 1 or (selected_links and selected_nodes):
@@ -121,7 +130,7 @@ class Client:
             raise ToolError(f'Weblab request failed: {exc}. Read state before retrying any write.') from exc
 
 
-def create_server(url, allow_write=False, allow_console_input=False, compact_responses=False):
+def create_server(url, allow_write=False, allow_console_input=False, compact_responses=False, allow_internet_write=False):
     client = Client(url)
     server = MCPServer('Weblab', instructions=(
         'Build original practice labs. First read get_lab_state, list_device_profiles and '
@@ -208,6 +217,36 @@ def create_server(url, allow_write=False, allow_console_input=False, compact_res
     def get_authoring_guide() -> dict:
         """Read the complete JSON contract and saved-state/configuration restrictions before drafting."""
         return client.request('/api/automation/guide')
+
+    @server.tool(annotations=read)
+    def get_internet_settings(node_id: str, route_offset: int = 0, rule_offset: int = 0,
+                              forward_offset: int = 0, page_size: int = 4,
+                              expected_revision: str | None = None, proposal_id: str | None = None) -> dict:
+        """Read bounded pages of an Internet node's saved or proposed settings.
+
+        Includes address, return routes, firewall and port forwards, running state,
+        revision and runtime_revision. Follow next_offsets using the matching route,
+        rule and forward offsets; keep exhausted offsets at totals. Pass the first
+        page's revision for later pages. Restart at page zero if it changes.
+        proposal_id reads a preview's candidate settings. Never silently drops rules.
+        """
+        return client.request('/api/automation/internet-settings', {
+            'node_id': node_id, 'route_offset': route_offset, 'rule_offset': rule_offset,
+            'forward_offset': forward_offset, 'page_size': page_size,
+            'expected_revision': expected_revision, 'proposal_id': proposal_id})
+
+    @server.tool(annotations=draft)
+    def preview_internet_settings(node_id: str, internet: dict, expected_revision: str) -> dict:
+        """Validate a complete replacement Internet settings object without changing any node.
+
+        Read every current settings page first and retain fields you want to keep.
+        Returns an expiring proposal_id for review/apply. Firewall edits can be live;
+        address/routes/uplink/forward edits require only this Internet node stopped.
+        Review proposed host bindings via get_internet_settings(proposal_id=...).
+        This does not publish ports or install/configure target guest services.
+        """
+        return client.request('/api/automation/preview-internet', {
+            'node_id': node_id, 'internet': internet, 'expected_revision': expected_revision})
 
     @server.tool(annotations=read)
     def get_node_logs(node_id: str) -> dict:
@@ -324,6 +363,43 @@ def create_server(url, allow_write=False, allow_console_input=False, compact_res
         """Remove a temporary proposal only. Never removes the applied topology or device storage."""
         return client.request('/api/automation/discard', {'proposal_id': proposal_id})
 
+    if allow_internet_write:
+        @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False))
+        def apply_internet_settings(proposal_id: str) -> dict:
+            """Apply a separately authorized Internet preview to its unchanged gateway.
+
+            Uses the exact reviewed settings. Rechecks topology and runtime identity;
+            changes only that gateway. Live firewall changes preserve NAT/connections;
+            a new deny can interrupt a flow. Never restarts or replaces other nodes.
+            """
+            return client.request('/api/automation/apply-internet', {'proposal_id': proposal_id})
+
+        @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False))
+        def stop_internet_node(node_id: str, expected_revision: str, expected_runtime_revision: str) -> dict:
+            """Stop one explicitly authorized Internet gateway, keeping target devices running.
+
+            Read get_internet_settings first and use its revision/runtime_revision.
+            Interrupts Internet access and removes this gateway's published ports.
+            Use preview/apply for route/forward edits, then separately start_internet_node.
+            Cannot stop routers, switches or PCs. Does not restart automatically.
+            """
+            return client.request('/api/automation/stop-internet', {
+                'node_id': node_id, 'expected_revision': expected_revision,
+                'expected_runtime_revision': expected_runtime_revision})
+
+        @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False))
+        def start_internet_node(node_id: str, expected_revision: str) -> dict:
+            """Start one explicitly authorized Internet gateway, leaving other nodes unchanged.
+
+            Publishes its saved host ports. Read and review settings first. Cannot
+            start routers, switches or PCs. Does not restart an already running gateway.
+            """
+            result = client.request('/api/automation/start-internet', {
+                'node_id': node_id, 'expected_revision': expected_revision})
+            if compact_responses and 'state' in result:
+                result['state'] = compact_state(result['state'])
+            return result
+
     if allow_write:
         @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False))
         def apply_topology(proposal_id: str) -> dict:
@@ -358,10 +434,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url', default='http://127.0.0.1:8080')
     parser.add_argument('--allow-write', action='store_true', help='Expose apply/start tools; keep client approval enabled')
+    parser.add_argument('--allow-internet-write', action='store_true', help='Expose Internet settings apply and gateway-only stop/start tools')
     parser.add_argument('--allow-console-input', action='store_true', help='Expose shared-console input separately from topology writes')
     parser.add_argument('--compact-responses', action='store_true', help='Paginate discovery and cap console chunks for local-model output budgets')
     args = parser.parse_args()
-    create_server(args.url, args.allow_write, args.allow_console_input, args.compact_responses).run(transport='stdio')
+    create_server(args.url, args.allow_write, args.allow_console_input, args.compact_responses,
+                  args.allow_internet_write).run(transport='stdio')
 
 
 if __name__ == '__main__':

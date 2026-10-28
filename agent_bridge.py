@@ -59,6 +59,7 @@ class Bridge:
         self.automation = lab_automation.Automation(lab, LabError, ports, run)
         for session in self.sessions.values():
             session['proposals'] = []  # In-memory proposals do not survive a core restart.
+            session['internet_proposals'] = []
             session['settings'].setdefault('lab_changes', False)
             session['settings'].setdefault('console_input', False)
             session['settings'].setdefault('auto_approve', False)
@@ -173,8 +174,8 @@ class Bridge:
             return session
 
     def settings(self, data):
-        data = {'provider': 'ollama', 'lab_changes': False, 'console_input': False, 'auto_approve': False, **data}
-        if set(data) != {'provider', 'endpoint', 'model', 'context_window', 'turn_timeout', 'lab_changes', 'console_input', 'auto_approve'}:
+        data = {'provider': 'ollama', 'lab_changes': False, 'internet_changes': False, 'console_input': False, 'auto_approve': False, **data}
+        if set(data) != {'provider', 'endpoint', 'model', 'context_window', 'turn_timeout', 'lab_changes', 'internet_changes', 'console_input', 'auto_approve'}:
             raise ValueError('Unexpected agent settings')
         if data['provider'] not in ('ollama', 'openai'):
             raise ValueError('Unknown Agent provider')
@@ -194,10 +195,10 @@ class Bridge:
             raise ValueError('Context window must be 4096–131072 tokens')
         if type(timeout) is not int or not 30 <= timeout <= 3600:
             raise ValueError('Turn deadline must be 30–3600 seconds')
-        if any(type(data[k]) is not bool for k in ('lab_changes', 'console_input', 'auto_approve')):
+        if any(type(data[k]) is not bool for k in ('lab_changes', 'internet_changes', 'console_input', 'auto_approve')):
             raise ValueError('Agent permissions must be booleans')
         return dict(provider=data['provider'], endpoint=url, model=model, context_window=context, turn_timeout=timeout,
-                    lab_changes=data['lab_changes'], console_input=data['console_input'],
+                    lab_changes=data['lab_changes'], internet_changes=data['internet_changes'], console_input=data['console_input'],
                     auto_approve=data['auto_approve'])
 
     def api(self, action, token='', data=None, owner=None):
@@ -226,7 +227,7 @@ class Bridge:
                            'touched': time.time(), 'proposals': [], 'settings': {
                                'provider': 'ollama', 'endpoint': self.providers[0], 'model': 'gpt-oss:20b',
                                'context_window': 32768, 'turn_timeout': 900,
-                               'lab_changes': False, 'console_input': False, 'auto_approve': False}}
+                               'lab_changes': False, 'internet_changes': False, 'console_input': False, 'auto_approve': False}}
                 self.sessions[hashlib.sha256(token.encode()).hexdigest()] = session
                 self.persist()
             return {'token': token, 'settings': session['settings']}
@@ -265,6 +266,7 @@ class Bridge:
                 result = self.companion(action, session, data)
                 session['settings'] = settings
                 session['proposals'] = []
+                session['internet_proposals'] = []
                 self.approvals.pop(session['id'], None)
                 self.tool_errors.pop(session['id'], None)
                 self.persist()
@@ -288,6 +290,7 @@ class Bridge:
                     self.approvals.pop(session['id'], None)
                     self.tool_errors.pop(session['id'], None)
                     session['proposals'] = []
+                    session['internet_proposals'] = []
                 self.persist()
             return {'settings': settings}
         if action == 'check':
@@ -309,6 +312,7 @@ class Bridge:
                 self.approvals.pop(session['id'], None)
                 self.tool_errors.pop(session['id'], None)
                 session['proposals'] = []
+                session['internet_proposals'] = []
                 self.persist()
             return result
         if action == 'turn':
@@ -345,6 +349,7 @@ class Bridge:
                     self.approvals.pop(session['id'], None)
                     self.tool_errors.pop(session['id'], None)
                     session['proposals'] = []
+                    session['internet_proposals'] = []
                     self.persist()
             return result
         if action == 'close':
@@ -443,9 +448,11 @@ class Bridge:
 
     def guarded_tool(self, session, operation, data, turn_id):
         service = self.console_service(session) if operation == 'console-send' else self.automation
-        permission = 'console_input' if operation == 'console-send' else 'lab_changes'
+        permission = ('console_input' if operation == 'console-send' else
+                      'internet_changes' if operation in ('apply-internet', 'stop-internet', 'start-internet') else 'lab_changes')
         handler = {'apply': service.apply, 'start-node': service.start_node,
-                   'console-send': service.console_send}[operation]
+                   'console-send': service.console_send, 'apply-internet': service.apply_internet,
+                   'stop-internet': service.stop_internet, 'start-internet': service.start_internet}[operation]
         if not isinstance(data, dict):
             raise ValueError('Expected tool arguments')
         inspect.signature(handler).bind(**data)  # Reject missing/extra fields before presenting approval.
@@ -454,14 +461,21 @@ class Bridge:
             if not session['settings'].get(permission):
                 raise ValueError('Enable ' + permission + ' in Agent Settings before requesting this operation')
             self.check_companion_turn(session, turn_id)
-            if operation == 'apply':
-                if arguments['proposal_id'] not in session['proposals']:
+            if operation in ('apply', 'apply-internet'):
+                owned = session.get('internet_proposals', []) if operation == 'apply-internet' else session['proposals']
+                if arguments['proposal_id'] not in owned:
                     raise ValueError('Proposal does not belong to this session')
-                context = service.proposal(arguments['proposal_id'])
+                with self.lab.lock:
+                    context = (service.internet_proposal(arguments['proposal_id']) if operation == 'apply-internet'
+                               else service.proposal(arguments['proposal_id']))
             else:
                 with self.lab.lock:
                     context = {'node': copy.deepcopy(self.lab.node(arguments['node_id']))}
                     service.require_execution_revision(arguments['expected_revision'])
+                    if operation in ('stop-internet', 'start-internet'):
+                        service._internet_node(arguments['node_id'])
+                    if operation == 'stop-internet' and service.internet_runtime_revision(arguments['node_id']) != arguments['expected_runtime_revision']:
+                        raise ValueError('Gateway runtime changed; read its settings again before requesting Stop')
                 if operation == 'console-send':
                     observation = self.observations.get(session['id'], {}).get(arguments['node_id'])
                     if not observation:
@@ -531,7 +545,7 @@ class Bridge:
                     item['status'] = 'uncertain'
                 # A new explicit read is required before every subsequent input request.
                 self.observations.get(session['id'], {}).pop(arguments['node_id'], None)
-            if operation == 'start-node' and not result.get('started'):
+            if operation in ('start-node', 'start-internet') and not result.get('started'):
                 item['status'], item['error'] = 'failed', result.get('error', '')
         return result
 
@@ -587,7 +601,9 @@ class Bridge:
         audit = None
         if self.auth and method == 'POST' and path in (
                 '/api/automation/preview', '/api/automation/apply',
-                '/api/automation/start-node', '/api/automation/console-send'):
+                '/api/automation/start-node', '/api/automation/console-send',
+                '/api/automation/preview-internet', '/api/automation/apply-internet',
+                '/api/automation/stop-internet', '/api/automation/start-internet'):
             principal = self.auth.session_digest(session.get('owner'))
             node = data.get('node_id', '') if isinstance(data, dict) else ''
             target = node if isinstance(node, str) and re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', node) else ''
@@ -610,7 +626,7 @@ class Bridge:
             outcome = 'tool_ok'
             if path.endswith('/console-send'):
                 outcome = 'input_sent' if result.get('input_status') == 'sent' else 'uncertain'
-            elif path.endswith('/start-node') and not result.get('started'):
+            elif path.endswith(('/start-node', '/start-internet')) and not result.get('started'):
                 outcome = 'failed'
             self.auth.activity_finish(audit, outcome)
         with self.lock:
@@ -642,7 +658,17 @@ class Bridge:
             with self.lock:
                 self.observations.setdefault(session['id'], {})[data['node_id']] = copy.deepcopy(result)
             return result
-        if method == 'POST' and path in ('/api/automation/apply', '/api/automation/start-node', '/api/automation/console-send'):
+        if method == 'POST' and path == '/api/automation/internet-settings':
+            if data.get('proposal_id') is not None and data['proposal_id'] not in session.get('internet_proposals', []):
+                raise ValueError('Internet proposal does not belong to this session')
+            return service.internet_settings(**data)
+        if method == 'POST' and path == '/api/automation/preview-internet':
+            result = service.preview_internet(**data)
+            with self.lock:
+                session['internet_proposals'] = (session.get('internet_proposals', []) + [result['proposal_id']])[-16:]
+            return result
+        if method == 'POST' and path in ('/api/automation/apply', '/api/automation/start-node', '/api/automation/console-send',
+                '/api/automation/apply-internet', '/api/automation/stop-internet', '/api/automation/start-internet'):
             return self.guarded_tool(session, path.rsplit('/', 1)[1], data, turn_id)
         if method == 'POST' and path == '/api/automation/preview':
             result = service.preview(**data)

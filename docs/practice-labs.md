@@ -83,11 +83,73 @@ Each node uses:
 | `startup_config` | Optional Cisco, FRR or LL2S configuration-file text, up to 16 KiB UTF-8; see precedence below |
 
 Cloud nodes use `image: "weblab-internet:dev"` (or omit it), `memory: 256`,
-`ethernet: 1`, and an `internet` object: `{"address":"192.0.2.1/24","routes":[],
-"uplink_subnet":""}`. Return routes are `{"destination":"10.44.0.0/24",
+`ethernet: 1`, and an `internet` object. For example:
+
+```json
+{
+  "address": "192.0.2.1/24",
+  "routes": [{"destination": "10.44.0.0/24", "via": "192.0.2.2"}],
+  "uplink_subnet": "",
+  "firewall": {
+    "default_action": "deny",
+    "rules": [{
+      "action": "allow", "protocol": "tcp",
+      "source": "10.44.0.10/32", "destination": "",
+      "source_port": "", "destination_port": "443"
+    }]
+  },
+  "port_forwards": [{
+    "protocol": "tcp", "bind_address": "127.0.0.1",
+    "external_port": 22022, "target_address": "10.44.0.10",
+    "target_port": 22, "source": ""
+  }]
+}
+```
+
+The example permits that PC's outbound HTTPS and publishes its SSH service on
+localhost **on the Docker host**. The PC must run an SSH server and have working
+return routing; topology fields do not install services or configure credentials.
+
+`firewall` accepts `default_action` (`allow`/`deny`) and up to 64 ordered `rules`.
+Each rule requires `action` (`allow`/`deny`) and `protocol`
+(`any`/`tcp`/`udp`/`icmp`). Optional `source`/`destination` are IPv4 hosts or
+aligned CIDRs; blank means any. Optional `source_port`/`destination_port` are
+strings containing a single port or inclusive range (`"443"`, `"1024-65535"`),
+valid only with TCP/UDP. The first matching rule wins. Omitted firewall settings
+mean no rules/default allow. Rules cannot authorize sources outside the attached
+subnet and configured return networks. See [outbound firewall rules](internet.md#outbound-firewall-rules).
+
+`port_forwards` accepts up to 32 mappings. Each requires `protocol` (`tcp`/`udp`),
+`external_port`, `target_address` and `target_port`; ports are single integers
+1–65535. The target must be a usable node IPv4 address on the attached subnet or
+a configured return network. `bind_address` defaults to `127.0.0.1`; an explicit
+host LAN IPv4 or `0.0.0.0` allows remote access. Optional `source` restricts LAN
+clients to an IPv4 host/CIDR; leave it blank for localhost bindings. Omission
+means no published ports. Duplicate/wildcard host binding overlaps are rejected
+across clouds. Inbound clients are translated to the gateway's lab IP; admitted
+connections' replies are independent of the outbound default action. Review all
+host publications before starting a cloud. See [inbound port forwarding](internet.md#inbound-port-forwarding).
+
+Return routes are `{"destination":"10.44.0.0/24",
 "via":"192.0.2.2"}`. IPv4/gateway/startup_config fields must be empty on clouds.
 A cloud has one `eth0` port; it starts before other nodes and has no console.
-See [Internet cloud](internet.md) for addressing and the required helper build.
+See [Internet cloud](internet.md) for addressing and prebuilt or local helper setup.
+The browser and MCP can apply firewall rules live. Address, return-route, uplink
+and port-forward edits require only that Internet node stopped. For an existing
+gateway, use `get_internet_settings` and follow all offsets with the same revision;
+compact lab state summarizes settings rather than including every rule. Gateway
+changes use `preview_internet_settings` then separately authorized
+`apply_internet_settings`. Use `stop_internet_node` (with the observed revision and
+runtime_revision) before network/forward edits, read fresh settings, preview/apply,
+then separately `start_internet_node`. Only Internet nodes are affected; other
+devices keep running. External gateway writes need `--allow-internet-write`; the
+browser Agent has an independent initially disabled Internet permission. Its exact
+old/new settings or lifecycle action needs browser approval unless explicitly
+enabled YOLO applies. Preview IDs are session-bound in the Agent and expire after
+one hour. Do not replace the topology to edit one gateway. Full topology apply
+still requires every node stopped. Review all host port publications and verify
+actual traffic separately; these tools do not install services inside targets.
+Workspace and console themes are browser preferences, outside topology JSON/MCP.
 
 Diagram-only clouds use `type: "network"`, with optional `size` (integer
 60–200, default 100 percent) and `color` (six-digit hex, default `#94a3b8`).
@@ -211,7 +273,8 @@ recorded separately. See [backups](backups.md) for retention and archive compati
 
 PC `ipv4`/`gateway` settings are applied each time its disposable Alpine container
 starts. They can be edited while that PC is stopped even if Cisco nodes are
-running. Other device/cable changes still require the lab to be stopped.
+running. Internet settings have the per-gateway rules above. Other device/cable
+changes still require the lab to be stopped.
 
 ## Validate without touching the active lab
 

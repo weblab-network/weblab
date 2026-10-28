@@ -2,20 +2,122 @@
 import ipaddress
 import json
 import os
+import re
 import sys
 import time
 
 IMAGE = 'weblab-internet:dev'
 LABEL = 'network.weblab.internet'
+FIREWALL_LABEL = LABEL + '.firewall'
+LIVE_FIREWALL_LABEL = FIREWALL_LABEL + '.live'
+PORT_FORWARD_LABEL = LABEL + '.port-forwards'
+MAX_FIREWALL_RULES = 64
+MAX_PORT_FORWARDS = 32
+FORWARD_PORT_BASE = 40000
+
+
+def firewall_settings(raw):
+    if not isinstance(raw, dict) or set(raw) - {'default_action', 'rules'}:
+        raise ValueError('Firewall settings require default_action and rules')
+    default = raw.get('default_action', 'allow')
+    if default not in ('allow', 'deny'):
+        raise ValueError('Firewall default action must be allow or deny')
+    rules = raw.get('rules', [])
+    if not isinstance(rules, list) or len(rules) > MAX_FIREWALL_RULES:
+        raise ValueError(f'Firewall supports at most {MAX_FIREWALL_RULES} rules')
+    result = {'default_action': default, 'rules': []}
+    fields = {'action', 'protocol', 'source', 'destination', 'source_port', 'destination_port'}
+    for number, rule in enumerate(rules, 1):
+        try:
+            if not isinstance(rule, dict) or set(rule) - fields:
+                raise ValueError('Use action, protocol, source, destination, source_port and destination_port')
+            action, protocol = rule.get('action'), rule.get('protocol')
+            if action not in ('allow', 'deny') or protocol not in ('any', 'tcp', 'udp', 'icmp'):
+                raise ValueError('Choose allow/deny and any, tcp, udp or icmp')
+            normalized = {'action': action, 'protocol': protocol}
+            for field in ('source', 'destination'):
+                value = rule.get(field, '')
+                if not isinstance(value, str):
+                    raise ValueError(f'{field} must be an IPv4 address or network, or blank for any')
+                normalized[field] = str(ipaddress.IPv4Network(value)) if value else ''
+            for field in ('source_port', 'destination_port'):
+                value = rule.get(field, '')
+                if not isinstance(value, str) or (value and not re.fullmatch(r'[0-9]{1,5}(?:-[0-9]{1,5})?', value)):
+                    raise ValueError(f'{field} must be a port or inclusive range such as 1024-65535')
+                if value and protocol not in ('tcp', 'udp'):
+                    raise ValueError('Ports require TCP or UDP')
+                ports = [int(p) for p in value.split('-')] if value else []
+                if ports and not 1 <= ports[0] <= ports[-1] <= 65535:
+                    raise ValueError('Ports must be within 1–65535 and ranges must be ascending')
+                normalized[field] = '-'.join(map(str, ports))
+            result['rules'].append(normalized)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f'Firewall rule {number}: {exc}') from exc
+    return result
 
 
 def is_cloud(node):
     return node.get('type') == 'cloud'
 
 
+def port_number(value):
+    if (type(value) is not int and (not isinstance(value, str) or not re.fullmatch(r'[0-9]{1,5}', value))) or not 1 <= int(value) <= 65535:
+        raise ValueError('Use a single port between 1 and 65535')
+    return int(value)
+
+
+def check_bindings(configs):
+    bindings = {}
+    for config in configs:
+        for forward in config.get('port_forwards', []):
+            key = (forward['protocol'], forward['external_port'])
+            address = forward['bind_address']
+            used = bindings.setdefault(key, set())
+            if address in used or '0.0.0.0' in used or (address == '0.0.0.0' and used):
+                raise ValueError(f'Port forward conflicts with another binding: {address}:{key[1]}/{key[0]}')
+            used.add(address)
+
+
+def port_forward_settings(raw, config):
+    if not isinstance(raw, list) or len(raw) > MAX_PORT_FORWARDS:
+        raise ValueError(f'Internet gateway supports at most {MAX_PORT_FORWARDS} port forwards')
+    gateway = ipaddress.IPv4Interface(config['address'])
+    prefixes = [gateway.network, *[ipaddress.IPv4Network(r['destination']) for r in config['routes']]]
+    result = []
+    for number, item in enumerate(raw, 1):
+        try:
+            if not isinstance(item, dict) or set(item) - {'protocol','bind_address','external_port','target_address','target_port','source'}:
+                raise ValueError('Use protocol, bind_address, external_port, target_address, target_port and source')
+            if item.get('protocol') not in ('tcp', 'udp'):
+                raise ValueError('Port forwards support TCP or UDP')
+            if not isinstance(item.get('bind_address', '127.0.0.1'), str) or not isinstance(item.get('target_address'), str):
+                raise ValueError('Bind and target addresses must be IPv4 address strings')
+            bind = ipaddress.IPv4Address(item.get('bind_address', '127.0.0.1'))
+            if bind.is_multicast or bind.is_link_local or int(bind) == 0xffffffff or (bind.is_loopback and str(bind) != '127.0.0.1'):
+                raise ValueError('Bind to 127.0.0.1, a host IPv4 address or 0.0.0.0')
+            target = ipaddress.IPv4Address(item['target_address'])
+            if (target == gateway.ip or int(target) == 0xffffffff or target.is_unspecified or target.is_loopback or target.is_multicast or target.is_link_local or
+                    not any(target in prefix and (prefix.prefixlen >= 31 or target not in (
+                        prefix.network_address, prefix.broadcast_address)) for prefix in prefixes)):
+                raise ValueError('Target must be a usable node IPv4 address on the cloud subnet or a configured return network')
+            source = item.get('source', '')
+            if not isinstance(source, str):
+                raise ValueError('Allowed source must be an IPv4 host/network or blank for any')
+            source = str(ipaddress.IPv4Network(source)) if source else ''
+            if bind.is_loopback and source:
+                raise ValueError('Leave allowed source blank for a localhost binding; use it with a LAN binding')
+            result.append({'protocol':item['protocol'], 'bind_address':str(bind),
+                'external_port':port_number(item['external_port']), 'target_address':str(target),
+                'target_port':port_number(item['target_port']), 'source':source})
+        except (ValueError, TypeError, KeyError) as exc:
+            raise ValueError(f'Port forward {number}: {exc}') from exc
+    check_bindings([{'port_forwards':result}])
+    return result
+
+
 def settings(raw):
-    if not isinstance(raw, dict) or set(raw) - {'address', 'routes', 'uplink_subnet'}:
-        raise ValueError('Internet settings require address, routes and optional uplink_subnet')
+    if not isinstance(raw, dict) or set(raw) - {'address', 'routes', 'uplink_subnet', 'firewall', 'port_forwards'}:
+        raise ValueError('Internet settings accept address, routes, uplink_subnet, firewall and port_forwards')
     if not isinstance(raw.get('address', ''), str) or not isinstance(raw.get('uplink_subnet', ''), str):
         raise ValueError('Cloud address and uplink subnet must be strings')
     address = ipaddress.IPv4Interface(raw.get('address', '192.0.2.1/24'))
@@ -25,7 +127,8 @@ def settings(raw):
     routes = raw.get('routes', [])
     if not isinstance(routes, list) or len(routes) > 32:
         raise ValueError('Cloud supports at most 32 return routes')
-    result = {'address': str(address), 'routes': [], 'uplink_subnet': ''}
+    result = {'address': str(address), 'routes': [], 'uplink_subnet': '',
+              'firewall': firewall_settings(raw.get('firewall', {}))}
     destinations = set()
     for route in routes:
         if not isinstance(route, dict) or set(route) != {'destination', 'via'}:
@@ -45,6 +148,7 @@ def settings(raw):
             raise ValueError('Docker uplink subnet must have prefix /16–/28')
         check_uplink(result, uplink)
         result['uplink_subnet'] = str(uplink)
+    result['port_forwards'] = port_forward_settings(raw.get('port_forwards', []), result)
     return result
 
 
@@ -68,7 +172,20 @@ def start(lab, node, run, error, root):
         if (metadata.get('Config', {}).get('Labels') or {}).get(LABEL) != '1':
             raise ValueError('missing gateway image label')
     except (error, ValueError, KeyError, IndexError) as exc:
+        if image != IMAGE:
+            raise error(f'Install the configured Internet helper image on the Docker host: {image}. See docs/internet.md.') from exc
         raise error('Build the Internet gateway image first: docker build -f packaging/internet/Dockerfile -t weblab-internet:dev .') from exc
+    if (metadata.get('Config', {}).get('Labels') or {}).get(PORT_FORWARD_LABEL) != '1':
+        if config['port_forwards']:
+            raise error('Rebuild the Internet gateway helper for port forwarding: '
+                        'docker build -f packaging/internet/Dockerfile -t weblab-internet:dev .')
+        config.pop('port_forwards')
+    if (metadata.get('Config', {}).get('Labels') or {}).get(FIREWALL_LABEL) != '1':
+        if config['firewall']['rules'] or config['firewall']['default_action'] != 'allow':
+            raise error('Rebuild the Internet gateway image for firewall controls: '
+                        'docker build -f packaging/internet/Dockerfile -t weblab-internet:dev .')
+        # Older helpers reject unknown settings. Preserve their original allow policy.
+        config.pop('firewall')
     runtime = lab.runtime[node['id']]
     stem = f'wl-cloud-{lab.owner}-{node["iol_id"]}'
     runtime.update(cloud=True, container=stem, cloud_label=f'{lab.owner}:{node["id"]}',
@@ -106,7 +223,10 @@ def start(lab, node, run, error, root):
         '--tmpfs', '/run:rw,nosuid,nodev,size=8m',
         '--sysctl', 'net.ipv4.ip_forward=1', '--sysctl', 'net.ipv6.conf.all.disable_ipv6=1',
         '--sysctl', 'net.ipv6.conf.default.disable_ipv6=1',
-        '--env', 'WL_INTERNET_CONFIG=' + json.dumps(config), metadata['Id'])
+        '--env', 'WL_INTERNET_CONFIG=' + json.dumps(config),
+        *[arg for index, forward in enumerate(config.get('port_forwards', [])) for arg in (
+            '--publish', f'{forward["bind_address"]}:{forward["external_port"]}:{FORWARD_PORT_BASE+index}/{forward["protocol"]}')],
+        metadata['Id'])
     runtime['cloud_container_id'] = cid
     mark('cloud_container_created')
     run('docker', 'network', 'connect', runtime['cloud_lan'], cid)
@@ -133,6 +253,29 @@ def start(lab, node, run, error, root):
         if not lab.alive(runtime['bridge']) or time.monotonic() >= deadline:
             raise error('Internet cable adapter failed; inspect launcher logs')
         time.sleep(.05)
+
+
+def firewall_container(lab, node, run, error):
+    runtime = lab.runtime[node['id']]
+    cid = runtime.get('cloud_container_id')
+    if not runtime.get('cloud') or not cid:
+        raise error('Internet gateway runtime is unavailable; stop and start this Internet node')
+    metadata = json.loads(run('docker', 'container', 'inspect', cid))[0]
+    labels = metadata.get('Config', {}).get('Labels') or {}
+    if labels.get(LABEL) != f'{lab.owner}:{node["id"]}':
+        raise error('Internet resource ownership changed; refusing firewall update')
+    if not metadata.get('State', {}).get('Running'):
+        raise error('Internet gateway is not running; stop and start this Internet node')
+    if labels.get(LIVE_FIREWALL_LABEL) != '1':
+        raise error('Rebuild the Internet gateway helper for live firewall updates, then stop/start '
+                    'only this Internet node: docker build -f packaging/internet/Dockerfile '
+                    '-t weblab-internet:dev .')
+    return cid
+
+
+def update_firewall(cid, policy, run):
+    run('docker', 'exec', cid, 'python3', '/opt/weblab/gateway.py', 'firewall',
+        json.dumps(firewall_settings(policy)), timeout=12)
 
 
 def cleanup(lab, runtime, run, error):

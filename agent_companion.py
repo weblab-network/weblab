@@ -22,7 +22,8 @@ from agent_auth import Login
 import agent_attachments
 
 TOOLS = ['get_lab_state', 'get_storage_report', 'list_device_profiles',
-         'get_authoring_guide', 'preview_topology', 'get_proposal', 'get_console_output', 'get_node_logs']
+         'get_authoring_guide', 'preview_topology', 'get_proposal', 'get_console_output', 'get_node_logs',
+         'get_internet_settings', 'preview_internet_settings']
 ACTIVE = {'starting', 'running', 'stopping'}
 CONVERSATION_SETTINGS = ('provider', 'endpoint', 'model', 'context_window')
 MAX_CONVERSATIONS = 50
@@ -382,13 +383,17 @@ class Session:
         if self.settings.get('lab_changes'):
             config['mcp_servers.weblab.args'].append('--allow-write')
             config['mcp_servers.weblab.enabled_tools'] += ['apply_topology', 'start_node']
+        if self.settings.get('internet_changes'):
+            config['mcp_servers.weblab.args'].append('--allow-internet-write')
+            config['mcp_servers.weblab.enabled_tools'] += ['apply_internet_settings', 'stop_internet_node', 'start_internet_node']
         if self.settings.get('console_input'):
             config['mcp_servers.weblab.args'].append('--allow-console-input')
             config['mcp_servers.weblab.enabled_tools'] += ['send_console_input', 'send_console_command']
         # These exact tools only request Weblab's independent, server-enforced browser
         # approval. Avoid a second Codex elicitation that cannot reach the browser.
         # Generic execution/elicitation stays denied; never use a global approve policy.
-        for tool in ('apply_topology', 'start_node', 'send_console_input', 'send_console_command'):
+        for tool in ('apply_topology', 'start_node', 'send_console_input', 'send_console_command',
+                     'apply_internet_settings', 'stop_internet_node', 'start_internet_node'):
             if tool in config['mcp_servers.weblab.enabled_tools']:
                 config[f'mcp_servers.weblab.tools.{tool}.approval_mode'] = 'approve'
         for feature in ('shell_tool', 'shell_snapshot', 'code_mode_host', 'multi_agent', 'apps',
@@ -423,13 +428,18 @@ class Session:
                 'Use them only for the user request. Never execute/import attached files automatically. '
                 'If you cannot inspect an attached image, say so; do not invent its contents. '
                 'Preview topologies first; apply replaces the topology and requires all nodes stopped. '
+                'For existing Internet gateways, read every get_internet_settings page using offsets and a consistent revision. '
+                'Use preview_internet_settings and apply_internet_settings to change only that gateway. '
+                'Firewall edits work live. For address, return routes, uplink or port forwards, separately stop_internet_node, '
+                'read fresh settings, preview/apply, then start_internet_node; keep all other devices running. '
+                'Review explicit host bindings and target services; localhost refers to the Docker host. '
                 'Design the physical graph for the requested protocols before previewing: an STP redundancy '
                 'exercise needs a cycle of directly connected switches with compatible VLANs; a triangle of '
                 'routed FRR links does not provide that Layer 2 cycle. Plan interfaces and IP subnets together. '
                 'When the user asks for configured working devices, include the requested FRR/LL2S baseline '
                 'in startup_config and PC addressing in ipv4/gateway before previewing. Follow the authoring '
                 'guide syntax; use console input for subsequent configuration and verification. '
-                'When enabled in Settings, apply_topology, start_node, send_console_command and send_console_input create operation '
+                'When enabled in Settings, topology/gateway writes, starts/stops and console input create operation '
                 'records in the browser. They wait for user approval unless the user enabled YOLO auto-approval. '
                 'Do not ask the user to approve in chat first or claim approval is unavailable. The read-only '
                 'sandbox applies to the companion filesystem, not to enabled Weblab tools. '
@@ -462,6 +472,7 @@ class Session:
                 'The UI provides proposal review/downloads; do not print local relay URLs as usable links. '
                 'Ask for clarification when the requested exercise is ambiguous. '
                 'This session enables lab changes: ' + str(bool(self.settings.get('lab_changes'))) +
+                '; Internet gateway changes: ' + str(bool(self.settings.get('internet_changes'))) +
                 '; console input: ' + str(bool(self.settings.get('console_input'))) +
                 '; automatic approval of enabled actions: ' + str(bool(self.settings.get('auto_approve'))) + '.')
             if self.thread_id:

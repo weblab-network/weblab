@@ -571,13 +571,13 @@ function startRectangleSelection(event) {
   box.className = 'map-selection-box'; box.hidden = true;
   box.setAttribute('aria-hidden','true'); area.append(box);
   const start = {x:event.clientX, y:event.clientY};
-  let moved = false;
+  let moved = false, cancelled = false;
   dragging = true; area.setPointerCapture(event.pointerId); updateViewControls();
   const highlight = () => {
     for (const node of $("canvas").querySelectorAll(".map-node")) node.classList.toggle('selected',selectedNodes.has(node.dataset.id));
   };
   const move = e => {
-    if (e.pointerId !== event.pointerId) return;
+    if (e.pointerId !== event.pointerId || cancelled) return;
     const bounds = area.getBoundingClientRect();
     const x = Math.max(bounds.left,Math.min(bounds.left+area.clientWidth,e.clientX));
     const y = Math.max(bounds.top,Math.min(bounds.top+area.clientHeight,e.clientY));
@@ -603,17 +603,20 @@ function startRectangleSelection(event) {
     document.removeEventListener('keydown',cancel,true);
     if (area.hasPointerCapture(event.pointerId)) area.releasePointerCapture(event.pointerId);
     box.remove(); dragging = false;
-    if (e.type !== 'pointerup') {
+    if (e.type !== 'pointerup' || cancelled) {
       selectedNodes.clear(); original.forEach(id=>selectedNodes.add(id)); selected = originalSelected;
     }
-    suppressMapClick = moved || e.type !== 'pointerup';
+    suppressMapClick = moved || cancelled || e.type !== 'pointerup';
     setTimeout(()=>{suppressMapClick=false;},0);
     render(); renderInspector(); updateViewControls();
   };
   const cancel = e => {
     if (e.key !== 'Escape') return;
     e.preventDefault(); e.stopImmediatePropagation();
-    finish({pointerId:event.pointerId,type:'pointercancel'});
+    // Keep capture until release so its click cannot clear the restored selection.
+    cancelled = true; box.hidden = true;
+    selectedNodes.clear(); original.forEach(id=>selectedNodes.add(id)); selected = originalSelected;
+    highlight(); renderInspector();
   };
   area.addEventListener('pointermove',move);
   for (const type of ['pointerup','pointercancel','lostpointercapture']) area.addEventListener(type,finish);
@@ -1572,6 +1575,32 @@ function bindConsoleClipboard(session) {
   }, true);
 }
 
+const CONSOLE_THEMES = {
+  dark: {background:'#0c1117',foreground:'#dae3ee',cursor:'#67d8bc',selectionBackground:'#40645c'},
+  light: {
+    background:'#ffffff',foreground:'#243244',cursor:'#176c59',cursorAccent:'#ffffff',
+    selectionBackground:'#b9d9cf',selectionForeground:'#162c23',
+    black:'#243244',red:'#a72e3a',green:'#166347',yellow:'#7b510f',
+    blue:'#2856a0',magenta:'#823d8f',cyan:'#0b6676',white:'#526176',
+    brightBlack:'#59677b',brightRed:'#be293a',brightGreen:'#15704d',brightYellow:'#865a0d',
+    brightBlue:'#285fc0',brightMagenta:'#9747a4',brightCyan:'#087586',brightWhite:'#34465c'
+  }
+};
+function consoleTheme() {
+  return {...CONSOLE_THEMES[consoleThemeMode()]};
+}
+function consoleThemeMode() { return document.documentElement.dataset.consoleTheme === 'light' ? 'light' : 'dark'; }
+function consoleContrast() { return consoleThemeMode() === 'light' ? 4.5 : 1; }
+function updateConsoleThemes() {
+  for (const panel of document.querySelectorAll('.console-panel')) panel.dataset.consoleTheme = consoleThemeMode();
+  for (const session of consoleSessions.values()) {
+    session.terminal.options.theme = consoleTheme();
+    session.terminal.options.minimumContrastRatio = consoleContrast();
+  }
+}
+window.addEventListener('weblab-console-theme-change', updateConsoleThemes);
+updateConsoleThemes();
+
 const DEFAULT_CONSOLE_FONT = 12, MIN_CONSOLE_FONT = 8, MAX_CONSOLE_FONT = 28;
 let consoleFontSize = DEFAULT_CONSOLE_FONT;
 try {
@@ -1677,7 +1706,7 @@ function openConsole(id) {
   detach.onclick = () => floatConsole(id);
   tabGroup.append(tab, detach, close);
   $("console-tabs").append(tabGroup);
-  const terminal = new Terminal({cursorBlink:true, fontSize:consoleFontSize, fontFamily:'"DejaVu Sans Mono",Consolas,monospace', scrollback:10000, theme:{background:"#0c1117",foreground:"#dae3ee",cursor:"#67d8bc",selectionBackground:"#40645c"}});
+  const terminal = new Terminal({cursorBlink:true, fontSize:consoleFontSize, fontFamily:'"DejaVu Sans Mono",Consolas,monospace', scrollback:10000, theme:consoleTheme(), minimumContrastRatio:consoleContrast()});
   const fitAddon = new FitAddon.FitAddon();
   terminal.loadAddon(fitAddon);
   const session = {id, name: nodeById(id).name, terminal, fitAddon, element, tabGroup, tab, dot, label, close, detach,
@@ -1986,6 +2015,7 @@ function floatConsole(id, remember = true) {
   const panel = document.createElement('section');
   panel.id = `console-window-${id}`; panel.className = 'console-panel floating console-window';
   panel.dataset.consoleId = id;
+  panel.dataset.consoleTheme = consoleThemeMode();
   panel.setAttribute('aria-label',`${session.name} console`);
   const toolbar = $("console-toolbar").cloneNode(true), resize = $("console-resize").cloneNode(true);
   toolbar.querySelectorAll('details').forEach(menu => menu.open = false);

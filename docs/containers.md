@@ -9,6 +9,7 @@
 | `ghcr.io/weblab-network/weblab` | Weblab and runtime dependencies; supply device images |
 | `ghcr.io/weblab-network/weblab-exos` | Weblab plus pinned Virtual EXOS 33.1.1.31 and an unconfigured five-node topology |
 | `ghcr.io/weblab-network/weblab-agent` | Optional Codex companion for the Agent window; use alongside Weblab, not as a standalone lab |
+| `ghcr.io/weblab-network/weblab-internet` | Optional Internet gateway helper; Weblab creates it for Internet nodes, with firewall rules, routes and port forwards |
 
 All are **Linux amd64** images. Use an x86-64 Linux host/VM with rootful Docker
 Engine and Compose. The EXOS edition requires working `/dev/kvm`, including
@@ -34,6 +35,14 @@ The Agent companion is configured separately with
 [Agent setup](agent.md#enable-with-prebuilt-images) for matching version tags,
 Ollama/OpenAI settings and persistent conversation volumes. It contains no model
 weights or network-device images and has no Docker socket or lab-data mount.
+
+## Optional Internet helper
+
+Use the matching **0.11.0** helper with core for Internet nodes, or add
+`--with-internet` to a fresh installer invocation. Existing deployments pull the
+helper separately on the Docker host and set `WL_INTERNET_IMAGE`. It is not a
+standalone Compose service. See [Internet setup](internet.md#install-a-prebuilt-gateway)
+and [matching binary/source downloads](../packaging/internet/SOURCES.md).
 
 ## Start the EXOS demo
 

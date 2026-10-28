@@ -133,6 +133,16 @@ class InstallerTests(unittest.TestCase):
         self.assert_no_mutations()
         self.assertFalse((self.root/'other').exists())
 
+    def test_internet_helper_is_optional_and_matches_core_version(self):
+        result = self.run_script('--with-internet')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(['docker', 'pull', 'ghcr.io/weblab-network/weblab-internet:0.11.0'], self.calls)
+        core = next(call for call in self.calls if call[:2] == ['docker', 'run'] and '--network' in call and call[call.index('--network')+1] == 'host')
+        self.assertIn('WL_INTERNET_IMAGE=ghcr.io/weblab-network/weblab-internet:0.11.0', core)
+        result = self.run_script()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any(call[:2] == ['docker', 'pull'] and 'weblab-internet' in call[-1] for call in self.calls))
+
     def test_failures_preserve_state_and_never_report_ready(self):
         for env in ({'PULL_FAIL': '1'}, {'RUN_FAIL': '1'}, {'HEALTH_FAIL': '1'}):
             with self.subTest(env=env):

@@ -6,12 +6,13 @@ The optional **Agent** button opens a floating tabbed window.
 It uses a separate Codex app-server companion and an operator-selected Ollama
 model or OpenAI model through ChatGPT sign-in to discover profiles, draft exercises and inspect live consoles. By default
 it can read and preview. In **Settings**, separately enable **topology apply and
-node starts** and **console input** to let it request changes. By default each
+node starts**, **Internet gateway settings and stop/start**, and **console input**
+to let it request those changes independently. By default each
 operation requires your approval in Operations. The optional **YOLO** setting
 preapproves enabled actions for this session; it is off by default.
 Topology apply replaces the current topology; all nodes must already be stopped.
-Stopping/deleting nodes, manipulating live links and uploading images remain
-manual operations. The agent can configure running devices through their CLI
+Stopping ordinary guest nodes, deleting nodes, manipulating live links and uploading
+images remain manual operations. The agent can configure running devices through their CLI
 when input is enabled and approved, individually or through YOLO.
 
 Agent replies display Markdown headings, emphasis, lists, tables and code blocks.
@@ -30,6 +31,15 @@ When requesting a configured lab, the agent can include FRR/LL2S startup snippet
 and PC addressing in its proposal, then request each start and console check.
 Review the final device states and protocol evidence; a completed model turn
 does not guarantee the requested lab is running or configured correctly.
+
+Internet firewall rules, return routes and port forwards can be included in a
+topology proposal or edited on an existing gateway through dedicated preview/apply
+tools. Firewall edits work live. Network/forward edits require only the gateway
+stopped, using its dedicated stop/start tools; other devices keep running. Enable
+the separate Internet permission and review each exact action in Operations.
+Existing sessions retain that permission off. Full topology apply still replaces
+the complete topology with all nodes stopped. See the
+[MCP feature coverage](automation.md#internet-gateways-and-appearance).
 
 Initial console checks show the latest retained output rather than the start of
 old boot logs. When older text is omitted, the tool reports it; the excerpt is
@@ -54,6 +64,8 @@ the returned cursor retrieves subsequent output. This avoids the companion's
 separate tool-output truncation hiding nodes or the middle of a configuration.
 Initial latest reads remain excerpts, with omitted history reported. OpenAI
 sessions keep the ordinary tool responses and capture budgets.
+Internet settings are summarized in compact discovery; `get_internet_settings`
+pages every route, rule and forward with explicit offsets and a consistent revision.
 
 
 Starting with v0.7.0, `WL_AUTH=1`
@@ -190,8 +202,8 @@ image/data mounts and project name when adding the companion.
 
 ```sh
 mkdir -p images lab-data
-export WL_IMAGE=ghcr.io/weblab-network/weblab:0.10.1
-export WL_AGENT_IMAGE=ghcr.io/weblab-network/weblab-agent:0.10.1
+export WL_IMAGE=ghcr.io/weblab-network/weblab:0.11.0
+export WL_AGENT_IMAGE=ghcr.io/weblab-network/weblab-agent:0.11.0
 # For Ollama, use the /v1 URL reachable from the Weblab service:
 export WL_AGENT_PROVIDERS=http://YOUR_OLLAMA_HOST:11434/v1
 docker compose -f compose.prebuilt.yaml -f compose.agent.prebuilt.yaml pull
@@ -528,7 +540,8 @@ Pending cards expire after at most 60 seconds, within the overall turn deadline.
 With YOLO enabled, operation cards are recorded as automatically approved and
 execute immediately. The title bar and cards show **YOLO**. This permits enabled
 apply/start/input operations, including potentially disruptive guest commands;
-it adds no stop/delete/upload tools or host access. The model cannot enable YOLO,
+it adds no general stop/delete/upload tools or host access. Only the separately
+enabled gateway tools can stop/start an Internet node. The model cannot enable YOLO,
 approve its own requests, change the approved arguments, or reach the general
 mutation API through the gateway.
 Browser reload/hide retains a pending card until expiry. Stop, session reset,

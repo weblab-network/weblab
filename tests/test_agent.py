@@ -542,6 +542,69 @@ class AgentApprovalTests(unittest.TestCase):
         self.bridge.revoke(self.session)
         with self.assertRaisesRegex(ValueError,'ended or expired'):call('apply',{'proposal_id':p['proposal_id']})
 
+    def gateway_draft(self):
+        self.lab.save({'name': 'Gateway', 'nodes': [
+            {'id': 'cloud', 'name': 'Internet', 'type': 'cloud'}], 'links': []})
+        return self.bridge.tool(self.session, 'POST', '/api/automation/preview-internet', {
+            'node_id': 'cloud', 'internet': {'firewall': {'default_action': 'deny', 'rules': []}},
+            'expected_revision': self.bridge.automation.state()['revision']}, self.turn)
+
+    def test_gateway_permission_is_separate_and_proposals_are_session_scoped(self):
+        draft = self.gateway_draft()
+        args = {'proposal_id': draft['proposal_id']}
+        self.session['settings']['auto_approve'] = True
+        with self.assertRaisesRegex(ValueError, 'Enable internet_changes'):
+            self.bridge.tool(self.session, 'POST', '/api/automation/apply-internet', args, self.turn)
+        self.session['settings']['internet_changes'] = True
+        self.session['settings']['lab_changes'] = False
+        other = self.bridge.resolve(self.bridge.api('session')['token'])
+        other['settings']['internet_changes'] = True
+        self.bridge.turns[other['id']] = {'id': self.turn, 'expires': time.monotonic() + 120}
+        with self.assertRaisesRegex(ValueError, 'does not belong'):
+            self.bridge.tool(other, 'POST', '/api/automation/internet-settings', {
+                'node_id': 'cloud', 'proposal_id': draft['proposal_id']}, self.turn)
+        with self.assertRaisesRegex(ValueError, 'does not belong'):
+            self.bridge.tool(other, 'POST', '/api/automation/apply-internet', args, self.turn)
+        result = self.bridge.tool(self.session, 'POST', '/api/automation/apply-internet', args, self.turn)
+        self.assertTrue(result['applied'])
+        self.assertEqual(self.lab.node('cloud')['internet']['firewall']['default_action'], 'deny')
+        with self.assertRaisesRegex(ValueError, 'not permitted'):
+            self.bridge.tool(self.session, 'PUT', '/api/nodes/cloud/internet', {}, self.turn)
+
+    def test_gateway_approval_shows_exact_policy_and_rechecks_edits(self):
+        draft = self.gateway_draft()
+        self.session['settings']['internet_changes'] = True
+        thread, result, item = self.launch('apply-internet', {'proposal_id': draft['proposal_id']})
+        self.assertEqual(item['context']['before']['firewall']['default_action'], 'allow')
+        self.assertEqual(item['context']['after']['firewall']['default_action'], 'deny')
+        self.assertEqual(self.lab.node('cloud')['internet']['firewall']['default_action'], 'allow')
+        self.lab.topology['nodes'][0]['name'] = 'Human edit'
+        self.decide(item); thread.join(3)
+        self.assertIn('Workspace changed', result['error'])
+        self.assertEqual(self.bridge.approval_state(self.session)[-1]['status'], 'failed')
+        with self.assertRaises(ValueError):
+            self.decide(item)
+
+    def test_gateway_stop_approval_pins_runtime(self):
+        self.gateway_draft()
+        self.session['settings']['internet_changes'] = True
+        self.lab.runtime['cloud'] = {'cloud': True, 'iol_id': self.lab.node('cloud')['iol_id'],
+                                     'cloud_container_id': 'old-cid'}
+        page = self.bridge.automation.internet_settings('cloud')
+        args = {'node_id': 'cloud', 'expected_revision': page['revision'],
+                'expected_runtime_revision': page['runtime_revision']}
+        thread, result, item = self.launch('stop-internet', args)
+        self.lab.runtime['cloud']['cloud_container_id'] = 'replacement-cid'
+        self.decide(item); thread.join(3)
+        self.assertIn('runtime changed', result['error'])
+        self.assertIn('cloud', self.lab.runtime)
+        page = self.bridge.automation.internet_settings('cloud')
+        args['expected_runtime_revision'] = page['runtime_revision']
+        thread, result, item = self.launch('stop-internet', args)
+        self.decide(item); thread.join(3)
+        self.assertTrue(result['result']['stopped'])
+        self.assertNotIn('cloud', self.lab.runtime)
+
     def test_start_and_apply_revalidate_revision(self):
         args = {'node_id':'r1','expected_revision':self.bridge.automation.state()['revision']}
         thread,result,item=self.launch('start-node',args)
@@ -921,7 +984,7 @@ class CompanionTests(unittest.TestCase):
         self.assertFalse(self.manager.busy.locked())
 
     def test_permissions_only_expose_guarded_tools(self):
-        self.settings.update(lab_changes=True,console_input=True)
+        self.settings.update(lab_changes=True,console_input=True,internet_changes=True)
         self.manager.handle('turn',{**self.payload,'prompt':'inspect','request_id':'f'*32})
         session=self.manager.sessions['a'*32]
         self.wait(lambda:session.status=='running')
@@ -929,6 +992,11 @@ class CompanionTests(unittest.TestCase):
         self.assertIn('--allow-write',config['mcp_servers.weblab.args'])
         self.assertIn('--compact-responses',config['mcp_servers.weblab.args'])
         self.assertIn('--allow-console-input',config['mcp_servers.weblab.args'])
+        self.assertIn('--allow-internet-write',config['mcp_servers.weblab.args'])
+        for tool in ('apply_internet_settings', 'stop_internet_node', 'start_internet_node'):
+            self.assertIn(tool, config['mcp_servers.weblab.enabled_tools'])
+            self.assertNotIn(tool, agent_companion.TOOLS)
+            self.assertEqual(config[f'mcp_servers.weblab.tools.{tool}.approval_mode'], 'approve')
         self.assertIn('send_console_input',config['mcp_servers.weblab.enabled_tools'])
         self.assertNotIn('send_console_input',agent_companion.TOOLS)
         self.assertIn('send_console_command',config['mcp_servers.weblab.enabled_tools'])

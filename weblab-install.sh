@@ -2,12 +2,13 @@
 # Weblab fresh-install helper. Run on the Docker host, not inside a container.
 set -eu
 
-VERSION=0.10.2
+VERSION=0.11.0
 LL2S_IMAGE=ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1
 FRR_IMAGE=ghcr.io/weblab-network/weblab-frr:10.7.1-wl1
 name=weblab
 port=8080
 agent=0
+internet=0
 kvm=0
 examples=
 dry_run=0
@@ -23,6 +24,7 @@ usage() {
 Usage: sh weblab-install.sh [options]
 Fresh Linux amd64 installation using prebuilt images and local rootful Docker.
   --with-agent          Include the optional isolated Agent companion
+  --with-internet       Pull the matching Internet gateway helper image
   --with-kvm            Pass /dev/kvm to the core for QEMU devices
   --with-auth           Enable admin/user/guest login; listen on 0.0.0.0
   --auth-file FILE      NEW key file (default: ./NAME-auth.env; mode 600)
@@ -42,6 +44,7 @@ EOF
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --with-agent) agent=1; shift ;;
+        --with-internet) internet=1; shift ;;
         --with-kvm) kvm=1; shift ;;
         --start-example) start_example=1; shift ;;
         --with-auth) auth=1; shift ;;
@@ -90,6 +93,7 @@ fi
 
 printf 'Weblab %s: %s listening on %s:%s\n' "$VERSION" "$name" "$bind" "$port"
 printf 'Images: Alpine, LL2S 0.2.0-ovs-rstp1, Weblab FRR 10.7.1-wl1; Agent=%s; KVM=%s\n' "$agent" "$kvm"
+[ "$internet" = 0 ] || printf 'Internet helper: ghcr.io/weblab-network/weblab-internet:%s\n' "$VERSION"
 printf 'Persistent volumes: %s-images, %s-data\n' "$name" "$name"
 if [ "$agent" = 1 ]; then
     printf 'Agent volumes: %s-agent-sockets, %s-agent-conversations, %s-agent-bridge-state\n' "$name" "$name" "$name"
@@ -181,6 +185,9 @@ fi
 docker pull "$LL2S_IMAGE"
 docker pull "$FRR_IMAGE"
 docker pull "ghcr.io/weblab-network/weblab:$VERSION"
+if [ "$internet" = 1 ]; then
+    docker pull "ghcr.io/weblab-network/weblab-internet:$VERSION"
+fi
 if [ "$agent" = 1 ]; then
     docker pull "ghcr.io/weblab-network/weblab-agent:$VERSION"
 fi
@@ -226,6 +233,7 @@ if [ "$agent" = 1 ]; then
         -v "$name-agent-bridge-state:/agent-state"
 fi
 [ "$kvm" = 0 ] || set -- "$@" --device /dev/kvm
+[ "$internet" = 0 ] || set -- "$@" -e "WL_INTERNET_IMAGE=ghcr.io/weblab-network/weblab-internet:$VERSION"
 [ "$auth" = 0 ] || set -- "$@" --env-file "$auth_file"
 [ -z "$dns" ] || set -- "$@" --dns "$dns"
 "$@" "ghcr.io/weblab-network/weblab:$VERSION"

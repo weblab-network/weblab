@@ -1,0 +1,19 @@
+Weblab Internet gateway
+
+Weblab's independently implemented gateway/lifecycle code is MIT licensed.
+The complete container is an aggregation of separately licensed components.
+Alpine runtime packages, including BusyBox, musl, Python, dnsmasq, iproute2,
+iptables and their dependencies, retain their own licenses and notices.
+
+The release image retains its exact APK inventory, applicable upstream license
+texts, GPLv2 and Weblab's original source/build inputs under
+/usr/share/weblab-internet/. No vendor image or license is included.
+
+The matching binary and corresponding-source archives, image identity and
+SHA-256 checksums are published together in the matching Weblab GitHub release:
+https://github.com/weblab-network/weblab/releases
+Select the version in org.opencontainers.image.version. The source archive
+includes exact Alpine recipes/patches and checksum-verified upstream distfiles
+for all runtime APKs, plus Weblab's helper source and build inputs.
+Keep these source materials/notices available when redistributing this image.
+The host kernel and Docker Engine are prerequisites, outside this image.

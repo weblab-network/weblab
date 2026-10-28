@@ -90,7 +90,22 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
-## Latest release: v0.10.2
+## Latest release: v0.11.0
+
+Choose **Dark**, **Light** or **System** for the workspace, with a separate
+console theme that changes the terminal area while toolbars follow the workspace.
+See [appearance settings](docs/topology.md#appearance).
+
+Internet gateways add ordered outbound firewall rules, live firewall updates
+and TCP/UDP host port forwarding to lab nodes. Network and port-forward changes
+require only the Internet node stopped. Dedicated MCP tools manage existing
+gateways, with independent Agent permission and paginated configuration reads.
+The optional prebuilt Internet helper comes with matching sources;
+source builds remain available. See [v0.11.0 release notes](docs/releases/v0.11.0.md),
+[Internet setup](docs/internet.md) and
+[MCP coverage](docs/automation.md#internet-gateways-and-appearance).
+
+## Introduced in v0.10.2 — Patched LL2S root selection
 
 New LL2S switches use `0.2.0-ovs-rstp1`, which includes the OVS RSTP
 root-selection patch verified with the original Cisco MST topology. Existing
@@ -100,8 +115,8 @@ See [v0.10.2 release notes](docs/releases/v0.10.2.md).
 ## New in v0.10.0 — Internet connectivity and network diagrams
 
 **Internet** adds an IPv4 NAT gateway with DNS forwarding and return routes.
-It requires a [locally built gateway helper](docs/internet.md); the installer
-and prebuilt core image do not include that separate helper image.
+It uses a [separate gateway helper](docs/internet.md). Starting with v0.11.0,
+the installer can pull it with `--with-internet`; v0.10.x requires a local build.
 
 **Network cloud** represents an unmanaged network without forwarding traffic.
 **Diagram group** adds editable rectangles and notes, with optional movement
@@ -137,7 +152,7 @@ export…**, with confirmation, stopped-device checks and stale-workspace protec
 See [release notes](docs/releases/v0.9.0.md), [traffic monitoring](docs/link-actions.md#monitor-traffic)
 and [backup/reset behavior](docs/backups.md#export-and-reset-the-workspace).
 
-Use **0.10.2** for matching core, Agent and EXOS images. The installer retains the
+Use **0.11.0** for matching core, Agent, EXOS and optional Internet helper images. The installer retains the
 optional core-only DNS override from v0.8.3.
 
 ## Weblab FRR

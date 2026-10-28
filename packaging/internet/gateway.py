@@ -9,7 +9,7 @@ import sys
 import traceback
 import subprocess
 import time
-from internet_cloud import settings
+from internet_cloud import settings, firewall_settings, FORWARD_PORT_BASE
 
 
 def run(*args):
@@ -19,23 +19,81 @@ def run(*args):
         raise RuntimeError('Gateway setup failed: ' + exc.output[-3000:]) from exc
 
 
-def firewall(config, lan, wan):
+def egress_rules(raw):
+    policy = firewall_settings(raw)
+    lines = []
+    for rule in policy['rules']:
+        match = ['-A WL_EGRESS']
+        if rule['protocol'] != 'any':
+            match += ['-p', rule['protocol']]
+        for field, option in (('source', '-s'), ('destination', '-d'),
+                              ('source_port', '--sport'), ('destination_port', '--dport')):
+            if rule[field]:
+                value = rule[field].replace('-', ':') if field.endswith('_port') else rule[field]
+                match += [option, value]
+        match += ['-j', 'ACCEPT' if rule['action'] == 'allow' else 'DROP']
+        lines.append(' '.join(match))
+    lines.append('-A WL_EGRESS -j ' + ('ACCEPT' if policy['default_action'] == 'allow' else 'DROP'))
+    return lines
+
+
+def apply_firewall(raw):
+    # --noflush rebuilds only the declared user chain, in one filter COMMIT.
+    # NAT, source admission, reply handling and conntrack are left intact.
+    rules = '\n'.join(['*filter', ':WL_EGRESS - [0:0]', *egress_rules(raw), 'COMMIT', ''])
+    subprocess.run(['iptables-restore', '--wait', '5', '--noflush'],
+                   input=rules, text=True, check=True, timeout=8)
+
+
+def port_forward_rules(config, lan, wan, wan_address, wan_gateway):
+    filters, nat = [], []
+    for index, forward in enumerate(config.get('port_forwards', [])):
+        outside = str(ipaddress.IPv4Address(wan_address))
+        port = FORWARD_PORT_BASE + index
+        target, target_port, protocol = forward['target_address'], forward['target_port'], forward['protocol']
+        original = f'--ctorigdst {outside} --ctorigdstport {port}'
+        # Restrict loopback publications inside the helper as well: older Docker
+        # engines can expose loopback-published ports to peers on the host LAN.
+        sources = [str(ipaddress.IPv4Address(wan_gateway))+'/32', '127.0.0.1/32'] if forward['bind_address']=='127.0.0.1' else [forward['source']]
+        for source in sources:
+            match = f'-i {wan} -p {protocol}' + (f' -s {source}' if source else '')
+            nat.append(f'-A PREROUTING {match} -d {outside} --dport {port} -j DNAT --to-destination {target}:{target_port}')
+            filters.append(f'-A FORWARD {match} -o {lan} -d {target} --dport {target_port} '
+                           f'-m conntrack --ctstate DNAT --ctdir ORIGINAL {original} -j ACCEPT')
+        # Replies to explicitly admitted forwards are independent of outbound policy.
+        filters.append(f'-A FORWARD -i {lan} -o {wan} -p {protocol} -s {target} --sport {target_port} '
+                       f'-m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY {original} -j ACCEPT')
+    if config.get('port_forwards'):
+        # Make the return path reliable even for directly connected targets without
+        # a default route. Targets see the gateway's lab address as the client.
+        address = str(ipaddress.IPv4Interface(config['address']).ip)
+        nat.append(f'-A POSTROUTING -o {lan} -m conntrack --ctstate DNAT --ctdir ORIGINAL -j SNAT --to-source {address}')
+    return filters, nat
+
+
+def firewall(config, lan, wan, wan_address=None, wan_gateway=None):
     prefixes = [str(ipaddress.IPv4Interface(config['address']).network), *[r['destination'] for r in config['routes']]]
     lines = ['*filter', ':INPUT DROP [0:0]', ':FORWARD DROP [0:0]', ':OUTPUT ACCEPT [0:0]',
+             ':WL_EGRESS - [0:0]',
              '-A INPUT -i lo -j ACCEPT',
              '-A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT',
              '-A INPUT -m conntrack --ctstate INVALID -j DROP',
              '-A FORWARD -m conntrack --ctstate INVALID -j DROP',
              f'-A FORWARD -i {wan} -o {lan} -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT']
+    inbound_filters, inbound_nat = port_forward_rules(config, lan, wan, wan_address, wan_gateway)
+    lines += inbound_filters
     for prefix in prefixes:
         for proto in ('tcp', 'udp'):
             lines.append(f'-A INPUT -i {lan} -s {prefix} -p {proto} --dport 53 -j ACCEPT')
         lines.append(f'-A INPUT -i {lan} -s {prefix} -p icmp -j ACCEPT')
-        lines.append(f'-A FORWARD -i {lan} -o {wan} -s {prefix} -j ACCEPT')
+        lines.append(f'-A FORWARD -i {lan} -o {wan} -s {prefix} -j WL_EGRESS')
+    # Only authorized lab sources enter this chain, including established packets.
+    lines += egress_rules(config.get('firewall', {}))
     lines += ['COMMIT', '*nat', ':PREROUTING ACCEPT [0:0]', ':INPUT ACCEPT [0:0]',
               ':OUTPUT ACCEPT [0:0]', ':POSTROUTING ACCEPT [0:0]']
     for prefix in prefixes:
         lines.append(f'-A POSTROUTING -s {prefix} -o {wan} -j MASQUERADE')
+    lines += inbound_nat
     return '\n'.join(lines + ['COMMIT', ''])
 
 
@@ -45,10 +103,12 @@ def main():
     provisioning = ipaddress.IPv4Network(raw['provisioning_subnet'])
     interfaces = json.loads(run('ip', '-j', '-4', 'addr'))
     lan = next(i['ifname'] for i in interfaces if any(ipaddress.IPv4Address(a['local']) in provisioning for a in i.get('addr_info', [])))
-    wan = json.loads(run('ip', '-j', '-4', 'route', 'show', 'default'))[0]['dev']
+    default = json.loads(run('ip', '-j', '-4', 'route', 'show', 'default'))[0]
+    wan = default['dev']
+    wan_address = next(a['local'] for i in interfaces if i['ifname']==wan for a in i.get('addr_info', []))
     if lan == wan or not all(n.replace('_','').isalnum() for n in (lan,wan)):
         raise ValueError('Invalid gateway interfaces')
-    subprocess.run(['iptables-restore', '--noflush'], input=firewall(config, lan, wan), text=True, check=True)
+    subprocess.run(['iptables-restore', '--noflush'], input=firewall(config, lan, wan, wan_address, default.get('gateway')), text=True, check=True)
     run('ip', '-4', 'addr', 'flush', 'dev', lan)
     run('ip', 'addr', 'add', config['address'], 'dev', lan)
     run('ip', 'link', 'set', lan, 'up')
@@ -84,7 +144,14 @@ def main():
 
 if __name__ == '__main__':
     try:
-        main()
+        if len(sys.argv) == 3 and sys.argv[1] == 'firewall':
+            if not Path('/run/ready').is_file():
+                raise RuntimeError('Internet gateway is not ready')
+            apply_firewall(json.loads(sys.argv[2]))
+        elif len(sys.argv) == 1:
+            main()
+        else:
+            raise ValueError('Unsupported gateway operation')
     except Exception:
         traceback.print_exc(file=sys.stdout)
         raise SystemExit(1)

@@ -114,6 +114,37 @@ class AuthTests(unittest.TestCase):
                 self.assertEqual(result[0],200 if account=='admin' else 403,result)
                 self.assertEqual(start.call_count,1 if account=='admin' else 0)
 
+    def test_internet_firewall_save_requires_admin_and_csrf(self):
+        self.enable()
+        self.lab.save({'name':'Cloud','nodes':[{'id':'cloud','type':'cloud','name':'Internet'}],'links':[]})
+        topology=json.loads(json.dumps(self.lab.topology))
+        topology['nodes'][0]['internet']['firewall']={'default_action':'deny','rules':[
+            {'action':'allow','protocol':'tcp','destination_port':'443'}]}
+        original=json.loads(json.dumps(self.lab.topology))
+        for account in ('user','guest','admin'):
+            cookie,csrf=self.login(account)
+            self.assertEqual(self.http('/api/topology','PUT',topology,cookie)[0],403)
+            result=self.http('/api/topology','PUT',topology,cookie,csrf)
+            self.assertEqual(result[0],200 if account=='admin' else 403,result)
+            if account!='admin': self.assertEqual(self.lab.topology,original)
+        self.assertEqual(self.lab.node('cloud')['internet']['firewall']['default_action'],'deny')
+
+    def test_gateway_only_update_requires_admin_csrf_and_expected_settings(self):
+        self.enable()
+        self.lab.save({'name':'Cloud','nodes':[{'id':'cloud','type':'cloud','name':'Internet'}],'links':[]})
+        previous=json.loads(json.dumps(self.lab.node('cloud')['internet']))
+        data={'expected_internet':previous,'internet':{**previous,'firewall':{'default_action':'deny','rules':[]},
+            'port_forwards':[{'protocol':'tcp','external_port':22022,'target_address':'192.0.2.2','target_port':22}]}}
+        path='/api/nodes/cloud/internet'
+        for account in ('user','guest','admin'):
+            cookie,csrf=self.login(account)
+            self.assertEqual(self.http(path,'PUT',data,cookie)[0],403)
+            result=self.http(path,'PUT',data,cookie,csrf)
+            self.assertEqual(result[0],200 if account=='admin' else 403,result)
+            if account!='admin':self.assertEqual(self.lab.node('cloud')['internet'],previous)
+        self.assertEqual(self.http(path,'PUT',data,cookie,csrf)[0],409,'Stale editor must not overwrite newer settings')
+        self.assertEqual(web_auth.activity_operation('PUT',path),('internet.update','cloud'))
+
     def test_password_change_sessions_rate_limit_and_private_storage(self):
         self.enable()
         cookie, csrf = self.login(remember=True)

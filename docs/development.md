@@ -72,6 +72,7 @@ cd ..
 node tests/console_open_mode.cjs
 node tests/topology_windows.cjs
 node tests/workspace_layouts.cjs
+node tests/themes_ui.cjs
 node tests/topology_multiselect.cjs
 node tests/ll2s_ui.cjs
 node tests/junos_ui.cjs
@@ -93,6 +94,16 @@ Run the `.cjs` regression suites sequentially from the repository root. Files
 ending `_ui.cjs` create synthetic disk/image fixtures; install QEMU utilities for
 those checks. `console_ui.cjs` and `toolbar_ui.cjs` are helpers, not test runners.
 Most browser suites launch their own disposable server and echo devices.
+
+`themes_ui.cjs` checks Dark/Light/System, live OS changes, browser persistence and
+tab synchronization, blocked/invalid storage and phone menu bounds. It verifies
+that existing consoles, locks, topology and geometry survive theme changes, and
+that Map workspace's stopped-lab Start button is readable before and during hover.
+Console checks cover independent/follow-workspace terminal choices, workspace-themed
+toolbars/tabs/window controls, live docked/floating sessions, stored/tab-synchronized
+preferences and readable normal/bright ANSI and truecolor output in Light.
+Agent, Instructions, Internet and traffic browser regressions start in Light;
+workspace/layout regressions retain the default Dark palette.
 
 `browser_smoke.cjs` is an exception: it requires an explicitly supplied `LAB_URL`
 and modifies/stops/starts that lab. Use only a disposable server. Native image
@@ -337,11 +348,26 @@ disposable PTYs. For actual STDIO MCP transport:
 
 This uses a disposable server and PTY echo fixture, with no real guest images or
 live lab changes. It checks all combinations of topology-write and console-input
-switches, tool annotations and console roundtrips. The SDK must be installed in
+switches, tool annotations and console roundtrips. It also checks gateway
+firewall/port-forward preview, apply and state readback without starting a
+gateway or publishing host ports. The SDK must be installed in
 that Python environment. It also checks storage report availability with every
 capability combination, sparse/retained allocation, cache reuse, partial and
-unknown results, and refusal when server automation is disabled. Optionally
-add `--ollama-url http://HOST:11434/v1 --model MODEL` for model-driven discovery
+unknown results, and refusal when server automation is disabled.
+The gateway cases independently check `--allow-internet-write`, paginated settings,
+proposal/apply and gateway-only lifecycle tools without exposing topology or
+console writes. Unit tests in `test_internet_automation.py` / `test_agent.py` cover
+runtime identity, session-owned proposals, separate Internet permission, exact
+approval content and stale-action refusal. `internet_native.py` exercises the same
+automation handlers against real direct-PC and routed-FRR gateways.
+For the packaged companion, `python3 tests/agent_native.py --tool-gateway-only
+--internet-management --image weblab-agent:dev` uses a simulated Code Mode model
+and the real MCP/Agent transport to preview/apply routes, firewall and a port
+forward on a disposable stopped gateway. Its explicit test session enables the
+separate Internet permission and YOLO; no guests, cloud inference or credentials
+are involved. The regular gateway-only test retains read/console-validation coverage.
+
+Optionally add `--ollama-url http://HOST:11434/v1 --model MODEL` for model-driven discovery
 and preview using synthetic catalog files. It does not boot vendor devices or
 verify protocols. `--output /tmp/mcp-test` retains the generated exercise and
 conversation locally; review it before sharing.
@@ -636,13 +662,39 @@ browser mode checks the no-TShark fallback when it is absent locally.
 ## Internet gateway checks
 
 `python3 -m unittest discover -s tests -p test_internet.py -v` covers topology
-validation, export semantics, forwarding policy and cleanup ownership.
-`node tests/internet_ui.cjs` checks the floating settings window using an empty
-disposable HTTP fixture. The role boundary is in `test_web_auth.py`.
+validation, firewall ordering/limits, export semantics, live-helper capability and
+ownership, stale editor rejection, apply/save rollback, inbound target/port validation,
+cross-gateway binding conflicts and ZIP/config export preservation. `node tests/internet_ui.cjs`
+checks the floating settings window, rule creation/removal/reordering,
+protocol-specific ports, live apply controls and stopped-cloud saves with a running
+echo peer, plus port-forward defaults/editing/persistence and gateway-stop restrictions.
+Its running-helper UI state is simulated; native tests exercise real
+packet filtering. Admin/CSRF boundaries are in `test_web_auth.py`.
 
 After building the gateway image and pulling Alpine/Weblab FRR, run
 `python3 tests/internet_native.py --run` to opt into real disposable Docker/TAP
 tests. It checks direct PC and routed FRR NAT/DNS, inbound denial, relay capture,
-Stop/Start and resource removal. It makes Internet probes to 1.1.1.1 and resolves
-dl-cdn.alpinelinux.org. This test never uses the current lab's data directory.
+Stop/Start, restrictive-policy ZIP restoration and resource removal. Additional
+local uplink probes verify TCP port ranges and source/destination matches, UDP DNS,
+ICMP, first-match order, both
+unmatched actions and gateway DNS/ping with forwarding denied. Live policy swaps
+verify packet behavior and unchanged container/console/relay identities; gateway-only
+stop/edit/start verifies saved policy while other nodes stay running. An established
+HTTP connection survives an allowing policy update and is blocked by a subsequent
+deny. It makes Internet
+probes to 1.1.1.1 and resolves dl-cdn.alpinelinux.org. This test never uses the
+current lab's data directory.
 Run it sequentially with other native/fixture suites.
+
+The same native suite tests TCP/UDP host port publications to a directly attached
+PC and a PC/router behind FRR, including explicit bind addresses, localhost guards,
+allowed/denied sources, replies with outbound default deny, live firewall coexistence,
+mapping removal and unchanged target identities. The target TCP/UDP services run in
+disposable helper containers sharing those nodes' network namespaces; no vendor
+services or active guest configuration are modified. Use `--port-forwards-only`
+with `--run` to isolate these checks. These are IP-stack forwarding tests, not a
+claim that SSH/SNMP is enabled or tested on every vendor profile.
+
+For a separate test image, build with `-t weblab-internet:firewall-check`, then set
+`WL_INTERNET_IMAGE=weblab-internet:firewall-check` for the native command. This avoids
+replacing the helper tag used by an installed lab.

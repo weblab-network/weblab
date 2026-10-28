@@ -25,8 +25,9 @@ For a drawing of an unmanaged network, use **Network cloud** instead. It needs
 no image and has editable name, size and color, with diagram-only connections.
 See [network clouds](topology.md#network-clouds-for-diagrams).
 
-The **Internet** library item is an IPv4 NAT gateway with one eth0 lab port. It
-uses a locally built helper image and a dedicated Docker uplink network. Clicking
+The **Internet** library item is an IPv4 NAT gateway with outbound firewall rules and TCP/UDP port forwarding
+and one eth0 lab port. It
+uses a prebuilt or locally built helper image and a dedicated Docker uplink network. Clicking
 it opens settings, not a console. See [Internet cloud](internet.md) for direct-PC
 setup and routed FRR examples.
 

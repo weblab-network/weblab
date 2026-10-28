@@ -11,8 +11,10 @@
 | JSON + live configs | Topology with current Cisco running text | Share unsaved configuration; requires ready, unlocked privileged consoles |
 | Saved lab ZIP | Topology and supported persistent device storage | Resume a saved lab, including IOL VLAN databases, QEMU disks and FRR/LL2S configuration; stop all nodes first |
 
-Internet cloud address/return-route settings are part of the topology in JSON
-and ZIP. Its temporary container state and connections are not preserved.
+Internet cloud address, return routes, ordered firewall policy and port forwards are part of the
+topology in JSON (including configuration exports) and ZIP. Its temporary container
+state and connections are not preserved. Older topologies without firewall settings
+retain the original allow-outbound policy with no inbound ports published.
 Diagram-only network clouds preserve their name, size, color and drawn links
 in both formats; they have no device storage to export or restore.
 Diagram groups also preserve their title, notes, rectangle dimensions, color,

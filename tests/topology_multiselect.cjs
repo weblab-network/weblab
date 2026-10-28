@@ -65,7 +65,12 @@ fixture.stderr.on('data', data => { fixtureLog += data; });
       await page.mouse.move(start.x,start.y); await page.mouse.down();
       await page.mouse.move(end.x,end.y,{steps:6});
       assert.equal(await page.locator('.map-selection-box').isVisible(),true);
-      if(cancel) await page.keyboard.press('Escape');
+      if(cancel) {
+        await page.keyboard.press('Escape');
+        assert.equal(await page.locator('.map-selection-box').isVisible(),false);
+        // Release after the cancellation has painted, as a person holding the mouse would.
+        await page.waitForTimeout(50);
+      }
       await page.mouse.up();
       if(additive) await page.keyboard.up('Shift');
       assert.equal(await page.locator('.map-selection-box').count(),0);

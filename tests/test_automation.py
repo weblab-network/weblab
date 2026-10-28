@@ -272,14 +272,53 @@ class AutomationTests(unittest.TestCase):
                 self.api.preview(self.topology, instructions)
 
     def test_cloud_preview_preserves_settings_and_orders_start(self):
+        settings = {
+            'address': '192.0.2.1/24',
+            'routes': [{'destination': '10.44.0.0/24', 'via': '192.0.2.2'}],
+            'uplink_subnet': '',
+            'firewall': {'default_action': 'deny', 'rules': [
+                {'action': 'allow', 'protocol': 'tcp', 'source': '10.44.0.10/32',
+                 'destination': '', 'source_port': '1024-65535', 'destination_port': '443'}]},
+            'port_forwards': [{'protocol': 'tcp', 'bind_address': '127.0.0.1',
+                               'external_port': 22022, 'target_address': '10.44.0.10',
+                               'target_port': 22, 'source': ''}]}
         source={'name':'Cloud preview','nodes':[
             {'id':'p','name':'PC','type':'pc'},
-            {'id':'c','name':'Internet','type':'cloud','internet':{'address':'192.0.2.1/24','routes':[]}}],
+            {'id':'c','name':'Internet','type':'cloud','internet':settings}],
             'links':[{'a':{'node':'p','port':'eth0'},'b':{'node':'c','port':'eth0'}}]}
+        before = self.lab.topology_path.read_bytes()
         proposal=self.api.preview(source,'Connect to the Internet')
         cloud_id=proposal['node_id_map']['c']
         self.assertEqual(proposal['start_order'][0],cloud_id)
-        self.assertEqual(next(n for n in proposal['topology']['nodes'] if n['id']==cloud_id)['internet']['address'],'192.0.2.1/24')
+        cloud = next(n for n in proposal['topology']['nodes'] if n['id'] == cloud_id)
+        self.assertEqual(cloud['internet'], settings)
+        self.assertEqual(before, self.lab.topology_path.read_bytes())
+        with urlopen(f'http://127.0.0.1:{self.fixture.port}' + proposal['downloads']['topology']) as response:
+            downloaded = json.load(response)
+        self.assertEqual(downloaded, proposal['topology'])
+        with patch.object(self.lab, 'start') as start:
+            applied = self.api.apply(proposal['proposal_id'])
+            observed = self.fixture.request('/api/automation/state')
+            self.assertEqual(next(n for n in observed['topology']['nodes'] if n['id'] == cloud_id)['internet'], settings)
+            self.assertEqual(observed['revision'], applied['revision'])
+            start.assert_not_called()
+        # Gateway policy/publication edits invalidate previously approved starts.
+        for key, value in [('firewall', {'default_action': 'allow', 'rules': []}),
+                           ('port_forwards', [])]:
+            with self.subTest(key=key):
+                changed = copy.deepcopy(applied['topology'])
+                next(n for n in changed['nodes'] if n['id'] == cloud_id)['internet'][key] = value
+                self.lab.save(changed)
+                with self.assertRaisesRegex(lab_server.LabError, 'changed'):
+                    self.api.require_execution_revision(applied['revision'])
+        invalid = copy.deepcopy(source)
+        invalid['nodes'][1]['internet']['port_forwards'][0]['target_address'] = '203.0.113.10'
+        with self.assertRaisesRegex(lab_server.LabError, 'Port forward'):
+            self.api.preview(invalid, 'Invalid target', True)
+        invalid = copy.deepcopy(source)
+        invalid['nodes'][1]['internet']['firewall']['rules'][0]['destination_port'] = '70000'
+        with self.assertRaisesRegex(lab_server.LabError, 'Firewall rule'):
+            self.api.preview(invalid, 'Invalid policy', True)
 
     def test_profile_catalog_includes_actual_ports_without_launch(self):
         for name in ('EXOS-VM_test.qcow2', 'vJunos-switch-test.qcow2', 'vJunosEvolved-test.qcow2', 'vEOS-lab-test.qcow2'):

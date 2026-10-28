@@ -39,6 +39,7 @@ let log='';fixture.stderr.on('data',data=>log+=data);
   const url=await new Promise((resolve,reject)=>{let out='';fixture.stdout.on('data',d=>{out+=d;if(out.includes('\n'))resolve(out.trim());});fixture.once('exit',code=>reject(new Error(`Fixture ${code}: ${log}`)));});
   browser=await chromium.launch({headless:true,args:['--no-sandbox']});
   const page=await browser.newPage({viewport:{width:1440,height:1000},hasTouch:true});
+  await page.addInitScript(()=>localStorage.setItem('weblab.theme.v1','light'));
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(url);await page.waitForFunction(()=>loaded);
   const topologyBefore=(await page.request.get(url+'/api/state').then(r=>r.json())).topology;

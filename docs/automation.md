@@ -44,10 +44,12 @@ On Windows, use `py -3 -m venv .venv-mcp` and
 not an additional web service. The core server has no SDK dependency; the adapter
 can run on another machine and does not need Docker or access to device files.
 
-Initially omit `--allow-write` and `--allow-console-input`: discovery, console
+Initially omit `--allow-write`, `--allow-internet-write` and `--allow-console-input`: discovery, console
 output, logs and temporary previews work, but apply/start and console input tools
 are absent. Enable the corresponding switch when you want those tools,
-keeping client approval enabled. This is an adapter setting, not server-side
+keeping client approval enabled. `--allow-internet-write` independently exposes
+gateway settings apply and gateway-only stop/start; it does not enable general
+topology replacement or guest console input. This is an adapter setting, not server-side
 authorization against a client that already has direct HTTP access.
 
 ### Codex
@@ -128,7 +130,8 @@ console cursors and human input locks remain enforced. Apply checks the complete
 revision, including positions, because replacement would overwrite those edits.
 
 A proposal ID is not proof of human approval: your MCP client's approval policy
-controls whether a model can invoke a write tool. There are no stop, reset,
+controls whether a model can invoke a write tool. Apart from the explicitly
+enabled Internet gateway stop tool below, there are no general stop, reset,
 delete, upload or separate host-shell tools in this adapter. Optional console
 input can run guest shell commands and change device configuration. Device
 start still launches the selected local image and may apply supported initial
@@ -138,6 +141,67 @@ snippets. Keep those images and proposals trusted.
 interfaces are ready, OSPF has converged or traffic forwards. Complete configuration
 and verification using browser or MCP consoles. Before stopping Junos, commit and use
 `request system power-off`, then wait for shutdown.
+
+## Internet gateways and appearance
+
+The Internet node's settings are included in `get_lab_state`. The same
+`internet` object is accepted by `preview_topology`, retained in its JSON
+download and saved by `apply_topology`. The
+[authoring guide](practice-labs.md#topology-json-contract) includes the field
+contract and an example with firewall rules and a port forward.
+
+| Feature | MCP support |
+| --- | --- |
+| Read gateway address, routes, firewall and port forwards | `get_lab_state` |
+| Author firewall rules and TCP/UDP port forwards | `preview_topology`, then separately approved `apply_topology` |
+| Activate a new gateway and its host port publications | Separately approved `start_internet_node` or `start_node`; inspect bindings first |
+| Read every setting, including large configurations | `get_internet_settings`, with explicit page offsets and a consistent revision |
+| Change a running gateway's firewall in place | `preview_internet_settings`, then separately approved `apply_internet_settings` |
+| Edit one stopped gateway while other devices run | The same gateway preview/apply tools; retains other nodes and saved storage |
+| Stop/start only a gateway | Separately approved `stop_internet_node` / `start_internet_node` |
+| Workspace and console themes | Browser-local appearance settings, outside topology JSON and MCP |
+
+Preview/apply does not install the helper image, configure guest services or
+verify connectivity. Use a matching prebuilt or locally built helper for firewall/live-update/
+port-forward capabilities; older helpers reject unsupported settings on Start.
+These tools use dedicated automation routes and the existing validated gateway
+backend. The ordinary browser mutation API and a gateway shell are not exposed.
+See [Internet setup and limits](internet.md).
+
+For an existing gateway:
+
+1. Read `get_internet_settings(node_id)`. Follow `next_offsets` using
+   `route_offset`, `rule_offset`, `forward_offset`, and the first page's
+   `expected_revision`. Keep exhausted offsets at their totals. If the revision
+   changes, restart the read. Each page includes running state and `runtime_revision`.
+2. For address, return-route, uplink or port-forward changes, separately authorize
+   `stop_internet_node` with both observed revisions. Only that gateway stops;
+   other devices/consoles keep running. Read its settings again after stopping.
+   Firewall-only edits can skip this stop.
+3. Build the complete desired `internet` object, preserving settings you want to
+   keep, then call `preview_internet_settings` with the observed revision. It
+   validates without changing anything and returns a proposal ID, expiring in an hour.
+   Read its proposed pages with `get_internet_settings(proposal_id=...)`; inspect
+   host bindings, target IPs and ports before applying.
+4. Separately authorize `apply_internet_settings(proposal_id)`. Topology/settings
+   or gateway runtime changes invalidate the preview. Browser Agent approvals
+   show the exact old/new configuration and are session-bound, expiring and single-use.
+   The existing live-update rollback/persistence behavior applies.
+5. If stopped, separately authorize `start_internet_node` with a fresh revision.
+   It publishes the saved mappings. Read state and verify actual connectivity.
+
+Gateway writes require `--allow-internet-write` externally, or **Allow Internet
+gateway settings and stop/start** in Agent Settings. That permission is separate
+and initially off, including for existing sessions. YOLO preapproves only enabled
+actions. The tools cannot stop/start arbitrary guest devices.
+
+Compact/Ollama discovery summarizes each gateway's address and rule/route/forward
+counts, with `internet_settings_omitted: true`. Use the paginated settings tool
+for the full configuration; all 64 firewall rules, 32 return routes and 32 mappings
+remain accessible without one large response. Ordinary lab-state responses retain
+the complete configuration. Gateway previews also return bounded summaries; proposed
+settings can be paged for review. Source/target service configuration remains
+separate from gateway configuration.
 
 ## Storage reports
 
