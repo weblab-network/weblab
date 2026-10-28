@@ -94,7 +94,8 @@ three-switch/two-PC topology with a companion exercise.
 
 Choose **Dark**, **Light** or **System** for the workspace, with a separate
 console theme that changes the terminal area while toolbars follow the workspace.
-See [appearance settings](docs/topology.md#appearance).
+See [appearance settings and screenshots](docs/topology.md#appearance), or
+[compare Dark and Light on the website](https://weblab.network/#appearance).
 
 Internet gateways add ordered outbound firewall rules, live firewall updates
 and TCP/UDP host port forwarding to lab nodes. Network and port-forward changes

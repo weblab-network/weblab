@@ -94,13 +94,19 @@ the Agent help/wiki; preserve originals and use display widths rather than cropp
 
 ## Visual identity
 
-The website defaults to a light theme, independent of the lab application's
-current dark interface. Use the application's actual screenshots without
+The website uses its light palette independently of the lab application's
+Dark/Light/System themes. Use the application's actual screenshots without
 recoloring them. The opening image is the supplied full-window multi-vendor screenshot,
 kept unchanged in `assets/multi-vendor.png` with a caption and full-size link. Its
 application header supplies the context; do not add a duplicate figure header.
-Future application themes should
-change colors only, preserving icons, controls and layout; that work is separate.
+Application themes preserve icons, controls and layout while changing colors.
+
+`/#appearance` compares the supplied Dark and Light screenshots, unchanged at
+1920×1080, with full-size links. `assets/workspace-theme-dark.png` and
+`assets/workspace-theme-light.png` are also used by the source help and wiki.
+Keep those public URLs stable. The gallery stacks on narrow screens and works
+without JavaScript. Its copy distinguishes workspace themes from the independent
+terminal preference; console controls always follow the workspace palette.
 
 The visual reference is a network engineer's annotated drawing and lab notebook:
 

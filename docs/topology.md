@@ -31,6 +31,18 @@ cursor, selection and terminal scrollbar. Toolbars, tabs, menus and window contr
 always match the workspace. An explicit console choice stays fixed when the
 workspace or operating-system theme changes.
 
+These screenshots show the same lab with Dark and Light selected. Open either
+image for the full-size view.
+
+<a href="https://weblab.network/assets/workspace-theme-dark.png"><img src="https://weblab.network/assets/workspace-theme-dark.png" alt="Dark Weblab workspace with the Layout theme menu open, a switch console and the Agent beside the topology" width="720"></a>
+
+*Dark — the Layout menu includes separate workspace and console theme choices.*
+
+<a href="https://weblab.network/assets/workspace-theme-light.png"><img src="https://weblab.network/assets/workspace-theme-light.png" alt="The same Weblab topology, switch console and Agent in Light, with the Agent token-usage details open" width="720"></a>
+
+*Light — topology, console and Agent colors follow the selected palette. An
+explicit Console theme can keep terminal colors independent of the workspace.*
+
 ## Network clouds for diagrams
 
 Use **Network cloud** in the library to represent an unmanaged network, a
