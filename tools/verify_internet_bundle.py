@@ -100,11 +100,17 @@ def verify(directory, version=None, revision=None):
     if revision is not None and labels.get('org.opencontainers.image.revision') != revision:
         raise ValueError('Image source revision differs from the reviewed public commit')
     build_files = info['build_files']
+    executables = [('gateway.py', 'packaging/internet/gateway.py'), ('internet_cloud.py', 'internet_cloud.py')]
+    if labels.get('network.weblab.internet.ssh') == '1':
+        executables += [('external_tty.py', 'external_tty.py'), ('access_service.py', 'packaging/internet/access_service.py')]
+        if not {source for _, source in executables} <= set(build_files):
+            raise ValueError('Missing SSH helper build inputs')
     if not {'internet_cloud.py', 'packaging/internet/gateway.py'} <= set(build_files):
         raise ValueError('Missing gateway build inputs')
     prefix = 'usr/share/weblab-internet/'
     wanted = {prefix+'source-files.json', prefix+'packages.json',
               'opt/weblab/gateway.py', 'opt/weblab/internet_cloud.py'}
+    wanted.update('opt/weblab/'+name for name, _ in executables)
     wanted.update(prefix+'build/'+name for name in build_files)
     with tarfile.open(directory/(PREFIX+'linux-amd64.tar.gz')) as archive:
         manifests = json.load(archive.extractfile('manifest.json'))
@@ -121,7 +127,7 @@ def verify(directory, version=None, revision=None):
         for name, digest in build_files.items():
             if hashlib.sha256(runtime[prefix+'build/'+name]).hexdigest() != digest:
                 raise ValueError('Runtime build input mismatch: '+name)
-        for name, source in (('gateway.py', 'packaging/internet/gateway.py'), ('internet_cloud.py', 'internet_cloud.py')):
+        for name, source in executables:
             if hashlib.sha256(runtime['opt/weblab/'+name]).hexdigest() != build_files[source]:
                 raise ValueError('Executable helper differs from retained source: '+name)
     with tarfile.open(directory/(PREFIX+'sources.tar.gz')) as archive:

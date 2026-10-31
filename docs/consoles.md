@@ -6,6 +6,8 @@ input locks and never automatically take over a browser's lock.
 
 [Help index](README.md) · [Project overview](../README.md)
 
+Optional [external SSH consoles](external-access.md) use this same shared transport and lock policy.
+
 ## Opening and closing consoles
 
 Click a running node to open its console. Click it again to select the existing
@@ -22,6 +24,12 @@ console groups. Horizontal trackpad gestures and Ctrl/Command+wheel retain their
 native behavior; scrolling does not change the selected console.
 
 ## Controls, text size and window layout
+
+The combined consoles pane and individual floating consoles have an overlapping-windows **Pop out**
+button. It transfers the same live terminals into a browser window, retaining
+connections, input locks and scrollback. Close that browser window or choose
+**Return to workspace** to bring the pane back. Keep the original workspace open.
+See [pop-out controls and administrator settings](topology.md#panels-zoom-and-fullscreen).
 
 **Layout → Console theme** selects Follow workspace, Dark or Light for terminal
 backgrounds, text, cursor and selection. Console toolbars, tabs and window controls

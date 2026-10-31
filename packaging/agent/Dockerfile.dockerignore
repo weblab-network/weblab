@@ -3,6 +3,7 @@
 !agent_transport.py
 !agent_auth.py
 !agent_attachments.py
+!agent_pdf.py
 !tools/
 !tools/weblab_mcp.py
 !requirements-mcp.txt

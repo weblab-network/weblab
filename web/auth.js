@@ -91,7 +91,7 @@
   activity.innerHTML = `<div class="logs-heading"><h2 id="activity-title">Activity records</h2><button id="activity-close" aria-label="Close activity records">✕</button></div>
     <p class="muted">Account and session activity in this shared lab. These are operation records, not human console command history. HTTP/tool success does not verify device configuration.</p>
     <div class="activity-filters"><label>Account <select id="activity-account"><option value="">All accounts</option><option>admin</option><option>user</option><option>guest</option></select></label>
-    <label>Source <select id="activity-source"><option value="">All sources</option><option value="browser">Browser</option><option value="agent">Agent tools</option></select></label><button id="activity-refresh">Refresh</button></div>
+    <label>Source <select id="activity-source"><option value="">All sources</option><option value="browser">Browser</option><option value="agent">Agent tools</option><option value="ssh">SSH consoles</option></select></label><button id="activity-refresh">Refresh</button></div>
     <p id="activity-status" role="status"></p><div class="activity-scroll" tabindex="0" aria-label="Activity table"><table><thead><tr><th>Time</th><th>Account / role</th><th>Session</th><th>Source</th><th>Operation</th><th>Node / link</th><th>Result</th></tr></thead><tbody id="activity-records"></tbody></table></div>
     <button id="activity-older" hidden>Older records</button><p class="muted">Up to 10,000 records or 30 days, whichever is reached first. An unfinished entry may still be running or may have been interrupted. Failed sign-ins identify a claimed account, not a verified person. Shared accounts do not identify individuals.</p>`;
   document.body.append(activity);

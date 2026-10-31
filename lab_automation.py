@@ -332,6 +332,8 @@ class Automation:
                 del self.internet_proposals[completed]
             before = internet_cloud.settings(node['internet'])
             after = internet_cloud.settings(internet)
+            if before.get('ssh') != after.get('ssh'):
+                raise self.error('SSH access must be configured by an administrator in the browser')
             internet_cloud.check_bindings(after if n['id'] == node_id else n['internet']
                 for n in self.lab.topology['nodes'] if internet_cloud.is_cloud(n))
             network_changed = any(before[k] != after[k] for k in ('address', 'routes', 'uplink_subnet', 'port_forwards'))

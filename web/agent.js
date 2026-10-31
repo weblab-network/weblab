@@ -52,11 +52,11 @@
       <p id="agent-intro" class="agent-hint">Ask for a practice topology or inspect the current lab. Enable lab changes or console input in Settings. Review changes in Operations, or enable YOLO to preapprove enabled actions.</p>
       <div id="agent-messages" tabindex="0" aria-label="Conversation"></div>
       <form id="agent-prompt-form"><label class="agent-message-label" for="agent-prompt">Message</label><textarea id="agent-prompt" rows="2" maxlength="16000" placeholder="${starterPrompt}"></textarea>
-      <input id="agent-files" type="file" multiple accept=".png,.jpg,.jpeg,.webp,.txt,.md,.json,.yaml,.yml,.cfg,.conf,.config,.log,.csv,.ini,.xml" hidden>
+      <input id="agent-files" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.md,.json,.yaml,.yml,.cfg,.conf,.config,.log,.csv,.ini,.xml" hidden>
       <div id="agent-attachments" aria-label="Pending attachments" hidden></div>
       <p id="agent-file-error" role="alert" hidden></p>
       <div class="agent-actions"><button id="agent-send" class="primary" type="submit">Send</button><button id="agent-attach" type="button">Attach files</button><button id="agent-new" type="button">New conversation</button><button id="agent-reconnect" type="button">Reconnect</button></div>
-      <details id="agent-attachment-help"><summary>Attachment help</summary><p id="agent-file-hint" class="agent-hint">Up to 4 files · 2 MiB total · text/configs up to 64 KiB total. Screenshots need an image-capable model. Files are sent with your message.</p></details><p id="agent-draft-hint" hidden>Draft your next message while the agent works. Send it when this turn finishes.</p></form>
+      <details id="agent-attachment-help"><summary>Attachment help</summary><p id="agent-file-hint" class="agent-hint">Up to 4 files · 2 MiB total · text/configs up to 64 KiB total. Screenshots need an image-capable model. PDFs: OpenAI only, up to 50 pages total; extracted + attached text up to 256 KiB, rendered pages up to 24 MiB. Large PDFs use more model context and allowance. PDF pages are sent as images with text. Files are sent with your message.</p></details><p id="agent-draft-hint" hidden>Draft your next message while the agent works. Send it when this turn finishes.</p></form>
     </div>
     <div id="agent-operations" role="tabpanel" aria-labelledby="agent-operations-tab" hidden>
       <p id="agent-operations-empty" class="agent-hint">No operations yet. Requests to change the lab and their results appear here.</p>
@@ -78,6 +78,7 @@
       </div>
       <label>Model<input id="agent-model" list="agent-model-list" maxlength="160" placeholder="gpt-oss:20b" required><datalist id="agent-model-list"></datalist></label>
       <p id="agent-model-recommendation" class="agent-hint" hidden>Recommended for Weblab: <strong>gpt-6.1-sol</strong> — the most reliable results reported in the maintainer's hands-on lab testing. Choose a model available to your account and verify its results.</p>
+      <p class="agent-hint">Reasoning effort uses the Codex/model default; Weblab does not override it. The turn deadline limits time, not reasoning effort.</p>
       <label>Context window (tokens)<input id="agent-context" type="number" min="4096" max="131072" step="1024" required></label>
       <label>Turn deadline (seconds)<input id="agent-deadline" type="number" min="30" max="3600" required></label>
       <p class="agent-hint">Total time for one message, including model generation, tools and approval waits. New sessions default to 900 seconds (15 minutes). Completed actions remain if time runs out; inspect and continue in another turn.</p>
@@ -166,6 +167,7 @@
   const view = {panel, maximized: false, rect: null, applyLayout};
   documentWindows.add(view);
   function applyLayout() {
+    if (window.weblabPopouts?.has(panel)) return;
     if (window.weblabLayout?.documentLayout(view)) return;
     const bounds = consoleViewport();
     view.rect = boundedConsoleRect(view.rect || {x:bounds.x+60,y:bounds.y+45,width:640,height:680});
@@ -286,7 +288,7 @@
   function downloadTranscript(record) {
     const content = `# ${record.title || 'Conversation'}\n\nModel: ${record.settings.model}\n\n` +
       record.messages.map(m=>`## ${m.role==='user'?'You':'Agent'}\n\n${m.text}\n` +
-        (m.attachments||[]).map(a=>`\nAttachment: ${a.name} (${a.mime}, ${a.size} bytes)\n${a.mime==='text/plain'?a.text:'[Image; download separately from the conversation.]'}\n`).join('')).join('\n');
+        (m.attachments||[]).map(a=>`\nAttachment: ${a.name} (${a.mime}, ${a.size} bytes)\n${a.mime==='text/plain'?a.text:'[File; download separately from the conversation.]'}\n`).join('')).join('\n');
     const url = URL.createObjectURL(new Blob([content],{type:'text/markdown'}));
     const link = document.createElement('a'); link.href=url; link.download=`conversation-${record.id}.md`; link.click();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -348,6 +350,8 @@
         body.replaceChildren();
         if(Object.values(imageTypes).includes(file.mime)) {
           const img=document.createElement('img');img.alt=file.name;img.src=`data:${file.mime};base64,${file.data}`;body.append(img);
+        } else if(file.mime==='application/pdf') {
+          const note=document.createElement('p');note.textContent='PDF reference · OpenAI receives extracted text and rendered pages. Download the original to inspect it.';body.append(note);
         } else {
           const pre=document.createElement('pre');pre.textContent=file.text;body.append(pre);
         }
@@ -380,12 +384,14 @@
       if(attachments.length+files.length>4)throw Error('Attach up to 4 files per message.');
       const next=[...attachments];
       for(const file of files) {
-        const extension=file.name.split('.').pop().toLowerCase(), mime=imageTypes[extension]||'text/plain';
-        if(!imageTypes[extension] && !textTypes.has(extension))throw Error('Use PNG/JPEG/WebP screenshots or UTF-8 text/config files. PDF and office documents are not supported yet.');
+        const extension=file.name.split('.').pop().toLowerCase(), mime=extension==='pdf'?'application/pdf':imageTypes[extension]||'text/plain';
+        if(extension!=='pdf' && !imageTypes[extension] && !textTypes.has(extension))throw Error('Use PNG/JPEG/WebP screenshots, UTF-8 text/config files or PDFs (OpenAI only).');
+        if(extension==='pdf' && state?.settings?.provider!=='openai')throw Error('PDF attachments currently require the OpenAI provider and an image-capable model.');
         if(!file.size || file.size+next.reduce((n,a)=>n+a.size,0)>2*1024*1024)throw Error('Attachments must be nonempty and total at most 2 MiB.');
         if(mime==='text/plain' && file.size+next.filter(a=>a.mime==='text/plain').reduce((n,a)=>n+a.size,0)>64*1024)throw Error('Text attachments may total at most 64 KiB.');
         const bytes=new Uint8Array(await file.arrayBuffer());
         let text;
+        if(mime==='application/pdf' && !/^%PDF-[12]\.[0-9][\r\n]/.test(new TextDecoder().decode(bytes.slice(0,9))))throw Error('Invalid PDF header; attach an unencrypted PDF document.');
         if(mime==='text/plain') {
           try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch(_){throw Error('Text attachments must use UTF-8 encoding.');}
           if(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(text))throw Error('Binary or control characters are not allowed in text attachments.');
@@ -617,6 +623,7 @@
     finally { busy = false; controls(); }
   }
   button.onclick = () => {
+    if (window.weblabPopouts?.focus(panel)) return;
     dismissCompactPanel(); window.weblabLayout?.show('agent'); panel.hidden=false; applyLayout(); bringConsoleForward(panel);
     button.setAttribute('aria-expanded','true'); action(ensureSession);
   };

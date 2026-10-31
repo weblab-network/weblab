@@ -60,6 +60,17 @@ move published tags or delete assets to bypass these checks. The one-off v0.11.0
 recovery input has been retired. Historical workflow revisions still exist in
 GitHub; do not rerun their old publication jobs.
 
+## Agent PDF attachment checks
+
+PDF conversion runs only in the isolated companion. Its image installs
+`poppler-utils` and `util-linux` (`prlimit`); the core has no PDF parser dependency.
+`python3 -m unittest discover -s tests -p test_agent_pdf.py -v` covers actual
+text/diagram rendering, multipage order, limits, cancellation and failure cleanup.
+Install those utilities to run the conversion cases locally; otherwise they skip.
+`tests/test_agent.py` covers delivery, ownership, download and history, and
+`node tests/agent_ui.cjs` checks the picker, provider restriction and downloads.
+Use disposable fixtures, with no live provider request or active lab changes.
+
 ## Backend tests
 
 From the repository root on Linux, with Python 3.11+ and Perl installed:
@@ -98,6 +109,7 @@ node tests/junos_ui.cjs
 node tests/iol_l1_ui.cjs
 node tests/console_clipboard.cjs
 node tests/instructions.cjs
+node tests/pane_popouts.cjs
 node tests/workspace_features.cjs
 node tests/storage_ui.cjs
 node tests/network_cloud_ui.cjs
@@ -550,7 +562,11 @@ For server-published instructions, run
 local-only compatibility. These use disposable data and independent browser
 logins. Coverage includes role/CSRF enforcement, atomic writes, conflicting
 updates, persisted versions, import/export isolation, safe Markdown,
-synchronization, unchanged scroll position and account changes.
+synchronization, unchanged scroll position and account changes. Browser coverage
+also checks Instructions pop-out/return, blocked popups, text size and scroll
+restoration, fullscreen, safe rendering in the child, published updates, and
+closing the reader on logout. These readers use disposable browser sessions;
+the tests do not open or modify an active lab.
 
 For authenticated admin Agent access, run
 `python3 -m unittest discover -s tests -p test_auth_agent.py -v` and
@@ -656,6 +672,15 @@ real relay and checks filtering, safe packet details, PCAP download, recapture,
 window resizing and unchanged topology/fault state. These tests do not boot
 vendor devices or modify the active lab.
 
+Duration tests cover 60/120/300-second deadlines, invalid inputs, ownership,
+toolbar selection and recapture. `node tests/pane_popouts.cjs` checks live console
+input/socket/lock continuity across document transfer (combined and individual consoles),
+blocked popups, return/close/dock and individual console disposal,
+topology controls and theme, Agent drafts/session continuity, parent reload and
+disabled pop-out policy. Workspace layout tests also cover returning a detached
+Agent to its docked slot; Traffic UI tests check packet-buffer continuity across
+pop-out. Fixtures are disposable and Agent inference is mocked.
+
 
 The traffic suite also tests protocol recognition, decoder absence/busy/timeout,
 output/cache limits and ownership revocation during decoding. A real TShark test
@@ -687,6 +712,7 @@ cross-gateway binding conflicts and ZIP/config export preservation. `node tests/
 checks the floating settings window, rule creation/removal/reordering,
 protocol-specific ports, live apply controls and stopped-cloud saves with a running
 echo peer, plus port-forward defaults/editing/persistence and gateway-stop restrictions.
+It also checks tab navigation, the fixed Apply footer and responsive layouts.
 Its running-helper UI state is simulated; native tests exercise real
 packet filtering. Admin/CSRF boundaries are in `test_web_auth.py`.
 
@@ -725,3 +751,27 @@ fresh network namespaces; it never attaches to the host network or an existing
 lab. It needs Python, iproute2, iptables, iputils-ping and util-linux. It verifies
 UDP port-unreachable and fragmentation-needed errors for admitted forwards under
 outbound Deny, plus denial of unrelated ICMP and an Allow control.
+
+## External SSH access tests
+
+`python3 -m unittest discover -s tests -p test_external_access.py -v` uses
+disposable fake devices and the real shared console wrapper. Docker integration
+is opt-in; build the helper, then run these **sequentially**:
+
+```sh
+docker build -f packaging/internet/Dockerfile -t weblab-internet:ssh-test .
+PYTHONPATH=tests WL_TEST_SSH_IMAGE=weblab-internet:ssh-test python3 -m unittest test_external_access.OpenSSHTests.test_real_ssh_commands_and_denied_forwarding -v
+WL_TEST_SSH_IMAGE=weblab-internet:ssh-test python3 tests/external_ssh_native.py
+node tests/external_access_ui.cjs
+```
+
+The native check creates and cleans a temporary gateway/PC lab, a test-only PC
+image and an SSH state volume. It checks real SSH/Telnet and ProxyJump, non-root
+shell access, blocked shell/forward destinations, localhost source admission,
+revocation and host-key continuity. It does not
+open the active lab's data directory. Console service uses `compose.ssh.yaml`;
+see [setup and state semantics](external-access.md).
+
+The browser check covers key grants, Inspector SSH draft/apply behavior, edits
+across tabs, revealing invalid fields on hidden tabs, keyboard navigation and
+desktop/mobile layouts. It uses a disposable server without an SSH listener.

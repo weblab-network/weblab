@@ -14,6 +14,8 @@ PORT_FORWARD_LABEL = LABEL + '.port-forwards'
 MAX_FIREWALL_RULES = 64
 MAX_PORT_FORWARDS = 32
 FORWARD_PORT_BASE = 40000
+SSH_PORT = 2223
+SSH_LABEL = LABEL + ".ssh"
 
 
 def firewall_settings(raw):
@@ -68,8 +70,10 @@ def port_number(value):
 
 def check_bindings(configs):
     bindings = {}
+    if os.environ.get('WL_EXTERNAL_CONSOLES') == '1':
+        bindings[('tcp', port_number(os.environ.get('WL_SSH_PORT', '2222')))] = {os.environ.get('WL_SSH_BIND', '127.0.0.1')}
     for config in configs:
-        for forward in config.get('port_forwards', []):
+        for forward in [*config.get('port_forwards', []), *([dict(config['ssh'], protocol='tcp')] if config.get('ssh', {}).get('enabled') else [])]:
             key = (forward['protocol'], forward['external_port'])
             address = forward['bind_address']
             used = bindings.setdefault(key, set())
@@ -116,8 +120,8 @@ def port_forward_settings(raw, config):
 
 
 def settings(raw):
-    if not isinstance(raw, dict) or set(raw) - {'address', 'routes', 'uplink_subnet', 'firewall', 'port_forwards'}:
-        raise ValueError('Internet settings accept address, routes, uplink_subnet, firewall and port_forwards')
+    if not isinstance(raw, dict) or set(raw) - {'address', 'routes', 'uplink_subnet', 'firewall', 'port_forwards', 'ssh'}:
+        raise ValueError('Internet settings accept address, routes, uplink_subnet, firewall, port_forwards and ssh')
     if not isinstance(raw.get('address', ''), str) or not isinstance(raw.get('uplink_subnet', ''), str):
         raise ValueError('Cloud address and uplink subnet must be strings')
     address = ipaddress.IPv4Interface(raw.get('address', '192.0.2.1/24'))
@@ -149,7 +153,25 @@ def settings(raw):
         check_uplink(result, uplink)
         result['uplink_subnet'] = str(uplink)
     result['port_forwards'] = port_forward_settings(raw.get('port_forwards', []), result)
+    if raw.get('ssh') is not None:
+        result['ssh'] = ssh_settings(raw['ssh'])
     return result
+
+
+def ssh_settings(raw):
+    if not isinstance(raw, dict) or set(raw)-{'enabled', 'bind_address', 'external_port', 'source'} or type(raw.get('enabled', False)) is not bool:
+        raise ValueError('SSH settings require enabled, bind_address, external_port and source')
+    address = ipaddress.IPv4Address(raw.get('bind_address', '127.0.0.1'))
+    if address.is_multicast or address.is_link_local or int(address) == 0xffffffff or (address.is_loopback and str(address) != '127.0.0.1'):
+        raise ValueError('SSH bind must be localhost, a host IPv4 address or 0.0.0.0')
+    source = raw.get('source', '')
+    if not isinstance(source, str):
+        raise ValueError('SSH source must be an IPv4 host/network')
+    source = str(ipaddress.IPv4Network(source)) if source else ''
+    if address.is_loopback and source:
+        raise ValueError('Leave SSH source blank for localhost bindings')
+    return {'enabled':raw.get('enabled', False), 'bind_address':str(address),
+            'external_port':port_number(raw.get('external_port', 22022)), 'source':source}
 
 
 def check_uplink(config, network):
@@ -175,6 +197,12 @@ def start(lab, node, run, error, root):
         if image != IMAGE:
             raise error(f'Install the configured Internet helper image on the Docker host: {image}. See docs/internet.md.') from exc
         raise error('Build the Internet gateway image first: docker build -f packaging/internet/Dockerfile -t weblab-internet:dev .') from exc
+    ssh = config.get('ssh', {})
+    if ssh.get('enabled'):
+        if (metadata.get('Config', {}).get('Labels') or {}).get(SSH_LABEL) != '1':
+            raise error('Rebuild the Internet helper for SSH access')
+    elif (metadata.get('Config', {}).get('Labels') or {}).get(SSH_LABEL) != '1':
+        config.pop('ssh', None)
     if (metadata.get('Config', {}).get('Labels') or {}).get(PORT_FORWARD_LABEL) != '1':
         if config['port_forwards']:
             raise error('Rebuild the Internet gateway helper for port forwarding: '
@@ -226,6 +254,7 @@ def start(lab, node, run, error, root):
         '--env', 'WL_INTERNET_CONFIG=' + json.dumps(config),
         *[arg for index, forward in enumerate(config.get('port_forwards', [])) for arg in (
             '--publish', f'{forward["bind_address"]}:{forward["external_port"]}:{FORWARD_PORT_BASE+index}/{forward["protocol"]}')],
+        *(('--publish', f'{ssh["bind_address"]}:{ssh["external_port"]}:{SSH_PORT}/tcp') if ssh.get('enabled') else ()),
         metadata['Id'])
     runtime['cloud_container_id'] = cid
     mark('cloud_container_created')
@@ -242,6 +271,12 @@ def start(lab, node, run, error, root):
             if run('docker', 'inspect', '--format', '{{.State.Running}}', cid) != 'true':
                 raise error('Internet gateway failed: ' + run('docker', 'logs', '--tail', '30', cid))
             time.sleep(.2)
+    if ssh.get('enabled'):
+        try:
+            start_ssh(lab, node, metadata['Id'], run, error)
+        except error as exc:
+            # Optional SSH failure does not turn off the lab's working NAT/DNS.
+            runtime['cloud_ssh_error'] = str(exc)
     config_path = lab.node_dir(node['id']) / 'internet-network.json'
     peer = lab.fabric.peers.get((node['id'], 'eth0'))
     config_path.write_text(json.dumps({'id': node['iol_id'], 'netio': str(lab.netio),
@@ -281,6 +316,7 @@ def update_firewall(cid, policy, run):
 def cleanup(lab, runtime, run, error):
     # Never remove another owner's replacement resources during recovery.
     for flag, kind, name in (
+        ('cloud_ssh_created', 'container', runtime.get('cloud_ssh_id')),
         ('cloud_container_created', 'container', runtime.get('cloud_container_id')),
         ('cloud_lan_created', 'network', runtime.get('cloud_lan')),
         ('cloud_wan_created', 'network', runtime.get('cloud_wan')),
@@ -311,3 +347,70 @@ def cleanup(lab, runtime, run, error):
             run('ip', 'link', 'delete', runtime['cloud_tap'])
         runtime.pop('cloud_tap_created')
         lab.journal()
+
+
+def start_ssh(lab, node, image, run, error):
+    runtime = lab.runtime[node['id']]
+    name = runtime['container'] + '-ssh'
+    # Host identity follows the persistent node ID, not a reallocatable IOL ID.
+    import hashlib
+    volume = f'wl-ssh-{lab.owner}-'+hashlib.sha256(node['id'].encode()).hexdigest()[:16]
+    label = f'{LABEL}={runtime["cloud_label"]}'
+    run('docker', 'volume', 'create', '--label', label, volume)
+    info = json.loads(run('docker', 'volume', 'inspect', volume))[0]
+    if (info.get('Labels') or {}).get(LABEL) != runtime['cloud_label']:
+        raise error('SSH state volume ownership changed')
+    cid = run('docker', 'create', '--init', '--name', name, '--label', label,
+        '--network', 'container:'+runtime['cloud_container_id'], '--cap-drop', 'ALL',
+        '--cap-add', 'SETUID', '--cap-add', 'SETGID', '--cap-add', 'SYS_CHROOT',
+        '--cap-add', 'CHOWN', '--cap-add', 'DAC_OVERRIDE', '--cap-add', 'KILL',
+        '--security-opt', 'no-new-privileges', '--read-only', '--pids-limit', '64', '--memory', '128m',
+        '--tmpfs', '/run:rw,nosuid,nodev,size=8m', '--tmpfs', '/tmp:rw,nosuid,nodev,size=8m',
+        '--tmpfs', '/home/lab:rw,nosuid,nodev,uid=10003,gid=10003,size=16m',
+        '--mount', f'type=volume,source={volume},target=/state',
+        '--entrypoint', 'python3', image, '/opt/weblab/access_service.py', 'gateway')
+    runtime.update(cloud_ssh_created=True, cloud_ssh_id=cid, cloud_ssh_keys=None)
+    lab.journal()
+    run('docker', 'start', cid)
+    for _ in range(40):
+        try:
+            run('docker', 'exec', cid, 'test', '-f', '/run/ssh/accept-keys', timeout=2)
+            break
+        except error:
+            time.sleep(.1)
+    else:
+        raise error('SSH helper did not initialize its key receiver')
+    sync_ssh(lab, node['id'], runtime, run, error)
+    for _ in range(40):
+        try:
+            run('docker', 'exec', cid, 'test', '-f', '/run/ssh/ready', timeout=2)
+            runtime['cloud_ssh_fingerprint'] = run('docker', 'exec', cid, 'cat', '/state/fingerprint')
+            return
+        except error:
+            time.sleep(.1)
+    raise error('SSH helper did not become ready; inspect gateway SSH logs')
+
+
+def sync_ssh(lab, node_id, runtime, run, error):
+    cid = runtime.get('cloud_ssh_id')
+    if not cid or not getattr(lab, 'access', None):
+        return
+    keys = lab.access.gateway_keys(node_id)
+    info = json.loads(run('docker', 'inspect', cid, timeout=3))[0]
+    if (info.get('Config', {}).get('Labels') or {}).get(LABEL) != runtime['cloud_label']:
+        raise error('SSH helper ownership changed')
+    if not info.get('State', {}).get('Running'):
+        runtime['cloud_ssh_error'] = 'SSH helper stopped; restart only this Internet node'
+        return
+    if keys != runtime.get('cloud_ssh_keys'):
+        try:
+            run('docker', 'exec', cid, 'python3', '/opt/weblab/access_service.py', 'keys', json.dumps(keys), timeout=3)
+        except error:
+            # Fail closed on revocation synchronization failure; preserve NAT.
+            run('docker', 'stop', '--time', '1', cid, timeout=5)
+            raise
+        runtime['cloud_ssh_keys'] = keys
+    if not keys:
+        runtime['cloud_ssh_error'] = 'SSH unconfigured: add a local public-key grant for this Internet node'
+    else:
+        runtime.pop('cloud_ssh_error', None)

@@ -17,7 +17,9 @@
 .console-tab-close{background:none;border:0;padding:3px 7px;margin-right:3px;font-size:15px;color:var(--muted)}
 #terminal{position:relative;padding:0;overflow:hidden}
 /* FitAddon measures this element's full height, so keep spacing outside it. */
-.console-terminal{position:absolute;inset:10px 12px 14px;min-width:0;min-height:0}
+.console-terminal{position:absolute;inset:2px 12px 6px;min-width:0;min-height:0;display:flex;flex-direction:column;justify-content:flex-end}
+/* Fit whole rows against the full container; leave fractional-row space above. */
+.console-terminal>.xterm{height:auto;flex:0 0 auto}
 .console-panel{flex-shrink:1;min-height:0}
 .console-title{min-width:0;display:flex;align-items:center;white-space:nowrap}
 #console-name{overflow:hidden;text-overflow:ellipsis}
@@ -113,15 +115,19 @@
 .console-panel.floating .console-toolbar{touch-action:pan-x}
 .console-panel.floating:not(.maximized) .console-title{cursor:move;user-select:none}
 .console-move{background:none;border:0;padding:3px 6px;font-size:18px;cursor:move;touch-action:none;min-height:30px}
-.console-resize{position:absolute;right:0;bottom:0;width:30px;height:28px;border:0;border-radius:5px 0 0 0;background:var(--toolbar-bg,#1a222b);color:var(--muted);cursor:nwse-resize;touch-action:none;z-index:1;padding:3px}
-.console-panel.floating .console-terminal{bottom:24px}
+/* All floating panes share a shallow grip below their content. */
+.console-resize{position:absolute;right:0;bottom:0;width:32px;height:8px;border:0;border-radius:3px 0 0 0;background:transparent;color:var(--muted);cursor:nwse-resize;touch-action:none;z-index:1;padding:0;font-size:0}
+.console-resize::after{content:"";position:absolute;right:5px;bottom:2px;width:20px;height:3px;border-radius:2px;background:var(--divider-grip,#657b80)}
+.instructions-panel:not(.workspace-docked):not(.browser-detached):not(:fullscreen):has(>.console-resize:not([hidden])),
+.agent-panel:not(.workspace-docked):not(.browser-detached):has(>.console-resize:not([hidden])){padding-bottom:8px}
+.console-panel.floating .console-terminal{right:2px;bottom:8px}
 @media(max-width:550px){.console-toolbar{gap:4px}.console-actions{flex-wrap:wrap}.console-font-controls button{min-height:32px}.console-title{max-width:150px}}
 
 /* Independent windows share a stack below mobile drawers and modal dialogs. */
 #console-windows{position:fixed;inset:0;z-index:7;pointer-events:none}
 #console-windows>.console-panel{pointer-events:auto}
 .floating-terminal-host{position:relative;flex:1;min-height:0;overflow:hidden}
-.console-window .console-terminal{inset:10px 12px 24px}
+.console-window .console-terminal{inset:2px 2px 8px}
 .console-window .console-toolbar{gap:7px}
 .console-window .console-toolbar label{display:flex;align-items:center;gap:4px;margin:0;white-space:nowrap;font-size:11px;color:var(--muted)}
 .console-window .console-toolbar input[type=checkbox]{width:auto;margin:0;accent-color:var(--accent)}
@@ -245,6 +251,35 @@ body{height:var(--app-height,100vh)}
 .link-traffic-actions button[aria-pressed=true]:not([data-link-traffic=none]),#link-actions-dialog .carrier-fault{border-color:var(--fault-border,#d69761);background:var(--fault-bg,#453428)}
 
 /* Local instructions share window gestures, arrangement and thin scrollbars. */
+button.popout-button{display:inline-flex;align-items:center;justify-content:center;flex:0 0 30px;width:30px;height:30px;min-width:30px;min-height:30px;padding:0;border-radius:5px}
+.popout-button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5;vertical-align:middle}
+html:not([data-allow-popout=true]) .popout-button{display:none!important}
+.pane-popout{height:100vh;margin:0;display:flex;flex-direction:column;overflow:hidden}
+.pane-window-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto;margin-left:auto}
+.pane-window-actions button{height:30px;padding:4px 8px;white-space:nowrap;font-size:12px}
+#pane-fullscreen{width:30px;padding:0}
+#pane-notice{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:100;max-width:calc(100% - 24px);padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--panel);font-size:12px;pointer-events:none}
+#pane-notice:empty{display:none}
+#pane-host{flex:1;min-height:0;display:flex;overflow:hidden}
+#pane-host>.browser-detached{position:relative!important;inset:auto!important;width:100%!important;height:100%!important;flex:1;min-width:0;min-height:0;border:0;border-radius:0;box-shadow:none;display:flex!important}
+.console-panel.browser-detached .console-terminal{right:2px;bottom:4px}
+.browser-detached .console-move,.browser-detached .console-resize,
+.browser-detached .popout-button,.browser-detached .window-hide,
+.browser-detached #dock-topology,.browser-detached #expand-topology,.browser-detached #fullscreen,
+.browser-detached #layout-menu,.browser-detached #detach-console,.browser-detached #expand-console,
+.browser-detached [id^="detach-console-"],.browser-detached [id^="expand-console-"],
+.browser-detached #detach-console-tab,.browser-detached .console-tab-float,
+.browser-detached #agent-maximize,.browser-detached .workspace-float-document,
+.browser-detached [data-part=maximize],
+.browser-detached [data-float-consoles],.browser-detached [data-dock-consoles],
+.browser-detached [data-arrange-windows]{display:none!important}
+.instructions-detached{display:none!important}
+#instructions-panel:fullscreen{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;border-radius:0}
+#instructions-panel:fullscreen #instructions-resize,#instructions-panel:fullscreen #instructions-move{display:none}
+.instructions-reader{display:flex;flex-direction:column;height:100vh;margin:0;background:var(--sheet-bg,#131a22)}
+.instructions-reader .console-toolbar{flex-shrink:0;padding:8px;gap:8px}
+.instructions-reader #reader-title{white-space:nowrap}
+.instructions-reader #reader-source{font-size:12px;white-space:nowrap}
 .instructions-panel{position:fixed;display:flex;flex-direction:column;pointer-events:auto;background:var(--sheet-bg,#131a22);border:1px solid var(--active-border,#536960);border-radius:10px;box-shadow:0 16px 60px var(--window-shadow,#0009);overflow:hidden}
 #instructions-title{max-width:190px;overflow:hidden;text-overflow:ellipsis}
 #instructions-toolbar{gap:8px;min-height:44px}
@@ -513,15 +548,28 @@ body.map-workspace>.topbar{display:none}
 .map-selection-box{position:fixed;pointer-events:none;border:1px solid var(--accent);background:var(--selection-fill,#67d8bc20);z-index:5}
 
 /* Internet gateway: uses the existing floating document window controls. */
+#external-access-dialog textarea { display:block; width:100%; min-height:90px; margin-top:6px; resize:vertical; padding:9px; font:12px LabMono,monospace; background:var(--sheet-bg,#121820); color:var(--text); border:1px solid var(--border); border-radius:6px; }
+#external-access-dialog textarea:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .device-icon.cloud { color: var(--accent, #69d5bf); }
 .internet-panel { display:flex; flex-direction:column; }
-.internet-content { padding:16px 20px 28px; overflow:auto; flex:1; min-height:0; }
+.internet-tabs { display:flex; flex-shrink:0; gap:4px; padding:8px 12px; border-bottom:1px solid var(--border); overflow-x:auto; }
+.internet-tabs button { white-space:nowrap; padding:7px 10px; }
+.internet-tabs [aria-selected=true] { color:var(--accent); background:var(--active-bg,#263631); border-color:var(--accent); }
+.internet-form { display:flex; flex-direction:column; flex:1; min-height:0; }
+.internet-content { padding:4px 20px 16px; overflow:auto; flex:1; min-height:0; }
 .internet-content label { display:block; margin:12px 0; }
-.internet-content input { width:100%; min-width:0; }
+.internet-content input:not([type=checkbox]) { width:100%; min-width:0; }
+.internet-content .setting-checkbox { display:flex; }
 .internet-content select { width:100%; min-width:0; }
 .internet-content h3 { margin:20px 0 8px; }
 .internet-content details { margin-top:16px; }
 .internet-content p { line-height:1.5; }
+.internet-content [role=tabpanel] > h3:first-child { margin-top:8px; }
+.internet-footer { display:flex; flex-shrink:0; align-items:center; gap:12px; padding:10px 16px; border-top:1px solid var(--border); }
+.internet-footer > div { flex:1; min-width:0; }
+.internet-footer p { margin:0; }
+.internet-footer [data-part=status] { color:var(--muted); font-size:12px; }
+.internet-footer button { flex-shrink:0; }
 .internet-routes { overflow-x:auto; }
 .internet-routes table { width:100%; border-collapse:collapse; }
 .internet-routes th { text-align:left; font-size:12px; color:var(--muted); }

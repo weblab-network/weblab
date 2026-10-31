@@ -15,6 +15,14 @@ Stopping ordinary guest nodes, deleting nodes, manipulating live links and uploa
 images remain manual operations. The agent can configure running devices through their CLI
 when input is enabled and approved, individually or through YOLO.
 
+The Agent's required authoring guide includes an
+[exercise capability reference](practice-labs.md#capabilities-to-use-in-exercises):
+directional frame blocking for UDLD/loop guard, carrier control, traffic capture,
+Instructions, gateway settings, diagrams and backup limits. It distinguishes
+available tools from browser-only steps the learner must perform. This adds
+guidance, not new tools or permissions; capture, link-fault controls and publishing
+Instructions remain browser actions.
+
 Agent replies display Markdown headings, emphasis, lists, tables and code blocks.
 Wide tables and code blocks scroll within the reply. Raw HTML is shown as text;
 model-provided links and images remain inactive. Messages you type, attachments
@@ -285,6 +293,13 @@ API; existing external MCP setups keep their independent behavior.
    individual approval prompts. It does not enable unchecked permissions.
 6. **Save settings**, then open Conversation and send a request.
 
+**Reasoning effort:** Weblab does not set Codex's `model_reasoning_effort` or
+`turn/start.effort`, and currently has no effort selector. Codex/model defaults
+apply; there is no single fixed effort guaranteed across models. The context
+window and turn deadline are separate limits, not effort settings. Codex's
+[model catalog](https://learn.chatgpt.com/docs/app-server#models) advertises each
+model's supported reasoning efforts and default.
+
 For example:
 
 > Draft an FRR router, an LL2S switch and two Alpine PCs for VLAN practice.
@@ -337,6 +352,13 @@ History and starts a fresh Codex thread on the next message. **Close session**
 removes the session, its conversations and its dedicated sign-in directory;
 reopen/reconnect to create a new one.
 
+**Pop out Agent** (overlapping windows) moves this same pane to a separate
+browser window, preserving the draft, conversation, active turn and settings.
+Keep the original workspace open; approval dialogs appear there. Close the
+child or use **Return to workspace** to restore the pane. This does not create
+another Agent session or resend a prompt. See
+[pop-out controls and administrator settings](topology.md#panels-zoom-and-fullscreen).
+
 ## Conversation history
 
 The introductory hint appears only while a conversation has no messages. After
@@ -384,7 +406,7 @@ keep. Browser-tab drafts are temporary and are not included in server history.
 
 The lab **Export** dialog can optionally include the current conversation in ZIP
 or JSON exports. ZIP contains readable Markdown and JSON transcripts; JSON adds
-reference metadata. Text attachments are included, screenshots are listed only.
+reference metadata. Text attachments are included, screenshots/PDFs are listed only.
 This does not restore a resumable Agent session on import or replay any actions.
 See [Agent conversation exports](backups.md#optional-agent-conversation) for
 limits, compatibility and sharing precautions.
@@ -406,25 +428,46 @@ information you do not want to send there.
   CSV, INI and XML**. Their text is included as reference data, not executed or
   automatically imported into the lab. Attaching YAML for discussion does not
   add YAML topology import support.
-- Limits per message: **4 files**, **2 MiB combined**, and **64 KiB combined text**.
+- PDFs: **OpenAI only**, with an image-capable model. The companion extracts text
+  and renders every page locally, then sends both through Codex's text/image input.
+  This includes scanned pages and diagrams; there is no local OCR. Up to **50 PDF
+  pages combined** per message, with **256 KiB combined extracted and attached text**.
+  Pages are scaled to 1600 pixels on their longest side; for tiny labels, attach a
+  larger screenshot of the relevant area. Text and page images both consume model context and allowance; a dense
+  50-page chapter may leave little room for lab state, tools and the response,
+  depending on the model/context setting. Prefer the relevant excerpt when possible.
+  Encrypted, malformed or overly complex PDFs are rejected, never silently truncated.
+  Rendered pages may total at most **24 MiB** per message; this bounds temporary
+  storage and the image payload independently of the uploaded PDF size.
+  Preparation is limited to 60 seconds (or the remaining turn deadline) and can
+  be stopped. If it fails, no model
+  request is sent; the failed message and original PDF remain in history. Split or
+  simplify the PDF and send a new message. Rebuild the Agent image to install the
+  required Poppler utilities; rebuilding only the core does not enable conversion.
+- Limits per message: **4 files**, **2 MiB combined**, and **64 KiB combined uploaded text/config files**.
+  PDF extraction has the separate 256 KiB combined text limit above.
   Screenshots are limited to 8192 pixels per side and 16 megapixels. Empty files,
   binary text, unsupported extensions and oversized attachments are rejected;
-  files are not silently truncated or resized. PDF, office documents, SVG and
-  archives are not supported in this version.
+  original files are not changed. Screenshots are sent without resizing; only
+  PDF page previews are scaled. Office documents, SVG and archives are not supported.
 
-Sent files appear under the user message. Expand them to preview or **Download
-attachment**; they also remain accessible when reopening that conversation in
-History. Pending attachments follow drafts while switching conversations in this
+Sent files appear under the user message. Expand images/text to preview or choose
+**Download attachment** (including original PDFs); they also remain accessible
+when reopening that conversation in History. Pending attachments follow drafts while switching conversations in this
 tab, but are lost on reload. If Send fails, inspect the conversation before
 resending: a lost response does not prove that the message was rejected.
 
 Attachments live in the companion's dedicated session storage and count toward
-its 256 MiB history/storage limit. Lab exports exclude them by default; optional
-conversation exports include text content and screenshot filenames only. Deleting a
+its configurable history/storage limit (256 MiB by default). Lab exports exclude them by default; optional
+conversation exports include text content and screenshot/PDF filenames only. Deleting a
 conversation removes its attachment files; closing a session removes its whole
 directory. Copies may remain in Codex/provider history, so these actions are not
 a secure erase of all copies. Reading attachments requires the owning Agent
 session; no public file URL, host-file access or additional model tool is exposed.
+PDF originals are downloadable, not embedded in the browser. Rendered PDF pages
+are temporary and removed when the turn finishes; the original follows the same
+conversation/session retention rules. Extracted PDF text and rendered pages are
+not included in conversation exports.
 Images use Codex's [documented local image input](https://learn.chatgpt.com/docs/app-server#turns).
 
 <details>
@@ -578,9 +621,10 @@ feature.
 - One active generation across all sessions, to limit companion/model contention.
 - Up to eight browser sessions, expiring after 24 hours of inactivity, with up to
   50 conversations per session.
-- Accumulated companion history, attachments and logs are checked against a 256 MiB limit.
-  Generation stops at the limit; archive/reset the dedicated companion volume
-  deliberately to continue. This periodic check is not a filesystem quota.
+- Accumulated companion history, attachments and logs are checked against a
+  256 MiB default limit, configurable with `WL_AGENT_HISTORY_LIMIT_MIB` on the
+  companion. Generation stops at the limit; raise it while retaining the existing
+  volume to continue the conversation. This periodic check is not a filesystem quota.
 - A prompt is limited to 16,000 characters; conversations are bounded. Start a
   new conversation when the limit is reached.
 - The companion has a 1 GiB memory limit and one CPU. These limits do **not** limit
@@ -597,6 +641,41 @@ Browser capabilities use that tab's `sessionStorage`, or optionally browser
 access to its history. Host Codex credentials/config
 are never mounted. Do not publish these volumes: they contain prompts and model
 history and, for OpenAI sessions, login credentials. Starting a new conversation is not a secure erase of Codex history.
+
+### Increase Agent history capacity without losing work
+
+PDF/image conversations can produce large Codex history files even when the
+original attachment is small. The history limit covers all companion sessions,
+including Codex logs; it is separate from model context, token allowance, container
+RAM and the `/tmp` limit. A local Docker volume normally uses available host disk
+space, so this application limit does not require resizing the volume.
+
+For a source Compose deployment, set `WL_AGENT_HISTORY_LIMIT_MIB=1024` in the
+project's `.env` file for a 1 GiB allowance, then rebuild/recreate **only** the
+companion with the same Compose project and volumes:
+
+```sh
+docker compose -f compose.yaml -f compose.agent.yaml up -d --no-deps --build agent
+```
+
+Use `docker-compose` if that is the command installed on your host. Keep any
+other deployment overrides you normally use. Check host free space first; the
+allowance is shared by conversations and may be exceeded between periodic checks.
+The core and running lab devices do not need a restart for this change.
+
+For a prebuilt companion that includes this setting, use the prebuilt Compose
+files and omit `--build`. A standalone `docker run` deployment passes
+`-e WL_AGENT_HISTORY_LIMIT_MIB=1024` to the **Agent** container while retaining
+its original mounts and isolation options. Native companions also accept
+`--history-limit-mib 1024`. Invalid or nonpositive values are rejected.
+
+Keep the existing browser tab/session. After the companion reconnects, send a
+new message in the **same conversation**, for example: “Inspect the current lab
+and continue the unfinished exercise from where you stopped.” Do not reattach
+the PDF unless needed: the saved Codex thread retains its prior inputs. Completed
+lab actions remain; the interrupted generation itself is not replayed automatically,
+and unpersisted model output cannot be recovered. Do not use `down -v`, remove the
+conversation volume, close the Agent session, or reset history as a capacity fix.
 
 ## Disable the Agent
 

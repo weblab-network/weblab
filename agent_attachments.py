@@ -53,7 +53,7 @@ def image_dimensions(raw, mime):
     raise ValueError('Invalid image header; use a PNG, JPEG or WebP screenshot')
 
 
-def validate(items, model=''):
+def validate(items, model='', provider='ollama'):
     if not isinstance(items, list) or len(items) > MAX_FILES:
         raise ValueError('Attach up to 4 files per message')
     result, total, text_total = [], 0, 0
@@ -65,8 +65,10 @@ def validate(items, model=''):
                 '/' in name or '\\' in name or not name.isprintable() or name in ('.', '..')):
             raise ValueError('Invalid attachment filename')
         extension = PurePosixPath(name).suffix.lower()
-        if extension not in TEXT_EXTENSIONS and extension not in IMAGE_TYPES:
-            raise ValueError('Use PNG/JPEG/WebP screenshots or UTF-8 text/config files; PDF and office documents are not supported yet')
+        if extension not in TEXT_EXTENSIONS and extension not in IMAGE_TYPES and extension != '.pdf':
+            raise ValueError('Use PNG/JPEG/WebP screenshots, UTF-8 text/config files or PDFs (OpenAI only)')
+        if extension == '.pdf' and provider != 'openai':
+            raise ValueError('PDF attachments currently require the OpenAI provider and an image-capable model')
         if not isinstance(data, str) or len(data) > (MAX_BYTES + 2) // 3 * 4:
             raise ValueError('Attachments may total at most 2 MiB per message')
         try:
@@ -76,9 +78,14 @@ def validate(items, model=''):
         total += len(raw)
         if not raw or total > MAX_BYTES:
             raise ValueError('Attachments must be nonempty and total at most 2 MiB per message')
-        mime = IMAGE_TYPES.get(extension, 'text/plain')
+        mime = 'application/pdf' if extension == '.pdf' else IMAGE_TYPES.get(extension, 'text/plain')
         attachment = {'name': name, 'mime': mime, 'size': len(raw), 'raw': raw}
-        if mime == 'text/plain':
+        if mime == 'application/pdf':
+            if not re.match(rb'%PDF-[12]\.[0-9](?:\r|\n)', raw):
+                raise ValueError('Invalid PDF header; attach an unencrypted PDF document')
+            if re.search(r'(^|/)gpt-oss(?=[:.\-]|$)', model, re.I):
+                raise ValueError('PDF attachments need an image-capable model; gpt-oss is text-only')
+        elif mime == 'text/plain':
             text_total += len(raw)
             if text_total > MAX_TEXT:
                 raise ValueError('Text attachments may total at most 64 KiB per message')

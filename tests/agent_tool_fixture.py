@@ -26,6 +26,9 @@ class Model(BaseHTTPRequestHandler):
             data = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
             assert self.path == '/v1/responses'
             assert not self.headers.get('Authorization'), 'Fixture must not receive credentials'
+            content=[part for item in data['input'] if item.get('role')=='user' for part in item.get('content',[]) if isinstance(part,dict)]
+            assert any('Lab page 1: R1 to R2' in part.get('text','') for part in content), 'PDF text missing'
+            assert sum(part.get('type')=='input_image' and part.get('image_url','').startswith('data:image/') for part in content)>=2, 'PDF page image missing'
             if not Model.calls:
                 Model.management = 'GATEWAY_MANAGEMENT_PROBE' in json.dumps(data['input'])
                 content=[part for item in data['input'] if item.get('role')=='user' for part in item.get('content',[]) if isinstance(part,dict)]
@@ -51,7 +54,7 @@ class Model(BaseHTTPRequestHandler):
                         'port_forwards:[{protocol:"tcp",external_port:22022,target_address:"10.44.0.10",target_port:22}]}})); '
                         'text({gatewayApplied:payload(await tools.mcp__weblab__apply_internet_settings({proposal_id:draft.proposal_id}))});')
             else:
-                assert Model.calls == 1
+                assert Model.calls in (1, 2)
                 outputs = [i for i in data['input'] if i.get('type') == 'custom_tool_call_output']
                 assert outputs, 'No Code Mode output returned'
                 text = '\n'.join(p.get('text','') for i in outputs for p in i['output'] if isinstance(p,dict))

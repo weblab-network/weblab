@@ -68,7 +68,11 @@ installed at image build time. The Codex 0.160.0 upstream
 [notice](packaging/agent/Codex-NOTICE.txt) are retained in the companion at
 `/usr/local/share/licenses/codex/`, alongside installed package notices; they are not
 part of the standard Weblab image. Node.js and Debian packages retain their own
-licenses. The independently implemented Weblab bridge and UI use the project's
+licenses. The companion also installs Debian’s unmodified Poppler utilities
+(`poppler-utils`) as separate processes for PDF text extraction/page rendering.
+Their notices remain in `/usr/share/doc/poppler-utils/copyright` and the Poppler
+library package directories; source is available from
+<https://sources.debian.org/src/poppler/>. The independently implemented Weblab bridge and UI use the project's
 MIT license. Model weights are supplied separately by the operator's model server.
 
 The prebuilt `weblab-agent` image redistributes the unmodified Codex package,
@@ -91,7 +95,7 @@ See [NOTICE](packaging/frr/NOTICE).
 ## Optional Internet gateway helper
 
 The optional helper in `packaging/internet/` installs unmodified Python,
-iproute2, iptables and dnsmasq packages from Alpine. Those components retain
+iproute2, iptables, dnsmasq, OpenSSH and BusyBox extras packages from Alpine. Those components retain
 their upstream licenses; Weblab's MIT license covers only its original gateway
 code. See [the helper notes](packaging/internet/README.md) for source references
 and [binary/source distribution](packaging/internet/SOURCES.md). Starting with

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Weblab · Instructions</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/themes.css">
+  <script src="/instructions-popout.js" defer></script>
+</head>
+<body class="instructions-reader">
+  <header class="console-toolbar">
+    <div class="toolbar-scroll">
+      <strong id="reader-title">Instructions</strong>
+      <span id="reader-source" class="muted" role="status"></span>
+      <button id="reader-smaller" aria-label="Decrease instructions text size">A−</button>
+      <button id="reader-font" aria-label="Reset instructions text size">15px</button>
+      <button id="reader-larger" aria-label="Increase instructions text size">A+</button>
+    </div>
+    <button id="reader-fullscreen" aria-label="Enter fullscreen" title="Enter fullscreen" aria-pressed="false">⛶</button>
+    <button id="reader-return">Return to workspace</button>
+  </header>
+  <article id="reader-body" class="instructions-body" tabindex="0" aria-label="Instructions document">
+    <p>Open this reader using Pop out in the workspace’s Instructions toolbar.</p>
+  </article>
+</body>
+</html>

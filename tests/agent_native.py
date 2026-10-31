@@ -88,11 +88,13 @@ def main(args):
                     return struct.pack('>I',len(content))+kind+content+struct.pack('>I',zlib.crc32(kind+content))
                 png=(b'\x89PNG\r\n\x1a\n'+png_chunk(b'IHDR',struct.pack('>IIBBBBB',1,1,8,2,0,0,0))+
                      png_chunk(b'IDAT',zlib.compress(b'\x00\xff\x00\x00'))+png_chunk(b'IEND',b''))
+                from test_agent_pdf import document
                 api('turn',{'prompt':'Read the disposable lab state and inspect the attached reference files.' +
                             (' GATEWAY_MANAGEMENT_PROBE' if args.internet_management else ''),
                             'request_id':uuid.uuid4().hex,'attachments':[
                                 {'name':'reference.txt','data':base64.b64encode(b'ATTACHMENT_TRANSPORT_PROBE').decode()},
-                                {'name':'red-pixel.png','data':base64.b64encode(png).decode()}]})
+                                {'name':'red-pixel.png','data':base64.b64encode(png).decode()},
+                                {'name':'diagram.pdf','data':base64.b64encode(document()).decode()}]})
                 state=await_state(lambda s:s['status'] not in ('starting','running','stopping'),60)
                 assert state['status']=='completed',state.get('error')
                 assert any('Fixture verified:' in m['text'] for m in state['messages']),state['messages']
@@ -108,7 +110,12 @@ def main(args):
                 else:
                     assert lab.topology==before
                     assert not state['approvals'], 'Invalid command must not create an approval'
-                    print('PASS: packaged text/image attachment transport and Code Mode model -> Weblab MCP -> gateway -> empty lab; only Weblab tools exposed, no credentials or cloud inference',flush=True)
+                    # Resume after temporary rendered pages have been removed. Codex's
+                    # persisted inputs must still contain the PDF text and page image.
+                    api('turn', {'prompt':'Continue using the previous PDF reference.', 'request_id':uuid.uuid4().hex})
+                    resumed=await_state(lambda s:s['status'] not in ('starting','running','stopping'),60)
+                    assert resumed['status']=='completed',resumed.get('error')
+                    print('PASS: packaged text/image/PDF attachment transport and resume and Code Mode model -> Weblab MCP -> gateway -> empty lab; only Weblab tools exposed, no credentials or cloud inference',flush=True)
                 return
             if args.openai_login_only:
                 settings={**api('state')['settings'], 'provider':'openai',

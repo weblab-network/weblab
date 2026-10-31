@@ -324,7 +324,8 @@ class Bridge:
             # Persist the request ID before dispatch. An ambiguous transport failure is never replayed.
             if data['request_id'] in session.get('seen', []):
                 return self.companion('state', session)
-            agent_attachments.validate(data.get('attachments', []), session['settings']['model'])
+            agent_attachments.validate(data.get('attachments', []), session['settings']['model'],
+                                       session['settings'].get('provider', 'ollama'))
             state = self.companion('state', session)
             if state['status'] in ('starting', 'running', 'stopping'):
                 raise ValueError('A turn is already active in this session')

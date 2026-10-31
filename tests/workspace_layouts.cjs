@@ -101,6 +101,23 @@ fixture.stderr.on('data', data => { fixtureLog += data; });
     assert.equal(await page.locator('#instructions-panel').evaluate(e=>getComputedStyle(e).borderLeftWidth),'0px');
     assert.equal(await page.locator('#agent-panel').evaluate(e=>getComputedStyle(e).borderLeftWidth),'0px');
     await page.locator('#instructions-body h1').waitFor();
+    // Docked readers can fill the screen and return without losing their slot.
+    await page.locator('#instructions-fullscreen').click();
+    await page.waitForFunction(()=>document.fullscreenElement?.id==='instructions-panel');
+    const fullscreenBox=await page.locator('#instructions-panel').boundingBox();
+    assert.ok(fullscreenBox.width>=1598 && fullscreenBox.height>=998);
+    await page.locator('#instructions-fullscreen').click();
+    await page.waitForFunction(()=>!document.fullscreenElement);
+    await instructionsToolbarBelowTabs();
+    const readerEvent=page.waitForEvent('popup');
+    await page.locator('#instructions-popout').click();
+    const reader=await readerEvent;
+    await reader.locator('#reader-body h1').waitFor();
+    await page.locator('#instructions-panel').waitFor({state:'hidden'});
+    await reader.screenshot({path:'/tmp/weblab-instructions-popout.png'});
+    await reader.locator('#reader-return').click();
+    await page.locator('#instructions-panel').waitFor({state:'visible'});
+    await instructionsToolbarBelowTabs();
     // Publishing controls can overflow narrow panes; their beginning must stay
     // reachable, rather than being clipped by end alignment or workspace tabs.
     await page.setViewportSize({width:1100,height:1000});
@@ -119,6 +136,13 @@ fixture.stderr.on('data', data => { fixtureLog += data; });
     assert.equal(await page.locator('#agent-panel').isVisible(),false);
     await page.locator('#workspace-agent-tab').click();
     assert.equal(await page.locator('#agent-prompt').inputValue(),'Keep this draft');
+    const agentPopupEvent=page.waitForEvent('popup');await page.locator('#agent-popout').click();
+    const agentPopup=await agentPopupEvent;
+    await agentPopup.locator('#agent-prompt').waitFor();
+    assert.equal(await agentPopup.locator('#agent-prompt').inputValue(),'Keep this draft');
+    await agentPopup.locator('#pane-return').click();await page.locator('#agent-panel').waitFor();
+    assert.equal(await page.locator('#agent-panel').evaluate(e=>e.parentElement.id),'workspace-document-slot');
+    assert.equal(await page.locator('#agent-toolbar').evaluate(e=>e.parentElement.id),'workspace-tool-controls');
     await page.screenshot({path:'/tmp/weblab-workspace-stack.png'});
     // Hide and reopen a pane, then float an individual console and dock it again.
     await page.locator('#agent-hide').click(); assert.equal(await page.locator('#agent-panel').isVisible(),false);
@@ -238,6 +262,38 @@ fixture.stderr.on('data', data => { fixtureLog += data; });
     assert.equal(await page.locator('#instructions-panel').evaluate(e=>e.parentElement.id),'console-windows');
     await page.locator('#layout-menu > summary').click(); await page.locator('#workspace-reset').click();
     assert.equal(await page.locator('.topbar').isVisible(),true);
+    // Limited arrangement tiles only existing visible floats, preserving docked
+    // map/Instructions, hidden consoles and separate browser pop-outs.
+    await preset('stack');await page.locator('#workspace-instructions-tab').click();
+    for(const id of ['r1','r2','r3','r4','r5','r6']) {
+      await page.evaluate(id=>openConsole(id),id);
+      await page.waitForFunction(id=>consoleSessions.get(id)?.status==='Connected',id);
+      await page.evaluate(id=>floatConsole(id,false),id);
+    }
+    await page.evaluate(()=>$('console-window-r6').hidden=true);
+    const popupEvent=page.waitForEvent('popup');
+    await page.locator('#console-window-r5 .popout-button').click();
+    const popup=await popupEvent;await popup.locator('#console-window-r5').waitFor();
+    const dockedMap=await page.locator('#topology-panel').boundingBox();
+    const dockedInstructions=await page.locator('#instructions-panel').boundingBox();
+    const zoom=await page.evaluate(()=>mapZoom),socketCount=connections.length;
+    await consoleAction(page.locator('#console-window-r1 [data-arrange-floating]'));
+    const tiles=[];
+    for(const id of ['r1','r2','r3','r4'])tiles.push(await page.locator('#console-window-'+id).boundingBox());
+    assert.equal(new Set(tiles.map(b=>b.x)).size,2);
+    assert.equal(new Set(tiles.map(b=>b.y)).size,2);
+    for(const b of tiles) {
+      assert.ok(Math.abs(b.width-tiles[0].width)<2&&Math.abs(b.height-tiles[0].height)<2);
+      assert.ok(b.x>=0&&b.y>=0&&b.x+b.width<=1600&&b.y+b.height<=1000);
+    }
+    assert.deepEqual(await page.locator('#topology-panel').boundingBox(),dockedMap);
+    assert.deepEqual(await page.locator('#instructions-panel').boundingBox(),dockedInstructions);
+    assert.equal(await page.evaluate(()=>mapZoom),zoom);
+    assert.equal(await page.locator('#console-window-r6').isVisible(),false);
+    assert.equal(await popup.locator('#console-window-r5').isVisible(),true);
+    assert.equal(connections.length,socketCount);
+    await page.screenshot({path:'/tmp/weblab-arrange-floating-only.png'});
+    await popup.close();
     assert.deepEqual(errors,[]);
     console.log('PASS workspace presets, dividers, drawers, responsive tools, persistence, optional Agent, live console/Agent continuity');
   } finally {

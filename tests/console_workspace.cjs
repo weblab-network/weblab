@@ -93,6 +93,15 @@ fixture.stderr.on('data', data => { fixtureLog += data; });
     await drag(page.locator('#console-resize'),70,40);
     let resized=await panel.boundingBox();
     assert.ok(resized.width>moved.width+50,'Floating window resizes');
+    const resizeHeight=await page.evaluate(()=>consoleRect.height);
+    for(const delta of [1,3,5,9,13,17]) {
+      await page.evaluate(height=>{consoleRect.height=height;applyConsoleLayout();},resizeHeight+delta);
+      await page.waitForFunction(()=>{
+        const session=consoleSessions.get('r2'),root=session.element.getBoundingClientRect();
+        const screen=session.element.querySelector('.xterm-screen').getBoundingClientRect();
+        return session.terminal.rows===session.fitAddon.proposeDimensions().rows && Math.abs(root.bottom-screen.bottom)<1;
+      });
+    }
     await page.locator('#console-move').focus();await page.keyboard.press('ArrowRight');
     const beforeMax=await panel.boundingBox();
     await consoleAction(page.locator('#expand-console'));

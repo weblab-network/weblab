@@ -1,7 +1,7 @@
 # Internet gateway helper
 
 Starting with Weblab 0.11.0, the release workflow publishes a tested Linux amd64
-helper as `ghcr.io/weblab-network/weblab-internet:0.11.1`, with matching binary,
+helper as `ghcr.io/weblab-network/weblab-internet:0.12.0`, with matching binary,
 source and checksum downloads. The tag is available after that release is
 published. See [complete setup](../../docs/internet.md#install-a-prebuilt-gateway)
 and [source distribution](SOURCES.md).
@@ -13,8 +13,10 @@ docker build -f packaging/internet/Dockerfile -t weblab-internet:dev .
 ```
 
 See [Internet cloud](../../docs/internet.md) for setup and routing examples.
-The helper uses unmodified Alpine packages (Python, iproute2, iptables, dnsmasq).
-It has no Docker socket, host filesystem mounts or interactive console.
+The helper uses unmodified Alpine packages (Python, iproute2, iptables, dnsmasq, OpenSSH and BusyBox extras).
+The gateway process has no Docker socket or interactive console. Optional SSH
+access runs in a separate container using the same image; see
+[external access](../../docs/external-access.md).
 Weblab supplies normalized JSON via WL_INTERNET_CONFIG, starts the helper with
 a read-only root filesystem and temporary /run, and attaches the lab relay only
 after its firewall, addresses, return routes and DNS listener are ready.
@@ -33,6 +35,10 @@ connection tracking. TCP/UDP port forwarding requires
 `network.weblab.internet.port-forwards=1`; older helpers accept only an empty
 mapping list. Host publications are created with the gateway container, so
 editing mappings requires stopping/starting only that Internet node.
+
+The `network.weblab.internet.ssh=1` label declares optional SSH access support.
+Console SSH uses `compose.ssh.yaml`; per-gateway SSH needs a locally registered
+public key and explicit Internet settings. Older helpers reject enabled SSH.
 
 A normal Weblab Compose build does not build this separate image. Rebuild it
 explicitly with the command above, then stop/start Internet nodes to use the new

@@ -34,6 +34,7 @@ import qmp
 import iol_l1
 import lab_automation
 import web_auth
+import external_access
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -106,10 +107,11 @@ def netmap_port(node, port):
 
 
 class Lab:
-    def __init__(self, directory, image_dir=None, *, allow_untested_frr=False, automation=False):
+    def __init__(self, directory, image_dir=None, *, allow_untested_frr=False, automation=False, allow_popout=True):
         self.image_dir = (image_dir if image_dir is not None else ROOT).resolve()
         self.image_dir.mkdir(parents=True, exist_ok=True)
         self.allow_untested_frr = allow_untested_frr
+        self.allow_popout = allow_popout
         self.upload_lock = threading.Lock()
         self.directory = directory.resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -231,10 +233,16 @@ class Lab:
                     "workspace_revision": self.workspace_revision,
                     "iol_l1_profiles": sorted(iol_l1.PROFILES),
                     "allow_untested_frr": self.allow_untested_frr,
+                    "allow_popout": self.allow_popout,
+                    "external_consoles": {"enabled": bool(getattr(self, "access", None) and self.access.enabled and self.access.server),
+                                          "bind": self.access.bind if getattr(self, "access", None) else '127.0.0.1',
+                                          "port": self.access.port if getattr(self, "access", None) else 2222},
                     "storage": {"filesystems": storage.filesystems(self.directory, self.image_dir)},
                     "status": {n["id"]: {"state": "diagram" if n["type"] in ("network", "group") else "running" if n["id"] in self.runtime else
                                          "error" if self.errors.get(n["id"]) else "stopped",
                                          "error": self.errors.get(n["id"], ""),
+                                         "ssh": {"fingerprint": self.runtime.get(n["id"], {}).get("cloud_ssh_fingerprint", ""),
+                                                 "error": self.runtime.get(n["id"], {}).get("cloud_ssh_error", "")},
                                          "warning": 'Running an untested FRR image. Compatibility is not guaranteed.'
                                              if self.runtime.get(n['id'], {}).get('frr_untested') else ''}
                                for n in self.topology["nodes"]},
@@ -482,8 +490,8 @@ class Lab:
                 raise LabConflict('Internet settings changed. Close and reopen settings before applying again.')
             config = internet_cloud.settings(data['internet'])
             live = node_id in self.runtime
-            if live and any(config[k] != previous[k] for k in ('address', 'routes', 'uplink_subnet', 'port_forwards')):
-                raise LabError('Stop this Internet node before changing its address, return routes, uplink subnet or port forwards')
+            if live and any(config.get(k) != previous.get(k) for k in ('address', 'routes', 'uplink_subnet', 'port_forwards', 'ssh')):
+                raise LabError('Stop this Internet node before changing its address, return routes, uplink subnet, port forwards or SSH listener')
             internet_cloud.check_bindings(config if n['id'] == node_id else n['internet']
                 for n in self.topology['nodes'] if internet_cloud.is_cloud(n))
             if config == previous:
@@ -649,7 +657,7 @@ class Lab:
             self.fabric.set_carrier(link_id, side, 'up' if data['up'] else 'down')
             return self.snapshot()
 
-    def start_capture(self, link_id, owner):
+    def start_capture(self, link_id, owner, duration_seconds=traffic_capture.DURATION):
         with self.lock:
             link = next((item for item in self.topology['links'] if item['id'] == link_id), None)
             if not link:
@@ -661,7 +669,7 @@ class Lab:
                 raise LabError('Start a connected node before monitoring traffic')
             endpoints = {end: self.node(link[end]['node'])['name'] + ' · ' + link[end]['port']
                          for end in ('a', 'b')}
-            return self.captures.start(self.fabric.capture_source, link_id, endpoints, owner)
+            return self.captures.start(self.fabric.capture_source, link_id, endpoints, owner, duration_seconds)
 
     def set_link_traffic(self, link_id, data):
         with self.lock:
@@ -1106,6 +1114,11 @@ class Lab:
                 for node_id, runtime in list(self.runtime.items()):
                     if node_id not in self.runtime:
                         continue
+                    if runtime.get('cloud_ssh_id'):
+                        try:
+                            internet_cloud.sync_ssh(self, node_id, runtime, run, LabError)
+                        except (LabError, ValueError) as exc:
+                            runtime['cloud_ssh_error'] = str(exc)
                     failed = next((key for key in ("console", "bridge", "gateway") if key in runtime and not self.alive(runtime[key])), None)
                     if failed:
                         child = self.children.get(runtime[failed]['pid'])
@@ -1285,7 +1298,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path.startswith(('/api/', '/ws/')) or path == '/iol-console.html':
                 self.auth_check('/api/state' if path == '/iol-console.html' else path)
-            if path in ('/api/agent/info', '/api/agent/state'):
+            if path == '/api/external-access':
+                self.same_origin()
+                self.reply(200, self.server.access.info())
+            elif path in ('/api/agent/info', '/api/agent/state'):
                 self.reply(200, self.agent_api(path.rsplit('/', 1)[1]))
             elif path == "/api/state":
                 self.reply(200, self.lab.snapshot())
@@ -1428,6 +1444,9 @@ class Handler(BaseHTTPRequestHandler):
                 remaining -= len(chunk)
             data = json.loads(b"".join(chunks))
             path = urlsplit(self.path).path
+            if self.command == 'POST' and path == '/api/external-access':
+                self.reply(200, self.server.access.change(data))
+                return
             if self.command == 'POST' and path.startswith('/api/agent/'):
                 if path.rsplit('/', 1)[1] not in ('session', 'settings', 'check', 'turn', 'stop', 'reset', 'close', 'proposal', 'decision',
                                                 'login', 'login-status', 'login-cancel', 'logout',
@@ -1462,9 +1481,10 @@ class Handler(BaseHTTPRequestHandler):
             elif self.command == "POST" and re.fullmatch(r"/api/links/[\w-]+/traffic", path):
                 result = self.lab.set_link_traffic(path.split('/')[3], data)
             elif self.command == 'POST' and re.fullmatch(r'/api/links/[\w-]+/capture', path):
-                if data != {}:
-                    raise LabError('Capture start expects an empty object')
-                result = self.lab.start_capture(path.split('/')[3], self.capture_owner())
+                if not isinstance(data, dict) or set(data) - {'duration_seconds'}:
+                    raise LabError('Capture start accepts only duration_seconds')
+                result = self.lab.start_capture(path.split('/')[3], self.capture_owner(),
+                                                data.get('duration_seconds', traffic_capture.DURATION))
             elif self.command == 'POST' and re.fullmatch(r'/api/captures/[a-f0-9]{32}/(stop|close)', path):
                 if data != {}:
                     raise LabError('Capture action expects an empty object')
@@ -1585,7 +1605,10 @@ def parse_args(argv=None):
     parser.add_argument('--automation', action='store_true',
                         default=os.environ.get('WL_AUTOMATION', '0') == '1',
                         help='Enable topology automation for a trusted local MCP adapter')
+    parser.set_defaults(allow_popout=os.environ.get('WL_ALLOW_POPOUT', '1') == '1')
     args = parser.parse_args(argv)
+    if os.environ.get('WL_ALLOW_POPOUT', '1') not in ('0', '1'):
+        parser.error('WL_ALLOW_POPOUT must be 0 or 1')
     if os.environ.get('WL_ALLOW_UNTESTED_FRR', '0') not in ('0', '1'):
         parser.error('WL_ALLOW_UNTESTED_FRR must be 0 or 1')
     if os.environ.get('WL_AUTOMATION', '0') not in ('0', '1'):
@@ -1597,7 +1620,7 @@ def main():
     args = parse_args()
     auth_enabled = os.environ.get('WL_AUTH', '0') == '1'
     lab = Lab(args.data_dir, args.image_dir, allow_untested_frr=args.allow_untested_frr,
-              automation=args.automation and not auth_enabled)
+              automation=args.automation and not auth_enabled, allow_popout=args.allow_popout)
     # Acquire exclusive lab ownership before changing persisted account state.
     auth = web_auth.Auth.from_env(args.data_dir)
     server = ThreadingHTTPServer((args.bind, args.port), Handler)
@@ -1605,6 +1628,13 @@ def main():
     server.lab, server.stopping = lab, threading.Event()
     server.auth = auth
     server.agent = None
+    ssh_enabled = os.environ.get('WL_EXTERNAL_CONSOLES', '0')
+    if ssh_enabled not in ('0', '1'):
+        raise ValueError('WL_EXTERNAL_CONSOLES must be 0 or 1')
+    server.access = external_access.Access(lab, auth,
+        socket_dir=os.environ.get('WL_SSH_SOCKET_DIR'), enabled=ssh_enabled == '1',
+        port=os.environ.get('WL_SSH_PORT', '2222'), lifetime=os.environ.get('WL_SSH_SESSION_SECONDS', '28800'))
+    lab.access = server.access
     if auth:
         print('Weblab authentication enabled; optional Agent is admin-only; external automation is disabled.', flush=True)
     if os.environ.get('WL_AGENT_SOCKET_DIR'):
@@ -1624,6 +1654,7 @@ def main():
         server.serve_forever()
     finally:
         server.stopping.set()
+        server.access.close()
         if server.agent:
             server.agent.close()
         lab.stop_all()

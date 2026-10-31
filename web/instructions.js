@@ -34,6 +34,8 @@
   let documentFile = null, fontSize = 15, readGeneration = 0;
   let sharedFile = null, sharedRevision = null, draftRevision = null;
   let localPreview = false, syncPromise = null, publishing = false, syncFailed = false;
+  let popout = null, popoutReady = false, popoutTimer, popoutLoadTimer, popoutSignature = '';
+  let popoutPosition = {top:0, left:0};
   const view = {panel, maximized:false, rect:null, applyLayout};
   documentWindows.add(view);
   const markdown = window.markdownit({html:false, linkify:false, typographer:false, maxNesting:32});
@@ -45,10 +47,11 @@
     try {
       // Authenticated tabs must not restore a previous account's private preview.
       const file = !window.weblabAuth?.enabled && localPreview ? documentFile : null;
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({file, fontSize, open:!panel.hidden}));
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({file, fontSize, open:!!popout || !panel.hidden}));
     } catch (_) { /* Reading still works when browser storage is disabled or full. */ }
   }
   function applyLayout() {
+    if (document.fullscreenElement === panel) return;
     if (window.weblabLayout?.documentLayout(view)) return;
     const bounds = consoleViewport();
     view.rect = boundedConsoleRect(view.rect || {x:bounds.x+40, y:bounds.y+55, width:720, height:640});
@@ -68,6 +71,7 @@
     $('instructions-font').textContent = fontSize+'px';
     $('instructions-smaller').disabled = fontSize === 12;
     $('instructions-larger').disabled = fontSize === 24;
+    sendPopout();
   }
   function renderFile(file) {
     const content = document.createElement('div');
@@ -118,6 +122,8 @@
     $('instructions-title').textContent = file.name;
     $('instructions-title').title = file.name;
     body.setAttribute('aria-label', file.name);
+    popoutPosition = {top:0, left:0};
+    sendPopout();
   }
   function renderEmpty() {
     const content = document.createElement('p');
@@ -129,6 +135,8 @@
     $('instructions-title').textContent = 'Instructions';
     $('instructions-title').title = 'Instructions';
     body.setAttribute('aria-label', 'Instructions document');
+    popoutPosition = {top:0, left:0};
+    sendPopout();
   }
   function updateSharingControls() {
     const admin = authCan('admin');
@@ -142,6 +150,7 @@
     $('instructions-source').textContent = publishing ? 'Publishing…' : syncFailed ? 'Server unavailable · showing last document' :
       localPreview ? (draftRevision !== sharedRevision ? 'Local preview · published version changed' : 'Local preview · not shared') :
       sharedFile ? 'Published · shared with all stations' : 'No published exercise';
+    sendPopout();
   }
   function acceptPublished(result) {
     if (typeof result?.revision !== 'string') throw new Error('Invalid instructions response');
@@ -193,6 +202,7 @@
     if (confirm('Remove the published instructions from all stations?')) publish(null, sharedRevision);
   };
   function show() {
+    if (popout && !popout.closed) { popout.focus(); return; }
     window.weblabLayout?.show('instructions');
     dismissCompactPanel();
     panel.hidden = false;
@@ -202,6 +212,7 @@
     remember();
   }
   function hide() {
+    if (document.fullscreenElement === panel) document.exitFullscreen().catch(() => {});
     if (consoleGesture?.floating === view) consoleGesture = null;
     panel.hidden = true;
     floatingConsoleOrder = floatingConsoleOrder.filter(p => p !== panel);
@@ -215,6 +226,85 @@
   $('instructions-open').onclick = () => { if (authCan('admin')) $('instructions-file').click(); };
   $('instructions-hide').onclick = hide;
   $('instructions-maximize').onclick = () => { view.maximized = !view.maximized; applyLayout(); };
+  function updateFullscreen() {
+    const active = document.fullscreenElement === panel, button = $('instructions-fullscreen');
+    button.disabled = !document.fullscreenEnabled && !active;
+    button.title = active ? 'Exit instructions fullscreen' : 'Enter instructions fullscreen';
+    button.setAttribute('aria-label', button.title);
+    button.setAttribute('aria-pressed', String(active));
+  }
+  $('instructions-fullscreen').onclick = async () => {
+    try {
+      if (document.fullscreenElement === panel) await document.exitFullscreen();
+      else await panel.requestFullscreen({navigationUI:'hide'});
+    } catch (_) { toast('Fullscreen is unavailable in this browser.', true); }
+    updateFullscreen();
+  };
+  document.addEventListener('fullscreenchange', () => { updateFullscreen(); applyLayout(); });
+  updateFullscreen();
+
+  // The workspace owns the document and permissions. The child is a reader,
+  // never another publisher/session; exchange only with this exact window.
+  function sendPopout(force=false) {
+    if (!popout || popout.closed || !popoutReady) return;
+    const data = {type:'weblab-instructions-state', html:body.innerHTML,
+      name:$('instructions-title').textContent, fontSize,
+      source:$('instructions-source').textContent, theme:document.documentElement.dataset.theme};
+    const signature = JSON.stringify(data);
+    if (!force && signature === popoutSignature) return;
+    popoutSignature = signature;
+    popout.postMessage({...data, ...(force ? {position:popoutPosition} : {})}, location.origin);
+  }
+  function returnToWorkspace() {
+    if (!popout) return;
+    const child = popout; popout = null; popoutReady = false;
+    clearInterval(popoutTimer); clearTimeout(popoutLoadTimer);
+    panel.classList.remove('instructions-detached');
+    child.close(); show();
+    body.scrollTop = popoutPosition.top; body.scrollLeft = popoutPosition.left;
+    remember();
+  }
+  $('instructions-popout').onclick = () => {
+    if (!window.weblabPopoutAllowed) return;
+    if (popout && !popout.closed) { popout.focus(); return; }
+    popoutPosition = {top:body.scrollTop, left:body.scrollLeft};
+    popoutReady = false; popoutSignature = '';
+    try { popout = window.open('/instructions-popout.html', '_blank', 'popup,width=850,height=800'); }
+    catch (_) { popout = null; }
+    if (!popout) { toast('Allow popups for Weblab to open Instructions in a separate window.', true); return; }
+    // Hide only after the reader loads, so blocked/failed popups never lose the pane.
+    popoutLoadTimer = setTimeout(() => {
+      if (!popoutReady) { returnToWorkspace(); toast('Could not open the Instructions reader.', true); }
+    }, 10000);
+    popoutTimer = setInterval(() => { if (popout?.closed) returnToWorkspace(); }, 500);
+  };
+  window.addEventListener('message', event => {
+    if (!popout || event.source !== popout || event.origin !== location.origin) return;
+    const data = event.data;
+    if (!data || typeof data !== 'object') return;
+    if (data.type === 'weblab-instructions-ready') {
+      popoutReady = true; clearTimeout(popoutLoadTimer);
+      sendPopout(true);
+      panel.classList.add('instructions-detached'); hide(); remember(); popout.focus();
+    } else if (data.type === 'weblab-instructions-position' || data.type === 'weblab-instructions-return') {
+      if (Number.isFinite(data.top) && Number.isFinite(data.left))
+        popoutPosition = {top:Math.max(0, data.top), left:Math.max(0, data.left)};
+      if (data.type === 'weblab-instructions-return') returnToWorkspace();
+    } else if (data.type === 'weblab-instructions-font' && [-1,0,1].includes(data.delta)) {
+      setFont(data.delta ? fontSize+data.delta : 15); remember();
+    }
+  });
+  window.addEventListener('weblab-theme-change', () => sendPopout());
+  window.addEventListener('weblab-popout-policy', () => {
+    if (!window.weblabPopoutAllowed) returnToWorkspace();
+  });
+  // Logout/account changes reload the workspace. Never leave its preview in a child.
+  window.addEventListener('pagehide', () => {
+    if (popout && !popout.closed) {
+      popout.postMessage({type:'weblab-instructions-ended'}, location.origin);
+      popout.close();
+    }
+  });
   for (const [id, delta] of [['instructions-smaller',-1],['instructions-larger',1],['instructions-font',0]]) {
     $(id).onclick = () => { setFont(delta ? fontSize+delta : 15); remember(); };
   }

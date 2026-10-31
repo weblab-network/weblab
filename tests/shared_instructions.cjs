@@ -72,11 +72,17 @@ let logs=''; fixture.stderr.on('data', d=>logs+=d);
   await guest.reload();await guest.waitForFunction(()=>$('instructions-title').textContent==='first.md');
   assert.ok(!(await guest.locator('#instructions-body').textContent()).includes('SECRET'));
   assert.equal(await guest.locator('#instructions-body').evaluate(e=>getComputedStyle(e).fontSize),'16px');
+  // Readers can pop out published instructions without acquiring editing controls.
+  const guestPopupEvent=guest.waitForEvent('popup');await guest.click('#instructions-popout');
+  const guestPopup=await guestPopupEvent;guestPopup.on('pageerror',e=>errors.push(e.message));
+  await guestPopup.waitForFunction(()=>document.querySelector('#reader-title').textContent==='first.md');
+  assert.equal(await guestPopup.locator('#instructions-publish,#instructions-open').count(),0);
   // Two administrators: preserve the local draft but reject its stale publish.
   await choose(peer,'draft.md','# Peer draft');
   await choose(admin,'second.md','# Second exercise');
   await admin.click('#instructions-publish');
   await guest.waitForFunction(()=>$('instructions-title').textContent==='second.md');
+  await guestPopup.waitForFunction(()=>document.querySelector('#reader-title').textContent==='second.md');
   await peer.waitForFunction(()=>$('instructions-source').textContent.includes('published version changed'));
   assert.equal(await peer.locator('#instructions-title').textContent(),'draft.md');
   await peer.click('#instructions-publish');
@@ -95,6 +101,8 @@ let logs=''; fixture.stderr.on('data', d=>logs+=d);
   admin.once('dialog',d=>d.accept());await admin.click('#instructions-unpublish');
   await guest.waitForFunction(()=>$('instructions-source').textContent==='No published exercise');
   assert.match(await guest.locator('#instructions-body').textContent(),/not published/);
+  await guestPopup.waitForFunction(()=>document.querySelector('#reader-source').textContent==='No published exercise');
+  await guestPopup.close();await guest.locator('#instructions-panel').waitFor({state:'visible'});
   // Re-publish from an empty server version and load in a new browser document.
   await choose(admin,'final.txt','Final plain exercise');await admin.click('#instructions-publish');
   await writer.waitForFunction(()=>$('instructions-title').textContent==='final.txt');
@@ -108,6 +116,12 @@ let logs=''; fixture.stderr.on('data', d=>logs+=d);
   await writer.waitForFunction(()=>$('instructions-source').textContent.startsWith('Published'));
   await writer.setViewportSize({width:390,height:844});
   await writer.screenshot({path:'/tmp/weblab-published-instructions-phone.png'});
+  // Logout closes a detached private preview along with its owning workspace.
+  await choose(admin,'private.md','# PRIVATE PREVIEW');
+  const privateEvent=admin.waitForEvent('popup');await admin.click('#instructions-popout');
+  const privatePopup=await privateEvent;
+  await privatePopup.waitForFunction(()=>document.querySelector('#reader-title').textContent==='private.md');
+  const closed=privatePopup.waitForEvent('close');await admin.click('#auth-logout');await closed;
   assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
   console.log('PASS shared instructions: preview/publish, all roles, safe rendering, thin scrollbar, stable scroll, stale admin edits, unpublish, reload and no cached private preview crossover.');
  } finally {

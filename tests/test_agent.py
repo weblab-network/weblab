@@ -743,6 +743,32 @@ class CompanionTests(unittest.TestCase):
         while not predicate() and time.monotonic()<end: time.sleep(.02)
         self.assertTrue(predicate())
 
+    def test_history_limit_increase_preserves_stored_conversation(self):
+        self.manager.state.mkdir(parents=True)
+        self.manager.codex_dir.mkdir(parents=True)
+        saved = self.manager.state / 'saved.json'
+        saved.write_text('{"thread_id":"existing","messages":[]}')
+        log = self.manager.codex_dir / 'rollout.jsonl'
+        with log.open('wb') as stream:
+            stream.truncate(256 * 1024 * 1024)
+        with self.assertRaisesRegex(ValueError, '256 MiB.*WL_AGENT_HISTORY_LIMIT_MIB'):
+            self.manager.check_storage()
+        replacement = agent_companion.Manager(self.manager.sockets, self.manager.state,
+                                               self.manager.codex_dir, history_limit=1024)
+        replacement.check_storage()
+        self.assertEqual(json.loads(saved.read_text())['thread_id'], 'existing')
+        self.assertEqual(log.stat().st_size, 256 * 1024 * 1024)
+        with log.open('r+b') as stream:
+            stream.truncate(1024 * 1024 * 1024)
+        with self.assertRaisesRegex(ValueError, '1024 MiB'):
+            replacement.check_storage()
+
+    def test_history_limit_validation(self):
+        self.assertEqual(agent_companion.history_limit_mib('1024'), 1024)
+        for value in ('0', '-1', 'unlimited', '', '1.5', True):
+            with self.subTest(value=value), self.assertRaises(agent_companion.argparse.ArgumentTypeError):
+                agent_companion.history_limit_mib(value)
+
     def test_attachment_delivery_history_restart_and_delete(self):
         files=[attachment('network.png',screenshot()),attachment('router.conf',b'router ospf\n network 10.0.0.0/8 area 0\n')]
         payload={**self.payload,'prompt':'Explain these files; do not configure anything','request_id':'a'*32,'attachments':files}
@@ -796,6 +822,61 @@ class CompanionTests(unittest.TestCase):
         self.assertFalse(self.manager.busy.locked())
         self.assertEqual(session.messages,[])
         self.assertEqual(list((session.path.parent/'attachments'/session.conversation['id']).iterdir()),[])
+
+    def test_pdf_delivery_download_cleanup_and_failure_without_inference(self):
+        from test_agent_pdf import document
+        self.settings['provider'] = 'openai'
+        original_call = FakeRPC.call
+        def call(rpc, method, params, **kwargs):
+            if method == 'account/read':
+                return {'account': {'type': 'chatgpt'}}
+            return original_call(rpc, method, params, **kwargs)
+        rendered = []
+        def convert(source, directory, **kwargs):
+            self.assertEqual(source.read_bytes(), document())
+            self.assertEqual(kwargs['pages_left'], 50-len(rendered))
+            self.assertEqual(kwargs['image_bytes_left'], 24*1024*1024-len(rendered)*len(screenshot()))
+            self.assertEqual(kwargs['text_left'], 262144-len(rendered)*len('Lab diagram R1 to R2'))
+            directory.mkdir()
+            image = directory/'page-1.jpg'
+            image.write_bytes(screenshot())
+            rendered.append(image)
+            return 'Lab diagram R1 to R2', [image]
+        payload = {**self.payload, 'prompt': 'Explain the diagram', 'request_id': 'a'*32,
+                   'attachments': [attachment('lab.pdf', document()), attachment('lab2.pdf', document())]}
+        with patch.object(FakeRPC, 'call', call), patch.object(agent_companion.agent_pdf, 'convert', convert):
+            state = self.manager.handle('turn', payload)
+            session = self.manager.sessions['a'*32]
+            self.wait(lambda: session.status == 'running')
+            rpc = FakeRPC.instances[-1]
+            inputs = next(p['input'] for m,p in rpc.calls if m == 'turn/start')
+            self.assertIn('Lab diagram R1 to R2', inputs[1]['text'])
+            self.assertIn('untrusted data', inputs[1]['text'])
+            self.assertEqual(len(rendered), 2)
+            self.assertEqual(inputs[-1], {'type': 'localImage', 'path': str(rendered[-1])})
+            self.assertTrue(rendered[0].exists())
+            self.assertNotIn('model_reasoning_effort', rpc.config)
+            self.assertNotIn('effort', next(p for m,p in rpc.calls if m == 'turn/start'))
+            item = state['messages'][0]['attachments'][0]
+            read = {**self.payload, 'conversation_id': state['conversation_id'], 'id': item['id']}
+            self.assertEqual(base64.b64decode(self.manager.handle('attachment', read)['data']), document())
+            with self.assertRaises(ValueError):
+                self.manager.handle('attachment', {**read, 'session': 'b'*32})
+            self.manager.handle('stop', self.payload)
+            self.wait(lambda: not session.worker.is_alive())
+            self.assertFalse(rendered[0].parent.exists())
+        count = len(FakeRPC.instances)
+        with patch.object(agent_companion.agent_pdf, 'convert', side_effect=ValueError('Invalid PDF')):
+            self.manager.handle('turn', {**payload, 'request_id': 'c'*32})
+            self.wait(lambda: not session.worker.is_alive())
+        self.assertEqual(session.status, 'failed')
+        self.assertEqual(session.error, 'Invalid PDF')
+        self.assertEqual(len(FakeRPC.instances), count, 'PDF failure must not contact a model')
+        self.assertFalse(self.manager.busy.locked())
+        self.manager.handle('reset', self.payload)
+        self.manager.handle('history-delete', {**self.payload, 'id': state['conversation_id']})
+        with self.assertRaises(ValueError):
+            self.manager.handle('attachment', read)
 
     def test_history_round_trip_restart_rename_delete_and_resume(self):
         original=self.manager.handle('state',self.payload)['conversation_id']

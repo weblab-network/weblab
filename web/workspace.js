@@ -72,6 +72,7 @@
   function fit() { requestAnimationFrame(() => { fitConsole(); if (loaded) renderLinks(); }); }
   function isDocked(panel) { return active() && !detached.has(kindFor(panel)); }
   function documentLayout(view) {
+    if (window.weblabPopouts?.has(view.panel)) return true;
     if (!isDocked(view.panel)) return false;
     view.maximized = false;
     view.panel.classList.add('workspace-docked');
@@ -87,6 +88,7 @@
     return true;
   }
   function consoleLayout() {
+    if (window.weblabPopouts?.has($('console-panel'))) return true;
     const panel = $('console-panel');
     if (mapMode()) { consoleFloating = true; }
     if (!active() || consoleFloating) {
@@ -159,6 +161,7 @@
     emptyStates(); fit();
   }
   function reveal(kind, fromPanel = false) {
+    if (window.weblabPopouts?.focus(panelFor(kind))) return;
     if (!active()) return;
     detached.delete(kind);
     if (kind === 'console') {
@@ -196,6 +199,7 @@
     applyConsoleLayout();
   }
   function selectPreset(preset) {
+    window.weblabPopouts?.restoreAll();
     const focus = document.activeElement;
     settings.preset = preset; compactPanel = null; consoleGesture = null;
     mapChrome();
@@ -230,7 +234,7 @@
     $('console-windows').append(view.panel); view.applyLayout(); bringConsoleForward(view.panel);
     emptyStates();
   }
-  window.weblabLayout = {active, mapMode, overlays:() => active() || mapMode(), consoleLayout, documentLayout, show:kind => { if (!normalizing && (kind !== 'console' || !consoleFloating)) reveal(kind,true); },
+  window.weblabLayout = {active, mapMode, floatDocument, overlays:() => active() || mapMode(), consoleLayout, documentLayout, show:kind => { if (!normalizing && (kind !== 'console' || !consoleFloating)) reveal(kind,true); },
     leave:() => { if (active() || mapMode()) selectPreset('free'); },
     availability:() => { if (active()) { render(); activateTool(); } }
   };

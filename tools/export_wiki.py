@@ -17,6 +17,7 @@ PAGES = {
     'topology.md': 'Topology',
     'internet.md': 'Internet-cloud',
     'consoles.md': 'Consoles',
+    'external-access.md': 'External-SSH-access',
     'instructions.md': 'Instructions',
     'link-actions.md': 'Link-failures',
     'backups.md': 'Saving-and-restoring-labs',

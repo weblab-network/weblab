@@ -215,7 +215,7 @@ def create_server(url, allow_write=False, allow_console_input=False, compact_res
 
     @server.tool(annotations=read)
     def get_authoring_guide() -> dict:
-        """Read the complete JSON contract and saved-state/configuration restrictions before drafting."""
+        """Read exercise capabilities, browser-only actions, the JSON contract and saved-state restrictions before drafting."""
         return client.request('/api/automation/guide')
 
     @server.tool(annotations=read)

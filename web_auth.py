@@ -30,6 +30,7 @@ def activity_operation(method, path):
     routes = {
         ('POST', '/api/auth/login'): 'auth.login',
         ('POST', '/api/auth/logout'): 'auth.logout',
+        ('POST', '/api/external-access'): 'ssh.grants',
         ('PUT', '/api/topology'): 'topology.save',
         ('PUT', '/api/instructions'): 'instructions.update',
         ('POST', '/api/import'): 'lab.import',
@@ -89,6 +90,8 @@ def generated_password():
 
 def allowed(role, method, path):
     # Browser Agent is login-bound; external MCP has no authenticated adapter yet.
+    if path == '/api/external-access':
+        return role == 'admin' and method in ('GET', 'POST')
     if path.startswith('/api/automation/'):
         return False
     if path.startswith('/api/agent/'):
@@ -235,7 +238,7 @@ class Auth:
         if set(query) - {'before', 'account', 'source'} or any(len(v) != 1 for v in query.values()):
             raise ValueError('Invalid activity filters')
         clauses, values = [], []
-        for key, choices in (('account', ROLES), ('source', ('browser', 'agent'))):
+        for key, choices in (('account', ROLES), ('source', ('browser', 'agent', 'ssh'))):
             value = query.get(key, [''])[0]
             if value:
                 if value not in choices:

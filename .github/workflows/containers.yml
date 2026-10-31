@@ -51,9 +51,11 @@ jobs:
           node tests/topology_multiselect.cjs
           node tests/map_controls.cjs
           node tests/internet_ui.cjs
+          node tests/external_access_ui.cjs
           node tests/network_cloud_ui.cjs
           node tests/diagram_groups_ui.cjs
           node tests/instructions.cjs
+          node tests/pane_popouts.cjs
           node tests/auth_ui.cjs
           node tests/auth_console_locks.cjs
           node tests/auth_agent.cjs
@@ -237,6 +239,9 @@ jobs:
         run: |
           docker pull "$WEBLAB_CORE_IMAGE"
           python3 tests/agent_packaging.py --core "$WEBLAB_CORE_IMAGE" --agent weblab-agent-smoke:ci
+          docker run --rm --network none --workdir /app --entrypoint python3 \
+            -v "$PWD/tests:/app/tests:ro" weblab-agent-smoke:ci \
+            -m unittest discover -s tests -p test_agent_pdf.py -v
           python3 tests/agent_native.py --tool-gateway-only --image weblab-agent-smoke:ci
           python3 tests/agent_native.py --tool-gateway-only --internet-management --image weblab-agent-smoke:ci
       - name: Publish tested companion
@@ -270,7 +275,7 @@ jobs:
           ref: ${{ env.SOURCE_REVISION }}
       - name: Select helper identity
         run: |
-          version=0.11.1-dev
+          version=0.12.0-dev
           selector=sha-${SOURCE_REVISION}
           if [ "$RELEASE_BUILD" = true ]; then
             version=${RELEASE_TAG#v}
@@ -295,6 +300,9 @@ jobs:
           docker pull ghcr.io/weblab-network/weblab-frr:10.7.1-wl1
           sudo env WL_INTERNET_IMAGE="$WL_INTERNET_IMAGE" \
             python3 tests/internet_native.py --run --port-forwards-only
+          sudo env PYTHONPATH=tests WL_TEST_SSH_IMAGE="$WL_INTERNET_IMAGE" \
+            python3 -m unittest test_external_access.OpenSSHTests.test_real_ssh_commands_and_denied_forwarding -v
+          sudo env WL_TEST_SSH_IMAGE="$WL_INTERNET_IMAGE" python3 tests/external_ssh_native.py
       - name: Bundle and verify the tested binary and matching sources
         run: |
           python3 tools/bundle_internet_release.py --image "$WL_INTERNET_IMAGE" \

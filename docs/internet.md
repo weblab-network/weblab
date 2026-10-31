@@ -8,6 +8,13 @@ The gateway provides IPv4 routing, outbound NAT, a DNS forwarder, outbound
 firewall rules and TCP/UDP port forwarding to lab nodes.
 It uses a dedicated Docker bridge for its uplink; no physical NIC is bridged.
 
+Settings are grouped into **Network**, **Port forwards**,
+**Firewall** and **SSH access** tabs. Network contains the gateway address,
+return routes and Docker uplink. Switching tabs preserves your edits;
+**Apply settings** stays visible and saves edits across all tabs. While the
+gateway runs, only Firewall can be applied. See [SSH setup](external-access.md)
+for the optional lab shell and its separate public-key grants.
+
 Firewall editing, live policy updates and port forwarding require Weblab 0.11.0
 or later, with matching core and helper versions. The v0.10.x core/helper source
 provides the original outbound policy and requires a local helper build.
@@ -25,10 +32,10 @@ unmanaged network. It has no forwarding or Internet access. See
 Starting with 0.11.0, pull the helper on the **Docker host**, separately from core:
 
 ```sh
-docker pull ghcr.io/weblab-network/weblab-internet:0.11.1
+docker pull ghcr.io/weblab-network/weblab-internet:0.12.0
 ```
 
-Set `WL_INTERNET_IMAGE=ghcr.io/weblab-network/weblab-internet:0.11.1` in the
+Set `WL_INTERNET_IMAGE=ghcr.io/weblab-network/weblab-internet:0.12.0` in the
 deployment's `.env` before creating/recreating core. The matching prebuilt Compose
 file uses that image by default. For a fresh installation, `weblab-install.sh
 --with-internet` pulls it and sets the variable. Source builds remain available
@@ -56,9 +63,9 @@ If you installed Weblab using the installer or a prebuilt image, install Git
 if necessary, then fetch the matching release source into a new directory:
 
 ```sh
-git clone --depth 1 --branch v0.11.1 https://github.com/weblab-network/weblab.git weblab-0.11.1
-docker build -f weblab-0.11.1/packaging/internet/Dockerfile \
-  -t weblab-internet:dev weblab-0.11.1
+git clone --depth 1 --branch v0.12.0 https://github.com/weblab-network/weblab.git weblab-0.12.0
+docker build -f weblab-0.12.0/packaging/internet/Dockerfile \
+  -t weblab-internet:dev weblab-0.12.0
 ```
 
 These commands build the gateway with firewall and forwarding support. If you
@@ -358,3 +365,12 @@ a different unused subnet. No changes are made to unrelated Docker networks,
 the host's default route or the Agent companion's networking. Docker manages
 the normal NAT/firewall rules for the dedicated uplink bridge; the gateway's
 lab-facing firewall and NAT live inside its own container namespace.
+
+## Optional SSH jumpbox access
+
+Version 0.12.0 adds an **SSH access** tab in the existing Internet node
+settings. It provides a non-root shell with SSH/Telnet and supports ProxyJump,
+with separate local public-key grants. See [setup, destination limits and saved
+state](external-access.md#enable-the-internet-nodes-ssh-shell). Use matching 0.12.0
+core/helper images, or build both from the same updated
+checkout. Older helpers do not include this capability.

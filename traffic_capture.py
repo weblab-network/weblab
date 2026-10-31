@@ -17,7 +17,8 @@ import uuid
 MAX_SESSIONS = 4
 MAX_PACKETS = 2000
 MAX_BYTES = 8 * 1024 * 1024
-DURATION = 60
+DURATION = 300
+ALLOWED_DURATIONS = (60, 120, 300)
 RETENTION = 15 * 60
 PAGE_SIZE = 100
 PROTOCOLS = ('All', 'ARP', 'IPv4', 'IPv6', 'ICMP', 'ICMPv6', 'TCP', 'UDP', 'OSPF', 'LLDP', 'STP', 'PVST+', 'CDP', 'DTP', 'VTP', 'LACP', 'VLAN', 'Other')
@@ -221,21 +222,24 @@ class Captures:
             if now - session['created'] >= RETENTION:
                 del self.sessions[ident]
             elif session['running'] and now >= session['deadline']:
-                session.update(running=False, reason='60-second limit reached')
+                session.update(running=False, reason=f'{session["duration_seconds"]}-second limit reached')
         self.active = any(s['running'] for s in self.sessions.values())
 
     def expire(self):
         with self.lock:
             self._expire()
 
-    def start(self, source, link_id, endpoints, owner):
+    def start(self, source, link_id, endpoints, owner, duration_seconds=DURATION):
+        if type(duration_seconds) is not int or duration_seconds not in ALLOWED_DURATIONS:
+            raise ValueError('Capture duration must be 60, 120 or 300 seconds')
         with self.lock:
             self._expire()
             if len(self.sessions) >= MAX_SESSIONS:
                 raise ValueError('Capture limit reached. Close an existing traffic monitor and try again.')
             ident = uuid.uuid4().hex
             self.sessions[ident] = dict(id=ident, source=source, link_id=link_id, endpoints=endpoints,
-                owner=owner, created=time.monotonic(), deadline=time.monotonic()+DURATION,
+                owner=owner, created=time.monotonic(), deadline=time.monotonic()+duration_seconds,
+                duration_seconds=duration_seconds,
                 started=time.time(), running=True, reason='', packets=[], bytes=0,
                 initial_drops=self.contention_drops, decoded={}, summaries={})
             self.active = True
@@ -300,7 +304,7 @@ class Captures:
             session = self._owned(ident, owner)
             packets = list(session['packets'][after:after+PAGE_SIZE])
             cached = {i: session['summaries'][i] for i in range(after+1, after+len(packets)+1) if i in session['summaries']}
-            result = {key: session[key] for key in ('id', 'link_id', 'endpoints', 'started', 'running', 'reason', 'bytes')}
+            result = {key: session[key] for key in ('id', 'link_id', 'endpoints', 'started', 'running', 'reason', 'bytes', 'duration_seconds')}
             result.update(total=len(session['packets']), next=after+len(packets),
                           capture_busy_drops=self.contention_drops-session['initial_drops'],
                           seconds_left=max(0, int(session['deadline']-time.monotonic())) if session['running'] else 0)

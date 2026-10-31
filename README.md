@@ -90,12 +90,18 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
-## Latest release: v0.11.1
+## Latest release: v0.12.0
 
-This patch fixes related ICMP errors for Internet port forwards under an outbound
-Deny policy, protects release version tags during retries, strengthens helper
-binary/source verification, and clarifies how to select a locally built helper.
-See [v0.11.1 release notes](docs/releases/v0.11.1.md).
+Connect to shared device consoles over SSH, or enable an Internet node's SSH
+jumpbox to reach configured lab IPs. Public-key grants are managed locally, with
+separate console and gateway access. Internet settings now use tabs.
+
+Pop out the topology, consoles, Instructions, Agent and Traffic monitor into
+browser windows. Arrange only existing floating windows without moving docked
+panes. OpenAI Agent sessions accept PDF references, and the Agent guide explains
+exercise capabilities such as unidirectional link failures. Traffic captures now
+offer 1, 2 or 5 minutes. See [v0.12.0 release notes](docs/releases/v0.12.0.md) and
+[SSH setup with screenshots](docs/external-access.md).
 
 ## Introduced in v0.11.0
 
@@ -160,7 +166,7 @@ export…**, with confirmation, stopped-device checks and stale-workspace protec
 See [release notes](docs/releases/v0.9.0.md), [traffic monitoring](docs/link-actions.md#monitor-traffic)
 and [backup/reset behavior](docs/backups.md#export-and-reset-the-workspace).
 
-Use **0.11.1** for matching core, Agent, EXOS and optional Internet helper images. The installer retains the
+Use **0.12.0** for matching core, Agent, EXOS and optional Internet helper images. The installer retains the
 optional core-only DNS override from v0.8.3.
 
 ## Weblab FRR

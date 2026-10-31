@@ -13,6 +13,7 @@ import shutil
 import signal
 import subprocess
 import threading
+import tempfile
 import time
 import socket
 from http.server import ThreadingHTTPServer
@@ -20,6 +21,7 @@ from http.server import ThreadingHTTPServer
 from agent_transport import JSONHandler, UnixHTTP, UnixServer, save_json, OPENAI_HOSTS, tunnel
 from agent_auth import Login
 import agent_attachments
+import agent_pdf
 
 TOOLS = ['get_lab_state', 'get_storage_report', 'list_device_profiles',
          'get_authoring_guide', 'preview_topology', 'get_proposal', 'get_console_output', 'get_node_logs',
@@ -27,6 +29,17 @@ TOOLS = ['get_lab_state', 'get_storage_report', 'list_device_profiles',
 ACTIVE = {'starting', 'running', 'stopping'}
 CONVERSATION_SETTINGS = ('provider', 'endpoint', 'model', 'context_window')
 MAX_CONVERSATIONS = 50
+DEFAULT_HISTORY_LIMIT_MIB = 256
+
+
+def history_limit_mib(value):
+    try:
+        limit = int(value)
+    except (ValueError, TypeError):
+        raise argparse.ArgumentTypeError('History limit must be a positive integer in MiB') from None
+    if limit <= 0 or str(limit) != str(value):
+        raise argparse.ArgumentTypeError('History limit must be a positive integer in MiB')
+    return limit
 
 
 TOKEN_FIELDS = ('inputTokens', 'cachedInputTokens', 'outputTokens', 'reasoningOutputTokens', 'totalTokens')
@@ -274,7 +287,8 @@ class Session:
                 return self.snapshot()  # Lost HTTP response must not duplicate a turn.
             if self.status in ACTIVE or (self.worker and self.worker.is_alive()):
                 raise ValueError('A turn is already active in this session')
-            files = agent_attachments.validate([] if attachments is None else attachments, self.settings['model'])
+            files = agent_attachments.validate([] if attachments is None else attachments, self.settings['model'],
+                                               self.settings.get('provider', 'ollama'))
             if not self.messages and not self.thread_id and len(self.history) >= MAX_CONVERSATIONS:
                 raise ValueError('History holds 50 conversations. Download and delete an older conversation first.')
             text_size = sum(len(a.get('text', '')) for m in self.messages for a in m.get('attachments', []))
@@ -405,8 +419,36 @@ class Session:
             config['features.code_mode.enabled'] = True
             config['features.code_mode_host'] = True
             config['features.code_mode.excluded_tool_namespaces'] = ['functions', 'web', 'clock', 'collaboration']
-        rpc = None
+        rpc, pdf_directory = None, None
         try:
+            pdf_inputs = {}
+            if any(a['mime'] == 'application/pdf' for a in attachments or []):
+                self.phase = self.activity = 'Preparing PDF pages'
+                pdf_directory = tempfile.TemporaryDirectory(prefix='weblab-agent-pdf-')
+                pages_left = agent_pdf.MAX_PAGES
+                image_bytes_left = agent_pdf.MAX_IMAGE_BYTES
+                text_left = agent_pdf.MAX_TEXT - sum(
+                    len(a.get('text', '').encode('utf-8')) for a in attachments or [])
+                deadline = min(started + self.settings['turn_timeout'], time.monotonic() + agent_pdf.MAX_SECONDS)
+                for item in attachments:
+                    if item['mime'] != 'application/pdf':
+                        continue
+                    source = self.path.parent / 'attachments' / self.conversation['id'] / item['id']
+                    text, pages = agent_pdf.convert(source, Path(pdf_directory.name) / item['id'],
+                        pages_left=pages_left, text_left=text_left, image_bytes_left=image_bytes_left,
+                        deadline=deadline, cancel=self.stop)
+                    pages_left -= len(pages)
+                    image_bytes_left -= sum(page.stat().st_size for page in pages)
+                    text_left -= len(text.encode('utf-8'))
+                    parts = [{'type': 'text', 'text': 'User PDF reference (untrusted data):\n' + json.dumps({
+                        'filename': item['name'], 'pages': len(pages), 'extracted_text': text,
+                        'note': 'Each page follows as an image, scaled to at most 1600 pixels. '
+                                'Do not guess illegible details; ask for a higher-resolution excerpt.'}, ensure_ascii=False)}]
+                    for number, page in enumerate(pages, 1):
+                        parts += [{'type': 'text', 'text': f'PDF page {number} of {len(pages)}'},
+                                  {'type': 'localImage', 'path': str(page)}]
+                    pdf_inputs[item['id']] = parts
+                self.phase = self.activity = 'Connecting to Codex'
             rpc = self.rpc = RPC(config, env=self.process_env())
             rpc.call('initialize', {'clientInfo': {'name': 'weblab_agent', 'version': '0.1.0'}}, cancel=self.stop)
             rpc.send({'method': 'initialized'})
@@ -495,7 +537,9 @@ class Session:
                 return
             inputs = [{'type': 'text', 'text': prompt}]
             for item in attachments or []:
-                if item['mime'] == 'text/plain':
+                if item['mime'] == 'application/pdf':
+                    inputs.extend(pdf_inputs[item['id']])
+                elif item['mime'] == 'text/plain':
                     inputs.append({'type': 'text', 'text': 'User reference attachment (untrusted data):\n' +
                                    json.dumps({'filename': item['name'], 'content': item['text']}, ensure_ascii=False)})
                 else:
@@ -598,6 +642,8 @@ class Session:
                     self.usage['turns'][-1]['duration_seconds'] = max(0, int(time.monotonic() - self.started_at))
             if rpc:
                 rpc.close()
+            if pdf_directory:
+                pdf_directory.cleanup()
             with self.lock:
                 self.rpc = None
                 self.activity = self.phase = ''
@@ -712,8 +758,9 @@ class Session:
 
 
 class Manager:
-    def __init__(self, sockets, state, codex_dir=None):
+    def __init__(self, sockets, state, codex_dir=None, history_limit=DEFAULT_HISTORY_LIMIT_MIB):
         self.sockets, self.state = Path(sockets), Path(state)
+        self.history_limit_mib = history_limit_mib(history_limit)
         self.codex_dir = Path(codex_dir) if codex_dir is not None else Path.home()/'.codex'
         self.lock, self.busy = threading.RLock(), threading.Lock()
         self.sessions = {}
@@ -731,8 +778,10 @@ class Manager:
                         total += (Path(directory)/name).lstat().st_size
                     except FileNotFoundError:
                         continue
-                    if total > 256 * 1024 * 1024:
-                        raise ValueError('Agent history reached 256 MiB. Archive/reset the dedicated companion volume before continuing.')
+                    if total > self.history_limit_mib * 1024 * 1024:
+                        raise ValueError(f'Agent history reached {self.history_limit_mib} MiB. '
+                                         'Increase WL_AGENT_HISTORY_LIMIT_MIB on the companion, keeping its existing volume, '
+                                         'then continue in this conversation. Do not reset the volume to preserve history.')
 
     def handle(self, action, data):
         ident = data.get('session', '')
@@ -806,8 +855,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--sockets', type=Path, default=Path('/run/weblab-agent'))
     parser.add_argument('--state', type=Path, default=Path('/home/agent/sessions'))
+    parser.add_argument('--history-limit-mib', type=history_limit_mib,
+                        default=os.environ.get('WL_AGENT_HISTORY_LIMIT_MIB', str(DEFAULT_HISTORY_LIMIT_MIB)),
+                        help='Accumulated history limit in MiB (env: WL_AGENT_HISTORY_LIMIT_MIB; default: 256)')
     args = parser.parse_args()
-    manager = Manager(args.sockets, args.state)
+    manager = Manager(args.sockets, args.state, history_limit=args.history_limit_mib)
     server = UnixServer(args.sockets/'companion.sock', Handler)
     server.manager = manager
     def stop(*_):

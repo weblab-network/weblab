@@ -54,7 +54,7 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
    else if(action==='turn'){
     count++;status='running';proposals=['a'.repeat(32)];
     const attachments=(body.attachments||[]).map((a,i)=>{
-      const file={...a,id:String(i).padStart(32,'0'),mime:a.name.endsWith('.png')?'image/png':'text/plain',size:Buffer.from(a.data,'base64').length};
+      const file={...a,id:String(i).padStart(32,'0'),mime:a.name.endsWith('.png')?'image/png':a.name.endsWith('.pdf')?'application/pdf':'text/plain',size:Buffer.from(a.data,'base64').length};
       if(file.mime==='text/plain')file.text=Buffer.from(a.data,'base64').toString('utf8');
       sentFiles.set(file.id,file);const {data,...meta}=file;return meta;
     });
@@ -111,7 +111,7 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
  assert.equal(await page.locator('#agent-attachments summary').count(),1);
  await page.locator('#agent-files').setInputFiles(png);await page.locator('#agent-attachments summary').nth(1).waitFor();
  await page.locator('#agent-files').setInputFiles({name:'manual.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF')});
- await page.waitForFunction(()=>document.querySelector('#agent-file-error').textContent.includes('not supported yet'));
+ await page.waitForFunction(()=>document.querySelector('#agent-file-error').textContent.includes('require the OpenAI provider'));
  assert.equal(await page.locator('#agent-attachments summary').count(),2,'Rejected files preserve the existing draft');
  await page.locator('#agent-files').setInputFiles({name:'big.txt',mimeType:'text/plain',buffer:Buffer.alloc(65537,65)});
  await page.waitForFunction(()=>document.querySelector('#agent-file-error').textContent.includes('64 KiB'));
@@ -361,6 +361,21 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
  assert.ok(popup.x>=0 && popup.x+popup.width<=390 && popup.y>=0 && popup.y+popup.height<=844,JSON.stringify(popup));
  await page.keyboard.press('Escape');await page.setViewportSize({width:1280,height:950});
 
+ // PDFs remain downloadable references; never embed a PDF viewer or mislabel as text.
+ await page.locator('#agent-chat-tab').click();
+ const pdf={name:'lab.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.4\nfixture (server conversion tested separately)')};
+ await page.locator('#agent-files').setInputFiles(pdf);
+ await page.locator('#agent-attachments summary').waitFor();
+ await page.locator('#agent-attachments summary').click();
+ await page.waitForFunction(()=>document.querySelector('#agent-attachments').textContent.includes('rendered pages'));
+ assert.equal(await page.locator('#agent-attachments iframe,#agent-attachments object,#agent-attachments img').count(),0);
+ await page.locator('#agent-prompt').fill('Explain the PDF diagram');await page.locator('#agent-send').click();
+ await page.locator('#agent-messages .agent-attachment summary').click();
+ const pdfDownload=page.waitForEvent('download');
+ await page.getByRole('button',{name:'Download attachment',exact:true}).click();
+ assert.equal((await pdfDownload).suggestedFilename(),'lab.pdf');
+ status='completed';await page.waitForFunction(()=>document.querySelector('#agent-status').textContent.includes('completed'));
+ await page.locator('#agent-settings-tab').click();
  await page.locator('#agent-logout').click();await page.waitForFunction(()=>document.querySelector('#agent-auth-status').textContent.includes('signed-out'));
  await page.locator('#agent-provider').selectOption('ollama');
  assert.ok(await page.locator('#agent-model-recommendation').isHidden());

@@ -3,7 +3,7 @@ Weblab Internet gateway
 Weblab's independently implemented gateway/lifecycle code is MIT licensed.
 The complete container is an aggregation of separately licensed components.
 Alpine runtime packages, including BusyBox, musl, Python, dnsmasq, iproute2,
-iptables and their dependencies, retain their own licenses and notices.
+iptables, OpenSSH and their dependencies, retain their own licenses and notices.
 
 The release image retains its exact APK inventory, applicable upstream license
 texts, GPLv2 and Weblab's original source/build inputs under

@@ -153,7 +153,12 @@ as root, the decoder runs as an unprivileged user with no supplementary groups.
 Temporary decoded output is discarded after each request; up to 16 decoded packet
 details per capture are cached in memory. No external decoder service is used.
 
-Each capture stops at **60 seconds, 2,000 frames or 8 MiB**, whichever comes first.
+Choose **1, 2 or 5 minutes** in the title-bar **Duration** selector (default:
+5 minutes). Each capture stops at the selected duration, **2,000 frames or
+8 MiB**, whichever comes first. Opening the monitor starts a capture immediately;
+to change duration, stop it, choose a duration, then click **New capture**.
+The selector is locked while a capture is running. Display filters do not reduce
+the captured traffic or its frame/byte budget.
 Up to four captures are retained server-wide; closed monitors free their slot.
 Capture buffers live only in server memory and expire 15 minutes after creation.
 They are not included in lab JSON/ZIP, browser storage or Agent tools. Stopping

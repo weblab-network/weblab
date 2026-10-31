@@ -89,6 +89,21 @@ def firewall(config, lan, wan, wan_address=None, wan_gateway=None):
              f'-A FORWARD -i {wan} -o {lan} -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT']
     inbound_filters, inbound_nat = port_forward_rules(config, lan, wan, wan_address, wan_gateway)
     lines += inbound_filters
+    ssh = config.get('ssh', {})
+    if ssh.get('enabled'):
+        # The SSH shell/forward worker runs as UID 10003 in the separate helper.
+        # Its connections originate locally and never enter FORWARD/WL_EGRESS.
+        lines += [':WL_SSH_OUT - [0:0]',
+                  '-A OUTPUT -m owner --uid-owner 10003 -j WL_SSH_OUT',
+                  '-A WL_SSH_OUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT',
+                  '-A WL_SSH_OUT -m addrtype --dst-type LOCAL -j REJECT']
+        for prefix in prefixes:
+            lines.append(f'-A WL_SSH_OUT -o {lan} -d {prefix} -j ACCEPT')
+        lines.append('-A WL_SSH_OUT -j REJECT')
+        sources = [str(ipaddress.IPv4Address(wan_gateway))+'/32', '127.0.0.1/32'] if ssh['bind_address']=='127.0.0.1' else [ssh['source']]
+        for source in sources:
+            lines.append(f'-A INPUT -i {wan} -d {wan_address} -p tcp --dport 2223' +
+                         (f' -s {source}' if source else '') + ' -j ACCEPT')
     for prefix in prefixes:
         for proto in ('tcp', 'udp'):
             lines.append(f'-A INPUT -i {lan} -s {prefix} -p {proto} --dport 53 -j ACCEPT')

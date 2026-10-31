@@ -65,7 +65,7 @@ def conversation_export(record):
                     'mime': text(attachment.get('mime'), 100)}
             if meta['mime'] == 'text/plain':
                 meta['text'] = text(attachment.get('text'), 64 * 1024)
-            # Image bytes, internal IDs and filesystem paths are intentionally absent.
+            # Image/PDF bytes, internal IDs and filesystem paths are intentionally absent.
             item['attachments'].append(meta)
         result['messages'].append(item)
     if len(json.dumps(result).encode()) > HISTORY_BYTES:
@@ -76,14 +76,14 @@ def conversation_export(record):
 def conversation_markdown(record):
     parts = ['# ' + record['title'],
              'Reference transcript only. Import does not restore an Agent session or replay actions. '
-             'Text attachments are included; image attachments are listed by filename only. '
+             'Text attachments are included; image/PDF attachments are listed by filename only. '
              'Conversation text may contain secrets you typed or device output. Review before sharing.',
              'Model: ' + record['model']]
     for message in record['messages']:
         parts.extend(['## ' + ('You' if message['role'] == 'user' else 'Agent'), message['text']])
         for attachment in message.get('attachments', []):
             parts.extend(['Attachment: ' + attachment['name'],
-                          attachment.get('text', '[Image not included]')])
+                          attachment.get('text', '[File not included]')])
     return ('\n\n'.join(parts) + '\n').encode()
 
 

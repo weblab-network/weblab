@@ -39,6 +39,7 @@
 !agent_companion.py
 !agent_auth.py
 !agent_attachments.py
+!agent_pdf.py
 !requirements-mcp.txt
 !tools/
 !tools/weblab_mcp.py
@@ -50,3 +51,6 @@
 !internet_cloud.py
 !packaging/internet/
 !packaging/internet/**
+
+!external_access.py
+!external_tty.py

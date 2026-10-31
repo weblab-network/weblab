@@ -59,6 +59,25 @@ In **Split workspace** and **Side by side**, Instructions controls occupy their
 own row below the workspace tabs. Use the mouse wheel over the toolbar to reach
 controls that do not fit the pane's width.
 
+Use **Pop out instructions** (overlapping windows, beside the fullscreen control) to move the
+reader into a separate browser window. The workspace pane hides once the reader
+loads. The document, text size and scroll position carry over; published updates
+continue to arrive through the workspace. **Return to workspace**, or closing the
+reader, restores the pane at your reading position. If the browser blocks the
+popup, the original pane stays available.
+
+The detached reader includes text-size controls and **Fullscreen** (⛶). The same
+fullscreen control is available in the workspace's Instructions toolbar, even
+when docked; press **Escape** to leave fullscreen. The browser decides whether
+the pop-out opens as a window or tab and how much browser chrome remains visible.
+A normal popup cannot guarantee a hidden address bar.
+
+Keep the original workspace open. Reloading it, closing it or logging out ends
+the detached reader. Return to the workspace to open another file or publish;
+the pop-out is a reader, not another publishing station. It keeps no separate
+stored document copy. Standard browser selection/copy works there; the Workspace
+clipboard controls remain in the main workspace.
+
 Markdown renders headings, emphasis, lists, read-only task checkboxes, tables,
 quotes, and fenced configuration/code blocks. Text files preserve their contents
 and indentation. Heading links scroll within the document; HTTP(S)/email links

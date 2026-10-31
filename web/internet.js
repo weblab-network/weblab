@@ -1,10 +1,14 @@
 // Gateway-only saves allow live firewall updates without changing other lab devices.
 (() => {
   const windows = new Map();
-  function open(id) {
+  function open(id, tab) {
     const n = nodeById(id);
     if (!n || n.type !== 'cloud') return;
-    if (windows.has(id)) { bringConsoleForward(windows.get(id).panel); return; }
+    if (windows.has(id)) {
+      const view=windows.get(id);
+      if (tab) view.selectTab(tab);
+      bringConsoleForward(view.panel);return view;
+    }
     const panel = document.createElement('section');
     panel.className = 'instructions-panel floating internet-panel';
     panel.setAttribute('aria-label', 'Internet gateway settings');
@@ -12,18 +16,31 @@
       <button class="console-move" data-part="move" aria-label="Move Internet settings">⠿</button>
       <strong class="toolbar-scroll" data-part="title"></strong><button data-part="start">Start</button><button data-part="stop">Stop</button>
       <button data-part="maximize" aria-label="Maximize Internet settings">↗</button><button data-part="close" aria-label="Close Internet settings">×</button></div>
-      <form class="internet-content"><p data-part="status" role="status"></p>
+      <div class="internet-tabs" role="tablist" aria-label="Internet settings sections"></div>
+      <form class="internet-form" novalidate><div class="internet-content">
+      <section data-tab-panel="network" role="tabpanel">
       <label>Gateway IPv4 / prefix<input data-part="address" placeholder="192.0.2.1/24" required></label>
       <p class="field-help">Connect eth0 to your lab. A directly connected PC with blank addressing gets an address, this gateway and DNS automatically. Configure routers manually.</p>
       <h3>Return routes</h3><p class="field-help">For networks behind a router, add their prefixes and the router's address on the cloud subnet. These networks also receive outbound NAT.</p>
       <div class="internet-routes"><table><thead><tr><th>Destination network</th><th>Via router</th><th></th></tr></thead><tbody data-part="routes"></tbody></table></div>
       <button type="button" data-part="add">Add route</button>
       <details><summary>Docker uplink</summary><label>Subnet <span class="optional">optional</span><input data-part="uplink" placeholder="Automatic"></label><p class="field-help">Choose a non-overlapping subnet if Docker's automatic allocation conflicts with your lab. Uses the host's outbound connectivity.</p></details>
+      </section><section data-tab-panel="forwards" role="tabpanel" hidden>
       <h3>Inbound port forwarding</h3>
-      <p class="field-help">Publish a host TCP/UDP port to a node's IPv4 address and service port. Defaults to localhost on the Docker host; enter a host LAN IPv4 address for remote access. Routed targets need a return route above. The node must have the service enabled.</p>
+      <p class="field-help">Publish a host TCP/UDP port to a node's IPv4 address and service port. Defaults to localhost on the Docker host; enter a host LAN IPv4 address for remote access. Routed targets need a return route in Network. The node must have the service enabled.</p>
       <ul class="internet-firewall-rules" data-part="forwards" aria-label="Inbound port forwards"></ul>
       <button type="button" data-part="add-forward">Add port forward</button> <span data-part="forward-count" class="field-help"></span>
       <p class="field-help">Stop only this Internet node to change port forwards. Forwarded connections are separate from outbound firewall rules; targets see the Internet node's lab IP as their client. Allowed source restricts LAN clients before translation; leave it blank for localhost bindings.</p>
+      </section><section data-tab-panel="ssh" role="tabpanel" hidden>
+      <h3>SSH access to lab IPs</h3>
+      <p class="field-help">Optional jumpbox shell with SSH/Telnet tools and SSH ProxyJump. Uses this gateway’s routes; separate from device console access. Stop this Internet node to change its listener.</p>
+      <label class="setting-checkbox"><input type="checkbox" data-part="ssh-enabled"> Enable SSH access</label>
+      <label>Host bind IPv4<input data-part="ssh-bind" value="127.0.0.1"></label>
+      <label>Host port<input type="number" min="1" max="65535" data-part="ssh-port" value="22022"></label>
+      <label>Allowed source IPv4 / network<input data-part="ssh-source" placeholder="Any"></label>
+      <button type="button" data-part="ssh-keys">Manage SSH keys for this Internet node</button>
+      <button type="button" data-part="ssh-copy">Copy jumpbox SSH command</button><p class="field-help" data-part="ssh-status"></p>
+      </section><section data-tab-panel="firewall" role="tabpanel" hidden>
       <h3>Outbound firewall</h3>
       <p class="field-help">Rules run from top to bottom; the first match wins. They apply to IPv4 traffic forwarded from the cloud subnet and return networks through the uplink, including reachable host/LAN destinations.</p>
       <label>When no rule matches<select data-part="default-action"><option value="allow">Allow</option><option value="deny">Deny</option></select></label>
@@ -31,12 +48,50 @@
       <button type="button" data-part="add-rule">Add rule</button> <span data-part="rule-count" class="field-help"></span>
       <p class="field-help">Blank addresses and ports match any. Use IPv4 hosts or networks and a port or range such as 1024-65535. Ports apply only to TCP/UDP.</p>
       <p class="field-help">Reply traffic is accepted; other inbound traffic is blocked unless explicitly port forwarded. DNS and ping to the gateway remain available outside these forwarding rules.</p>
-      <p data-part="notice" class="field-help"></p><button type="submit" data-part="save" class="primary">Apply settings</button>
+      </section></div><div class="internet-footer"><div><p data-part="status" role="status"></p>
+      <p data-part="notice" class="field-help"></p></div><button type="submit" data-part="save" class="primary">Apply settings</button></div>
       </form><button class="console-resize" data-part="resize" aria-label="Resize Internet settings">◢</button>`;
     const q = name => panel.querySelector(`[data-part="${name}"]`);
+    let activeTab='network';
+    const tabs=[['network','Network'],['forwards','Port forwards'],['firewall','Firewall'],['ssh','SSH access']];
+    const tablist=panel.querySelector('[role=tablist]');
+    for (const [name,label] of tabs) {
+      const button=document.createElement('button'), section=panel.querySelector(`[data-tab-panel="${name}"]`);
+      button.type='button';button.textContent=label;button.dataset.tab=name;
+      button.id=`internet-${id}-tab-${name}`;section.id=`internet-${id}-section-${name}`;
+      button.setAttribute('role','tab');button.setAttribute('aria-controls',section.id);
+      section.setAttribute('aria-labelledby',button.id);section.tabIndex=0;
+      button.onclick=()=>selectTab(name);tablist.append(button);
+    }
+    function selectTab(name, focus=false) {
+      if (!tabs.some(([key])=>key===name)) return;
+      activeTab=name;
+      for (const button of tablist.children) {
+        const active=button.dataset.tab===name;
+        button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;
+        panel.querySelector(`[data-tab-panel="${button.dataset.tab}"]`).hidden=!active;
+        if(active&&focus)button.focus();
+      }
+      panel.querySelector('.internet-content').scrollTop=0;
+      controls();
+    }
+    tablist.onkeydown=event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();
+      const index=tabs.findIndex(([name])=>name===activeTab);
+      const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
+      selectTab(tabs[next][0],true);
+    };
     const config = n.internet || {address:'192.0.2.1/24',routes:[],uplink_subnet:''};
     let savedConfig = structuredClone(config);
     q('address').value = config.address; q('uplink').value = config.uplink_subnet || '';
+    q('ssh-enabled').checked=!!config.ssh?.enabled;
+    q('ssh-enabled').onchange=refreshInspector;
+    q('ssh-bind').value=config.ssh?.bind_address || '127.0.0.1';
+    q('ssh-port').value=config.ssh?.external_port || 22022;
+    q('ssh-source').value=config.ssh?.source || '';
+    q('ssh-keys').onclick=()=>window.weblabExternalAccess?.open(id);
+    q('ssh-copy').onclick=async()=>{try{await window.weblabExternalAccess.copyCommand(`ssh -p ${q('ssh-port').value} lab@${q('ssh-bind').value==='127.0.0.1'?'127.0.0.1':location.hostname}`);}catch(e){toast(e.message);}};
     q('default-action').value = config.firewall?.default_action || 'allow';
     function addRoute(route={destination:'',via:''}) {
       const row = document.createElement('tr');
@@ -99,9 +154,11 @@
     (config.firewall?.rules || []).forEach(addRule);
     q('add-rule').onclick=()=>{addRule();controls();};
     $('console-windows').append(panel);
-    const view={panel,rect:null,maximized:false,applyLayout,controls,close};
+    const view={panel,rect:null,maximized:false,applyLayout,controls,close,selectTab,
+      sshEnabled:()=>q('ssh-enabled').checked,
+      setSSHEnabled(value){q('ssh-enabled').checked=value;refreshInspector();}};
     windows.set(id,view);documentWindows.add(view);
-    function close() { windows.delete(id);documentWindows.delete(view);panel.remove(); }
+    function close() { windows.delete(id);documentWindows.delete(view);panel.remove();refreshInspector(); }
     function applyLayout() {
       const bounds=consoleViewport();
       view.rect=boundedConsoleRect(view.rect || {x:bounds.x+60,y:bounds.y+40,width:680,height:670});
@@ -117,7 +174,8 @@
       q('status').textContent=state(id)+(statuses[id]?.error ? ' · '+statuses[id].error : '');
       const readonly=busy || !authCan('admin'), running=state(id)==='running';
       panel.querySelectorAll('form input, form select, form button').forEach(e=>e.disabled=readonly);
-      panel.querySelectorAll('[data-part=address], [data-part=uplink], [data-part=routes] input, [data-part=routes] button, [data-part=add], [data-part=forwards] input, [data-part=forwards] select, [data-part=forwards] button, [data-part=add-forward]').forEach(e=>e.disabled=readonly || running);
+      panel.querySelectorAll('[data-part=address], [data-part=uplink], [data-part=routes] input, [data-part=routes] button, [data-part=add], [data-part=forwards] input, [data-part=forwards] select, [data-part=forwards] button, [data-part=add-forward], [data-part=ssh-enabled], [data-part=ssh-bind], [data-part=ssh-port], [data-part=ssh-source]').forEach(e=>e.disabled=readonly || running);
+      q('ssh-status').textContent=statuses[id]?.ssh?.error || statuses[id]?.ssh?.fingerprint || 'Add a local public-key grant before starting SSH. Files in the shell are temporary.';
       q('add').disabled ||= q('routes').children.length>=32;
       q('add-forward').disabled ||= q('forwards').children.length>=32;
       q('forward-count').textContent=q('forwards').children.length+' / 32 port forwards';
@@ -133,11 +191,19 @@
       q('start').disabled=busy || state(id)==='running' || !authCan('admin');
       q('stop').disabled=busy || state(id)!=='running' || !authCan('write');
       q('save').textContent=running?'Apply firewall':'Apply settings';
-      q('notice').textContent=!authCan('admin')?'Only administrators can change cloud settings.':running?'Firewall changes apply live and are saved. Stop only this Internet node to change its address, return routes, uplink subnet or port forwards.':'Settings apply on the next start. Other lab devices can keep running.';
+      q('save').disabled=readonly || (running && activeTab!=='firewall');
+      q('notice').textContent=!authCan('admin')?'Only administrators can change settings.':running?'Firewall changes apply live. Stop this Internet node to edit Network, Port forwards or SSH access.':'Applies edits across all tabs. Settings take effect on the next start.';
     }
     panel.querySelector('form').onsubmit=async event=>{
       event.preventDefault();
       if (busy || !authCan('admin')) return;
+      // Reveal the relevant tab before native validation focuses a hidden field.
+      const invalid=[...event.currentTarget.elements].find(e=>e.willValidate&&!e.validity.valid);
+      if(invalid){
+        selectTab(invalid.closest('[data-tab-panel]').dataset.tabPanel);
+        const details=invalid.closest('details');if(details)details.open=true;
+        invalid.reportValidity();return;
+      }
       const routes=[...q('routes').rows].map(row=>Object.fromEntries([...row.querySelectorAll('input')].map(e=>[e.dataset.field,e.value.trim()])));
       const rules=[...q('rules').children].map(row=>Object.fromEntries([...row.querySelectorAll('[data-rule-field]')].map(e=>[e.dataset.ruleField,e.value.trim()])));
       const firewall={default_action:q('default-action').value,rules};
@@ -145,7 +211,7 @@
         e.dataset.forwardField,e.dataset.forwardField.endsWith('_port')?Number(e.value):e.value.trim()])));
       // Ignore unsaved network edits if the gateway was started while this window was open.
       const internet=state(id)==='running'?{...savedConfig,firewall}:
-        {address:q('address').value.trim(),uplink_subnet:q('uplink').value.trim(),routes,firewall,port_forwards};
+        {address:q('address').value.trim(),uplink_subnet:q('uplink').value.trim(),routes,firewall,port_forwards,...(savedConfig.ssh || q('ssh-enabled').checked ? {ssh:{enabled:q('ssh-enabled').checked,bind_address:q('ssh-bind').value.trim(),external_port:Number(q('ssh-port').value),source:q('ssh-source').value.trim()}} : {})};
       await perform('Applying Internet settings…',async()=>{
         const result=await api(`/api/nodes/${id}/internet`,'PUT',{internet,expected_internet:savedConfig});
         savedConfig=structuredClone(result.topology.nodes.find(node=>node.id===id).internet);
@@ -160,9 +226,25 @@
     for (const [part,kind] of [['toolbar','move'],['resize','resize']]) bindConsolePointer(q(part),kind,view);
     for (const [part,kind] of [['move','move'],['resize','resize']]) bindConsoleKeys(q(part),kind,view);
     for (const event of ['pointerdown','focusin']) panel.addEventListener(event,()=>bringConsoleForward(panel));
-    applyLayout();controls();bringConsoleForward(panel);
+    applyLayout();selectTab(tab || 'network');refreshInspector();bringConsoleForward(panel);return view;
   }
-  function refresh() { for (const view of [...windows.values()]) view.controls(); }
+  function refreshInspector() {
+    const node=nodeById(selected), cloud=node?.type==='cloud';
+    $('cloud-ssh-settings').hidden=!cloud;
+    if(!cloud)return;
+    const running=state(node.id)==='running', view=windows.get(node.id);
+    $('cloud-ssh-enabled').checked=running?!!node.internet?.ssh?.enabled:view?view.sshEnabled():!!node.internet?.ssh?.enabled;
+    $('cloud-ssh-enabled').disabled=busy || !loaded || running || !authCan('admin');
+    $('cloud-ssh-open').disabled=busy || !loaded;
+    $('cloud-ssh-help').textContent=running?'Stop this Internet node to enable or disable SSH.':'Review and apply changes in SSH settings.';
+  }
+  function refresh() { for (const view of [...windows.values()]) view.controls();refreshInspector(); }
   window.weblabInternet={open,refresh};
   $('cloud-settings-open').onclick=()=>open(selected);
+  $('cloud-ssh-open').onclick=()=>open(selected,'ssh');
+  $('cloud-ssh-enabled').onchange=event=>{
+    if(busy || !authCan('admin') || state(selected)==='running'){refreshInspector();return;}
+    const enabled=event.target.checked, view=open(selected,'ssh');
+    if(view)view.setSSHEnabled(enabled);
+  };
 })();

@@ -4,7 +4,11 @@
   const protocols = ['All','ARP','IPv4','IPv6','ICMP','ICMPv6','TCP','UDP','OSPF','BGP','VRRP','IS-IS','RIP','EIGRP','LLDP','STP','PVST+','CDP','DTP','VTP','LACP','VLAN','Other'];
   function open(linkId) {
     if (!authCan('write')) return;
-    if (windows.has(linkId)) { bringConsoleForward(windows.get(linkId).panel); return; }
+    if (windows.has(linkId)) {
+      const panel=windows.get(linkId).panel;
+      if (!window.weblabPopouts?.focus(panel)) bringConsoleForward(panel);
+      return;
+    }
     if (windows.size >= 4) { toast('Close a traffic monitor before opening another.', true); return; }
     const link = topology.links.find(l => l.id === linkId);
     if (!link) return;
@@ -15,13 +19,13 @@
       <button class="console-move" data-part="move" aria-label="Move traffic monitor">⠿</button>
       <div class="toolbar-scroll">
       <strong class="topology-window-title">Traffic monitor</strong>
-      <div class="traffic-buttons"><button data-part="start">Start capture</button><button data-part="stop" disabled>Stop</button>
+      <div class="traffic-buttons"><label>Duration <select data-part="duration" aria-label="Capture duration"><option value="60">1 min</option><option value="120">2 min</option><option value="300" selected>5 min</option></select></label><button data-part="start">Start capture</button><button data-part="stop" disabled>Stop</button>
       <button data-part="download" disabled>Download PCAP</button>
       <label>Protocol <select data-part="protocol" aria-label="Filter protocol"></select></label>
       <label>Direction <select data-part="direction" aria-label="Filter direction"><option value="all">Both</option><option value="a_to_b">A → B</option><option value="b_to_a">B → A</option></select></label>
       <label><input type="checkbox" data-part="follow" checked> Follow</label></div></div>
       <details class="console-menu traffic-help" data-part="help"><summary aria-label="Traffic capture information">ⓘ</summary>
-      <div class="console-menu-list"><p>Up to 60 seconds, 2,000 frames or 8 MiB. Filters affect this view; PCAP includes every captured frame. New capture replaces this buffer.</p>
+      <div class="console-menu-list"><p>Capture stops at the selected duration (1, 2 or 5 minutes), 2,000 frames or 8 MiB, whichever comes first. Stop the current capture before choosing a different duration for New capture. Filters affect this view; PCAP includes every captured frame. New capture replaces this buffer.</p>
       <p>Capture observes link ingress. Forwarded means sent to the peer socket, not confirmed guest reception.</p></div></details>
       <button data-part="maximize" aria-label="Maximize traffic monitor" aria-pressed="false">↗</button>
       <button data-part="close" aria-label="Close traffic monitor" title="Close and discard capture">×</button>
@@ -35,6 +39,7 @@
       <pre class="traffic-detail" data-part="detail" tabindex="0">Select a packet number to inspect its protocols and bytes.</pre></div></div>
       <button class="console-resize" data-part="resize" aria-label="Resize traffic monitor">◢</button>`;
     const q = name => panel.querySelector(`[data-part="${name}"]`);
+    q('maximize').before(window.weblabPopouts.buttonFor(panel,'traffic monitor'));
     const help = q('help'), helpButton = help.querySelector('summary');
     let helpTimer;
     help.addEventListener('pointerenter', event => { clearTimeout(helpTimer); if (event.pointerType === 'mouse') help.open = true; });
@@ -86,6 +91,7 @@
     const view = {panel, rect:null, maximized:false, applyLayout};
     windows.set(linkId, view); documentWindows.add(view);
     function applyLayout() {
+      if (window.weblabPopouts?.has(panel)) return;
       const bounds = consoleViewport();
       view.rect = boundedConsoleRect(view.rect || {x:bounds.x+30+windows.size*16,y:bounds.y+35+windows.size*16,width:1000,height:620});
       const rect = view.maximized ? bounds : view.rect;
@@ -98,6 +104,7 @@
     }
     function controls() {
       q('start').disabled = pending || running;
+      q('duration').disabled = pending || running;
       q('start').textContent = id ? 'New capture' : 'Start capture';
       q('stop').disabled = pending || !running;
       q('download').disabled = pending || !id || !packets.length;
@@ -172,7 +179,7 @@
         if (id) await api(`/api/captures/${id}/close`, 'POST', {}).catch(()=>{});
         id = null; packets = []; cursor = 0; complete = false; selected = null; render();
         decodedText=hexText=''; q('decode-status').textContent=''; showDetail();
-        const result = await api(`/api/links/${linkId}/capture`, 'POST', {});
+        const result = await api(`/api/links/${linkId}/capture`, 'POST', {duration_seconds:Number(q('duration').value)});
         if (closed) { await api(`/api/captures/${result.id}/close`, 'POST', {}); return; }
         id = result.id; running = true;
       } catch (error) { if (!closed) q('status').textContent = error.message; }
@@ -201,6 +208,7 @@
     const leaving = () => { if (id) fetch(`/api/captures/${id}/close`, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}', keepalive:true}).catch(()=>{}); };
     window.addEventListener('pagehide', leaving);
     q('close').onclick = () => {
+      window.weblabPopouts?.restore(panel);
       window.removeEventListener('pagehide', leaving);
       closed = true; clearInterval(timer); clearTimeout(helpTimer);
       if (id) api(`/api/captures/${id}/close`, 'POST', {}).catch(()=>{});

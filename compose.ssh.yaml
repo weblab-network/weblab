@@ -1,0 +1,38 @@
+# Optional console endpoint. Include with compose.yaml (docker-compose or docker compose).
+services:
+  lab:
+    environment:
+      WL_EXTERNAL_CONSOLES: ${WL_EXTERNAL_CONSOLES:-1}
+      WL_SSH_PORT: ${WL_SSH_PORT:-2222}
+      WL_SSH_BIND: ${WL_SSH_BIND:-127.0.0.1}
+      WL_SSH_SESSION_SECONDS: ${WL_SSH_SESSION_SECONDS:-28800}
+      WL_SSH_SOCKET_DIR: /run/weblab-access
+    volumes:
+      - ssh-sockets:/run/weblab-access
+  ssh:
+    build:
+      context: .
+      dockerfile: packaging/internet/Dockerfile
+    init: true
+    entrypoint: ["python3", "/opt/weblab/access_service.py", "console"]
+    depends_on:
+      - lab
+    ports:
+      - "${WL_SSH_BIND:-127.0.0.1}:${WL_SSH_PORT:-2222}:2222"
+    volumes:
+      - ssh-sockets:/run/weblab-access
+      - ssh-host-keys:/state
+    read_only: true
+    tmpfs:
+      - /run/ssh
+      - /run/sshd
+      - /tmp
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID, SYS_CHROOT, CHOWN, DAC_OVERRIDE, KILL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 96
+    mem_limit: 128m
+    restart: unless-stopped
+volumes:
+  ssh-sockets:
+  ssh-host-keys:

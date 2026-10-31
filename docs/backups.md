@@ -15,6 +15,8 @@ Internet cloud address, return routes, ordered firewall policy and port forwards
 topology in JSON (including configuration exports) and ZIP. Its temporary container
 state and connections are not preserved. Older topologies without firewall settings
 retain the original allow-outbound policy with no inbound ports published.
+Optional Internet SSH listener settings also travel with the topology, but local
+SSH grants and service host keys do not. See [external access state](external-access.md#saving-and-portability).
 Diagram-only network clouds preserve their name, size, color and drawn links
 in both formats; they have no device storage to export or restore.
 Diagram groups also preserve their title, notes, rectangle dimensions, color,
@@ -60,7 +62,7 @@ In **Export**, select **Include current Agent conversation (ZIP or JSON)** to
 save the conversation currently selected in this browser's Agent window. The
 option is off by default. Open an older conversation in **Agent → History** first
 if that is the one you want. It captures messages already received, including
-text attachments and screenshot filenames, but not image files or unsent drafts.
+text attachments and screenshot/PDF filenames, but not image/PDF files or unsent drafts.
 It does not gather other conversations or other users' sessions.
 
 ZIP adds `agent/conversation.md` and `agent/conversation.json`, with manifest

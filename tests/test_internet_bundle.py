@@ -47,10 +47,12 @@ class InternetBundleTests(unittest.TestCase):
             files = [p.relative_to(root/'licenses').as_posix() for p in (root/'licenses').rglob('*') if p.is_file()]
             self.assertEqual(files, ['source.tar.gz/project/COPYING'])
 
-    def fixture(self, root):
+    def fixture(self, root, ssh=False, tamper_ssh=False):
         labels = {'network.weblab.internet.distribution': '1',
                   'org.opencontainers.image.source': 'https://github.com/weblab-network/weblab',
                   'org.opencontainers.image.version': '0.11.0', 'org.opencontainers.image.revision': 'a'*40}
+        if ssh:
+            labels['network.weblab.internet.ssh'] = '1'
         package = {'name': 'example', 'version': '1-r0', 'origin': 'example', 'commit': 'b'*40, 'license': 'MIT'}
         source = b'print("gateway")\n'
         sources = {'packages.json': json.dumps([package]).encode(),
@@ -60,6 +62,9 @@ class InternetBundleTests(unittest.TestCase):
         sources['source-files.json'] = json.dumps(hashes).encode()
         build_files = {name: hashlib.sha256(source).hexdigest() for name in
                        ('internet_cloud.py', 'packaging/internet/gateway.py')}
+        if ssh:
+            build_files.update({name:hashlib.sha256(source).hexdigest() for name in
+                               ('external_tty.py','packaging/internet/access_service.py')})
         def archive_bytes(files):
             stream = io.BytesIO()
             with tarfile.open(fileobj=stream, mode='w') as output:
@@ -72,6 +77,9 @@ class InternetBundleTests(unittest.TestCase):
             sources['build/'+name] = source
             runtime['usr/share/weblab-internet/build/'+name] = source
         runtime.update({'opt/weblab/gateway.py': source, 'opt/weblab/internet_cloud.py': source})
+        if ssh:
+            runtime.update({'opt/weblab/external_tty.py':source,
+                            'opt/weblab/access_service.py':b'tampered' if tamper_ssh else source})
         layer = archive_bytes(runtime)
         config = json.dumps({'config': {'Labels': labels}, 'rootfs': {
             'type': 'layers', 'diff_ids': ['sha256:'+hashlib.sha256(layer).hexdigest()]}}).encode()
@@ -91,6 +99,15 @@ class InternetBundleTests(unittest.TestCase):
     def checksums(self, root):
         (root/'weblab-internet-SHA256SUMS').write_text(''.join(
             hashlib.sha256((root/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in sorted(verifier.FILES)))
+
+    def test_ssh_runtime_requires_matching_retained_sources(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            info=self.fixture(root,ssh=True)
+            self.assertEqual(verifier.verify(root)['Id'],info['Id'])
+            self.fixture(root,ssh=True,tamper_ssh=True)
+            with self.assertRaisesRegex(ValueError,'Executable helper differs'):
+                verifier.verify(root)
 
     def test_bundle_binds_binary_sources_and_reviewed_public_revision(self):
         with tempfile.TemporaryDirectory() as temporary:

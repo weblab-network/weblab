@@ -143,6 +143,33 @@ replace the full node-storage tree.
 
 ## Panels, zoom and fullscreen
 
+The floating topology, combined consoles pane, individual floating consoles, Agent and Traffic monitor have a **Pop out**
+button showing overlapping windows, distinct from the maximize arrow. For the
+topology, first choose **Float map**. Pop-out moves the live pane into a separate
+browser window; **Return to workspace** or closing the child restores it.
+The child also has a fullscreen button. The browser may choose a tab instead
+of a window and controls which browser chrome is shown.
+
+Keep the original workspace open: it owns the connections, session and permissions.
+Console scrollback/input locks and the Agent conversation, draft and running turn
+remain in that workspace. Pop-out creates no new console connection or Agent
+session. Settings/approval dialogs and the inspector open in the original workspace;
+the detached window brings it forward when possible. Changing layout presets or
+tiling windows returns detached panes to the workspace first. Reloading/logging
+out of the original workspace closes its children. A blocked popup keeps the
+original pane available. Individual consoles return to their floating window;
+docking or closing their console tab also closes the browser child. Traffic capture keeps running while its monitor is
+detached; returning/closing the browser child retains its packet buffer. The
+monitor's own Close button still discards the capture.
+
+Administrators can set **`WL_ALLOW_POPOUT=0`** in the Compose project's `.env`
+to hide and disable all Weblab pop-out buttons, including Instructions. The
+default is `1`. Recreate the core container to apply the setting; source changes
+also require rebuilding it. Native/standalone deployments pass the same
+environment variable to the core process/container. This controls Weblab's UI;
+it does not prohibit users opening browser tabs themselves. Fullscreen and
+in-workspace floating/maximizing remain available.
+
 **Devices** and **Inspector** show/hide the side panels. Wide-screen choices are
 remembered in this browser. In portrait view or at widths of 1000px or less, both
 panels start closed and open one at a time as drawers. Close a drawer with its
@@ -215,7 +242,13 @@ stay together. Explicit docking remains respected.
 
 ## Arrange windows
 
-**Layout → Tile floating windows** on the map or **Arrange** in a console tiles the topology,
+**Layout → Arrange floating windows**, also available in console **Actions**,
+tiles only the visible windows already floating inside the workspace. Four
+floating node consoles form an equal 2×2 grid when space allows. Docked panes,
+hidden windows and separate browser pop-outs stay where they are; the docked map's
+zoom and position are preserved.
+
+**Layout → Arrange all windows** on the map or **Arrange** in a console tiles the topology,
 visible console windows and visible instructions across the viewport. A visible
 docked console panel floats as a group; detach its tabs first to get one tile
 per console. Hidden consoles stay hidden, and Arrange brings the topology back.

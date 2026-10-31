@@ -13,6 +13,8 @@ services:
     depends_on:
       - agent
   agent:
+    environment:
+      WL_AGENT_HISTORY_LIMIT_MIB: ${WL_AGENT_HISTORY_LIMIT_MIB:-256}
     image: ${WL_AGENT_IMAGE:-ghcr.io/weblab-network/weblab-agent:latest}
     platform: linux/amd64
     network_mode: none

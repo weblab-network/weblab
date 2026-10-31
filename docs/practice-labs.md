@@ -14,6 +14,30 @@ normalized topology with fresh persistent IDs and rewritten link endpoints. Use
 that returned JSON for file imports; the saved-file contract below still applies
 to ordinary imports and the offline validator.
 
+## Capabilities to use in exercises
+
+Read `get_lab_state`, `list_device_profiles` and this guide before designing a
+lab. Use the tools actually offered by the connected server and the current
+session permissions. Knowing a feature exists does not authorize changing the
+lab or bypassing an approval, input lock or revision check.
+
+| Capability | How to use it; current Agent boundary |
+| --- | --- |
+| Directional link failure | In the browser, click a running cable and choose **Block A → B**, **Block B → A** or **Block both directions**. A/B refer to the displayed endpoints. This drops all frames in the selected direction while keeping carrier up, including BPDUs and tagged traffic. Useful for UDLD and loop-guard exercises when the guest supports them. The Agent can describe the steps and inspect resulting console output; it has no tool to apply or clear the fault. |
+| Cable unplug/reconnect | Separate browser controls request guest carrier changes on supported profiles. Tested IOL 17.18.02 devices require the opt-in `iol_l1` setting; it can cost a full CPU core. Frame blocking needs no such opt-in. Clearing frame loss does not reconnect an endpoint, and reconnecting does not clear frame loss. |
+| Capture and decoding | Browser **Monitor traffic** offers 1/2/5-minute captures, protocol/direction display filters, packet decoding and PCAP download. The 2,000-frame or 8 MiB limit can end captures sooner. Filters affect the display, not what is captured. The Agent has no capture/decoding/download tool; ask the learner to capture and report observations. Single-packet decoding does not reassemble streams. |
+| Exercises and Instructions | Include original Markdown in `preview_topology`'s `instructions` field. It is returned with the proposal for review/download, not automatically published in Instructions. Ask the user to open the matching document and optionally **Publish** it. Reset currently preserves Instructions, so an old document can remain visible. There is no Instructions publishing tool. |
+| Internet access and policy | Internet nodes provide IPv4 NAT, DNS, return routes, outbound firewall rules and inbound port forwarding. Dedicated gateway preview/apply and stop/start tools require their own permissions and current revisions. Firewall changes can apply live; network/port-forward changes require that gateway stopped. Preserve settings you are not changing, including any existing `ssh` object. SSH listeners and public-key grants are configured by the administrator in the browser. |
+| Shared console commands | When enabled, console tools can inspect and configure running guests. Read output and pending input first; use the returned revision/cursor, respect human locks and verify completion. A successful send or timeout is not proof a protocol converged. Guest protocol support depends on the exact image. |
+| Diagram annotations | Network clouds and groups are supported in topology proposals. Clouds are drawing-only; groups can move enclosed nodes. Neither forwards traffic. A topology replacement is not an in-place layout edit: preview and obtain permission before replacing existing work. |
+| Saving and restoring | Startup snippets seed fresh supported devices; existing saved state wins. JSON is a topology/configuration baseline, while a stopped-lab ZIP preserves supported device storage. Browser export/reset is separate from Agent topology tools; do not claim the Agent made a backup. Runtime link faults are not saved in either format. |
+
+For a UDLD exercise, explicitly tell the learner which cable and direction to
+block, predict the configured guest's response, inspect timers/state from the
+console, then clear the fault and verify recovery. Do not substitute interface
+`shutdown` for silent one-way frame loss. These controls do not implement random
+loss, latency, bandwidth shaping or packet corruption.
+
 ## Design an original exercise
 
 Use JSON. YAML is not an accepted import format. Deliver a complete importable

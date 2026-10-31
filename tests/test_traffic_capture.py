@@ -21,6 +21,25 @@ class CaptureTests(unittest.TestCase):
     def record(self, frame=ARP, direction='a_to_b', outcome='forwarded'):
         self.manager.observe(self.source, 'link', frame, direction, outcome)
 
+    def test_selected_duration_and_invalid_values(self):
+        for duration in (60, 120, 300):
+            manager = capture.Captures()
+            with patch.object(capture.time, 'monotonic', return_value=1000):
+                ident = manager.start(self.source, 'link', {}, 'owner', duration)['id']
+            with patch.object(capture.time, 'monotonic', return_value=1000+duration-1):
+                state = manager.read(ident, 'owner')
+                self.assertTrue(state['running'])
+                self.assertEqual(state['duration_seconds'], duration)
+            with patch.object(capture.time, 'monotonic', return_value=1000+duration):
+                state = manager.read(ident, 'owner')
+                self.assertFalse(state['running'])
+                self.assertEqual(state['reason'], f'{duration}-second limit reached')
+        before = len(self.manager.sessions)
+        for value in (0, -1, 61, 301, True, 60.0, '60', None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.manager.start(self.source, 'link', {}, 'owner', value)
+        self.assertEqual(len(self.manager.sessions), before)
+
     def test_summary_protocols_vlans_fragments_and_malformed(self):
         self.assertEqual(capture.summarize(ARP)['protocol'], 'ARP')
         self.assertEqual(capture.summarize(ARP)['source'], '10.0.0.1')
@@ -157,9 +176,12 @@ class CaptureHTTPTests(unittest.TestCase):
         self.assertEqual(self.http(path,'POST',{},guest,guest_csrf)[0],403)
         self.assertEqual(self.http(path,'POST',{},admin,csrf)[0],400)
         self.lab.start('r1')
-        status, _, result = self.http(path,'POST',{},user,user_csrf)
+        for data in ({'duration_seconds':61}, {'duration_seconds':True}, {'duration_seconds':'60'}, {'unknown':60}):
+            self.assertEqual(self.http(path,'POST',data,user,user_csrf)[0],400)
+        status, _, result = self.http(path,'POST',{'duration_seconds':120},user,user_csrf)
         self.assertEqual(status,200,result)
         ident=result['id']; url='/api/captures/'+ident
+        self.assertEqual(self.http(url,cookie=user)[2]['duration_seconds'],120)
         self.lab.captures.observe(self.lab.fabric.capture_source,'cable',ARP,'a_to_b','forwarded')
         self.assertEqual(self.http(url,cookie=user)[2]['packets'][0]['protocol'],'ARP')
         self.assertEqual(self.http(url,cookie=admin)[0],409)

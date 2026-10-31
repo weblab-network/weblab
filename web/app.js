@@ -1,6 +1,17 @@
 /* Weblab: no build step, all assets served locally. */
 "use strict";
-const $ = id => document.getElementById(id);
+// Detached panes remain owned by this workspace, including their connections.
+const detachedPanes = new Set(), workspaceListeners = [];
+window.weblabPopoutAllowed = false;
+const $ = id => document.getElementById(id) || [...detachedPanes].map(panel =>
+  panel.id === id ? panel : panel.querySelector('#'+CSS.escape(id))).find(Boolean);
+function workspaceQueryAll(selector) {
+  return [...document.querySelectorAll(selector), ...[...detachedPanes].flatMap(panel =>
+    [...(panel.matches(selector) ? [panel] : []), ...panel.querySelectorAll(selector)])];
+}
+function workspaceListen(...args) {
+  workspaceListeners.push(args); document.addEventListener(...args);
+}
 const authCan = capability => window.weblabAuth?.can(capability) ?? true;
 const icons = {
   group: '<svg viewBox="0 0 40 36" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="34" height="26" stroke-dasharray="4 3"/><path d="M9 12h18M9 18h12"/></svg>',
@@ -10,7 +21,7 @@ const icons = {
   router: '<svg viewBox="0 0 40 36" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="20" cy="12" rx="16" ry="7"/><path d="M4 12v12c0 4 7 7 16 7s16-3 16-7V12M10 12h9m-3-3 3 3-3 3m14-3h-8m3-3-3 3 3 3"/></svg>',
   pc: '<svg viewBox="0 0 40 36" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="4" width="32" height="23" rx="3"/><path d="M4 22h32M16 27v5m8-5v5m-13 0h18M12 11l4 3-4 3m8 0h7"/></svg>'
 };
-document.querySelectorAll("[data-icon]").forEach(el => el.innerHTML = icons[el.dataset.icon]);
+workspaceQueryAll("[data-icon]").forEach(el => el.innerHTML = icons[el.dataset.icon]);
 let topology = {version: 1, name: "Untitled lab", nodes: [], links: []};
 let statuses = {}, images = [], selected = null, busy = false, loaded = false, dragging = false;
 let allowUntestedFrr = false;
@@ -101,10 +112,10 @@ for (const key of Object.keys(desktopPanels)) {
 // A touch release that opens a drawer can synthesize its click on the newly
 // exposed backdrop. Dismiss only gestures that actually started on the backdrop.
 let backdropPress = false;
-document.addEventListener("pointerdown", event => { backdropPress = event.target === $("panel-backdrop"); }, true);
+workspaceListen("pointerdown", event => { backdropPress = event.target === $("panel-backdrop"); }, true);
 $("panel-backdrop").onclick = () => { if (backdropPress) dismissCompactPanel(); backdropPress = false; };
 panelMedia.addEventListener("change", () => { compactPanel = null; applyPanelLayout(); });
-document.addEventListener("keydown", event => {
+workspaceListen("keydown", event => {
   if (event.key === "Escape" && (panelMedia.matches || window.weblabLayout?.overlays()) && compactPanel && !document.querySelector("dialog[open]")) {
     event.preventDefault(); event.stopImmediatePropagation(); dismissCompactPanel();
   }
@@ -126,7 +137,7 @@ $("fullscreen").onclick = async () => {
   } catch (error) { toast("Could not change fullscreen: " + error.message, true); }
   updateFullscreen();
 };
-document.addEventListener("fullscreenchange", () => {
+workspaceListen("fullscreenchange", () => {
   updateFullscreen();
   requestAnimationFrame(() => { fitConsole(); if (loaded) renderLinks(); });
 });
@@ -148,6 +159,12 @@ async function api(path, method = "GET", body) {
 }
 
 function accept(result, updateForm = true) {
+  const popoutAllowed = result.allow_popout !== false;
+  if (window.weblabPopoutAllowed !== popoutAllowed) {
+    window.weblabPopoutAllowed = popoutAllowed;
+    document.documentElement.dataset.allowPopout = String(popoutAllowed);
+    window.dispatchEvent(new Event('weblab-popout-policy'));
+  }
   window.dispatchEvent(new CustomEvent('weblab-storage', {detail:result.storage}));
   iolL1Profiles = result.iol_l1_profiles || [];
   allowUntestedFrr = result.allow_untested_frr === true;
@@ -263,6 +280,7 @@ function groupResizeValues(n, width, height) {
   return {width,height,x:Math.round(left+width/2),y:Math.round(top+height/2)};
 }
 function resizeDiagramGroup(event, target) {
+  const dragDocument = target.ownerDocument;
   if (!authCan('admin') || busy || dragging) return;
   const n = nodeById(target.dataset.id), original = {x:n.x,y:n.y,width:n.width,height:n.height};
   const start = {x:event.clientX,y:event.clientY};
@@ -283,7 +301,7 @@ function resizeDiagramGroup(event, target) {
     if (e.pointerId !== event.pointerId) return;
     target.removeEventListener('pointermove',move);
     for (const type of ['pointerup','pointercancel','lostpointercapture']) target.removeEventListener(type,finish);
-    document.removeEventListener('keydown',cancel,true);
+    dragDocument.removeEventListener('keydown',cancel,true);
     if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
     dragging=false; updateViewControls();
     if (e.type !== 'pointerup') {Object.assign(n,original);render();renderInspector();}
@@ -295,7 +313,7 @@ function resizeDiagramGroup(event, target) {
   };
   target.addEventListener('pointermove',move);
   for (const type of ['pointerup','pointercancel','lostpointercapture']) target.addEventListener(type,finish);
-  document.addEventListener('keydown',cancel,true);
+  dragDocument.addEventListener('keydown',cancel,true);
 }
 function diagramGroupKey(event) {
   const target=event.target.closest('.diagram-group');
@@ -455,6 +473,9 @@ function placeLinkLabels(routes) {
 
 function applyRoleControls() {
   const admin = authCan('admin'), writer = authCan('write');
+  $('external-access-open').hidden=!admin;
+  $('copy-console-ssh').disabled=!selected || !nodeById(selected) || ['cloud','network','group'].includes(nodeById(selected)?.type);
+  $('copy-console-ssh').hidden=$('copy-console-ssh').disabled;
   // Unlike lab mutation controls, this local file picker has no busy/running state.
   // Recompute both ways after the initial authentication lookup completes.
   $('instructions-open').disabled = !admin;
@@ -466,9 +487,9 @@ function applyRoleControls() {
                     'group-notes','group-width','group-height','group-color','group-label-position','group-move-contents','node-size','node-color','node-name','node-image','node-memory','node-ethernet','node-iol-l1','node-ipv4','node-gateway']) {
     if (!admin && $(id)) $(id).disabled = true;
   }
-  document.querySelectorAll('.device-template').forEach(el => { if (!admin) { el.disabled = true; el.draggable = false; } });
+  workspaceQueryAll('.device-template').forEach(el => { if (!admin) { el.disabled = true; el.draggable = false; } });
   for (const id of ['start-all','stop-all','start-node','stop-node']) if (!writer) $(id).disabled = true;
-  document.querySelectorAll('[data-link-traffic],[data-link-carrier]').forEach(el => { if (!writer) el.disabled = true; });
+  workspaceQueryAll('[data-link-traffic],[data-link-carrier]').forEach(el => { if (!writer) el.disabled = true; });
 }
 
 function updateControls() {
@@ -480,19 +501,19 @@ function updateControls() {
   $("link-tool").disabled ||= hasRunning();
   $("lab-name").disabled = busy || !loaded;
   $("node-name").disabled = busy || !loaded || !authCan("admin");
-  document.querySelectorAll(".device-template").forEach(el => { el.disabled = busy || !loaded || hasRunning(); el.draggable = !el.disabled; });
+  workspaceQueryAll(".device-template").forEach(el => { el.disabled = busy || !loaded || hasRunning(); el.draggable = !el.disabled; });
   $("delete-node").disabled ||= hasRunning();
   if (selected) {
     $("start-node").disabled ||= state(selected) === "running";
     $("stop-node").disabled ||= state(selected) !== "running";
-    $("open-console").textContent = nodeById(selected)?.type === 'cloud' ? 'Cloud settings' : '>_ Open console';
-    $("open-console").disabled ||= nodeById(selected)?.type !== 'cloud' && state(selected) !== "running" && !consoleSessions.has(selected);
+    $("open-console").disabled ||= state(selected) !== "running" && !consoleSessions.has(selected);
     if (nodeById(selected)?.type === 'cloud' && !authCan('admin')) $('start-node').disabled = true;
   }
   for (const id of ["node-image", "node-memory", "node-ethernet", "node-iol-l1"]) $(id).disabled = busy || hasRunning() || isDiagram(nodeById(selected));
   for (const id of ['group-notes','group-width','group-height','group-color','group-label-position','group-move-contents','node-size','node-color']) $(id).disabled = busy || !loaded || !authCan('admin');
   const diagram = isDiagram(nodeById(selected));
   for (const id of ['start-node','stop-node','open-console','logs']) {$(id).hidden = diagram; if (diagram) $(id).disabled = true;}
+  $("open-console").hidden ||= nodeById(selected)?.type === 'cloud';
   const pc = nodeById(selected);
   for (const id of ["node-ipv4", "node-gateway"]) $(id).disabled = busy || !loaded || !pc || pc.type !== "pc" || state(pc.id) === "running";
   window.weblabInternet?.refresh();
@@ -564,6 +585,7 @@ $("canvas-scroll").addEventListener("wheel", event => {
 }, {passive: false});
 
 function startRectangleSelection(event) {
+  const dragDocument = event.target.ownerDocument;
   const area = $("canvas-scroll");
   const original = [...selectedNodes], originalSelected = selected;
   const additive = event.shiftKey || event.ctrlKey || event.metaKey;
@@ -600,7 +622,7 @@ function startRectangleSelection(event) {
     if (e.pointerId !== event.pointerId) return;
     area.removeEventListener('pointermove',move);
     for (const type of ['pointerup','pointercancel','lostpointercapture']) area.removeEventListener(type,finish);
-    document.removeEventListener('keydown',cancel,true);
+    dragDocument.removeEventListener('keydown',cancel,true);
     if (area.hasPointerCapture(event.pointerId)) area.releasePointerCapture(event.pointerId);
     box.remove(); dragging = false;
     if (e.type !== 'pointerup' || cancelled) {
@@ -620,7 +642,7 @@ function startRectangleSelection(event) {
   };
   area.addEventListener('pointermove',move);
   for (const type of ['pointerup','pointercancel','lostpointercapture']) area.addEventListener(type,finish);
-  document.addEventListener('keydown',cancel,true);
+  dragDocument.addEventListener('keydown',cancel,true);
 }
 
 $("canvas-scroll").addEventListener("pointerdown", event => {
@@ -799,13 +821,14 @@ function connectNode(id) {
   $("link-dialog").showModal();
 }
 
-document.querySelectorAll(".device-template").forEach(el => {
+workspaceQueryAll(".device-template").forEach(el => {
   el.addEventListener("dragstart", e => { e.dataTransfer.setData("application/x-iol-device", el.dataset.type); e.dataTransfer.effectAllowed = "copy"; setTimeout(dismissCompactPanel, 0); });
   el.addEventListener("click", () => { const area = $("canvas-scroll"); addNode(el.dataset.type, (area.scrollLeft + area.clientWidth / 2) / mapZoom, (area.scrollTop + Math.min(area.clientHeight / 2, 350)) / mapZoom); });
 });
 $("canvas-scroll").addEventListener("dragover", e => { if (!hasRunning() && !busy) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } });
 $("canvas-scroll").addEventListener("drop", e => { e.preventDefault(); const type = e.dataTransfer.getData("application/x-iol-device"); if (!icons[type]) return; const point = mapPoint(e.clientX, e.clientY); addNode(type, point.x, point.y); });
 $("canvas").addEventListener("pointerdown", e => {
+  const dragDocument = e.target.ownerDocument;
   const target = e.target.closest(".map-node");
   if (!target || e.button !== 0 || busy || dragging) return;
   e.preventDefault();
@@ -844,7 +867,7 @@ $("canvas").addEventListener("pointerdown", e => {
     target.removeEventListener("pointermove", move);
     for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) target.removeEventListener(type, finish);
     if (target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId);
-    document.removeEventListener("keydown", cancelMove, true);
+    dragDocument.removeEventListener("keydown", cancelMove, true);
     dragging = false; updateViewControls();
     if (event.type !== "pointerup") {
       for (const o of originals) { o.n.x = o.x; o.n.y = o.y; }
@@ -859,7 +882,7 @@ $("canvas").addEventListener("pointerdown", e => {
     if (event.key !== 'Escape') return;
     event.preventDefault(); event.stopImmediatePropagation(); finish({pointerId:e.pointerId,type:'pointercancel'});
   };
-  document.addEventListener('keydown', cancelMove, true);
+  dragDocument.addEventListener('keydown', cancelMove, true);
   target.addEventListener("pointermove", move);
   for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) target.addEventListener(type, finish);
 });
@@ -932,7 +955,7 @@ function updateLinkActions() {
   $('link-actions-endpoints').textContent = `A: ${label('a')} ↔ B: ${label('b')}`;
   $('link-actions-state').textContent = linkDescription(link);
   $('link-actions-help').textContent = diagramLink(link) ? 'This line documents a connection to an unmanaged network. It does not carry packets.' : linkError || (value.available ? 'Closing this window leaves faults active. Stopping the whole lab clears them.' : 'Start a connected node to enable traffic controls.');
-  document.querySelectorAll('[data-link-traffic]').forEach(button => {
+  workspaceQueryAll('[data-link-traffic]').forEach(button => {
     const mode = button.dataset.linkTraffic;
     button.disabled = busy || !value.available;
     button.setAttribute('aria-pressed', String(value.available && !linkError && ['a','b'].every(side => state(link[side].node) === 'running' && value['carrier_'+side] === 'up' && !value['carrier_pending_'+side] && !value['carrier_error_'+side]) && !!value.blocked_a_to_b === ['a','both'].includes(mode) && !!value.blocked_b_to_a === ['b','both'].includes(mode)));
@@ -944,7 +967,7 @@ function updateLinkActions() {
     const node = nodeById(link[side].node);
     return hasIolL1Profile(node) && !node.iol_l1;
   });
-  document.querySelectorAll('[data-link-carrier]').forEach(button => {
+  workspaceQueryAll('[data-link-carrier]').forEach(button => {
     const side = button.dataset.linkCarrier, down = value['carrier_'+side] !== 'up';
     button.hidden = !value['carrier_capable_'+side] && !value['carrier_supported_'+side];
     button.disabled = busy || !value.available || !value['carrier_supported_'+side];
@@ -962,13 +985,13 @@ function updateLinkActions() {
 $('link-actions-close').onclick = () => $('link-actions-dialog').close();
 $('link-actions-dialog').addEventListener('close', () => { if (!$('link-actions-dialog').open) activeLinkAction = null; });
 $('link-actions-delete').onclick = () => { const id = activeLinkAction; $('link-actions-dialog').close(); unlink(id); };
-document.querySelectorAll('[data-link-traffic]').forEach(button => button.onclick = () => {
+workspaceQueryAll('[data-link-traffic]').forEach(button => button.onclick = () => {
   const id = activeLinkAction, mode = button.dataset.linkTraffic;
   perform('Updating link traffic…', () => api(`/api/links/${encodeURIComponent(id)}/traffic`, 'POST', {
     blocked_a_to_b: ['a','both'].includes(mode), blocked_b_to_a: ['b','both'].includes(mode)
   }));
 });
-document.querySelectorAll('[data-link-carrier]').forEach(button => button.onclick = () => {
+workspaceQueryAll('[data-link-carrier]').forEach(button => button.onclick = () => {
   const id = activeLinkAction, side = button.dataset.linkCarrier;
   perform('Updating cable state…', () => api(`/api/links/${encodeURIComponent(id)}/carrier`, 'POST', {
     side, up: linkStates[id]['carrier_'+side] !== 'up'
@@ -1412,7 +1435,7 @@ $('console-approval-form').onsubmit = event => {
 $('console-approval-dialog').addEventListener('cancel', event => {
   event.preventDefault(); decideConsoleApproval(false);
 });
-document.addEventListener('close', () => setTimeout(updateConsoleApproval, 0), true);
+workspaceListen('close', () => setTimeout(updateConsoleApproval, 0), true);
 
 function writeConsoleOutput(session, data, replay = false) {
   session.outputQueue.push({data, replay});
@@ -1500,7 +1523,7 @@ try {
 } catch (_) { /* Clipboard preferences are optional. */ }
 if (!systemClipboardAvailable) clipboardSource = 'workspace';
 function updateClipboardControls() {
-  document.querySelectorAll('[data-console-clipboard]').forEach(button => {
+  workspaceQueryAll('[data-console-clipboard]').forEach(button => {
     button.textContent = `Clipboard: ${clipboardEnabled ? clipboardSource : 'off'}`;
     button.title = 'Copy on selection / right-click paste preferences';
   });
@@ -1520,7 +1543,7 @@ function changeClipboardPreference() {
 }
 $('clipboard-enabled').onchange = $('clipboard-source').onchange = changeClipboardPreference;
 $('clipboard-close').onclick = () => $('clipboard-dialog').close();
-document.addEventListener('click', event => {
+workspaceListen('click', event => {
   if (!event.target.closest('[data-console-clipboard]')) return;
   updateClipboardControls(); $('clipboard-dialog').showModal();
 });
@@ -1592,7 +1615,7 @@ function consoleTheme() {
 function consoleThemeMode() { return document.documentElement.dataset.consoleTheme === 'light' ? 'light' : 'dark'; }
 function consoleContrast() { return consoleThemeMode() === 'light' ? 4.5 : 1; }
 function updateConsoleThemes() {
-  for (const panel of document.querySelectorAll('.console-panel')) panel.dataset.consoleTheme = consoleThemeMode();
+  for (const panel of workspaceQueryAll('.console-panel')) panel.dataset.consoleTheme = consoleThemeMode();
   for (const session of consoleSessions.values()) {
     session.terminal.options.theme = consoleTheme();
     session.terminal.options.minimumContrastRatio = consoleContrast();
@@ -1629,7 +1652,7 @@ $("console-font-reset").onclick = () => setConsoleFontSize(DEFAULT_CONSOLE_FONT)
 updateConsoleFontControls();
 
 function fitConsole() {
-  document.querySelectorAll('.console-panel').forEach(panel => {
+  workspaceQueryAll('.console-panel').forEach(panel => {
     if (!panel.hidden) panel.classList.toggle('console-compact',panel.clientWidth < 850);
   });
   for (const session of consoleSessions.values()) {
@@ -1641,11 +1664,13 @@ function activateConsole(id, focusTerminal = true) {
   const session = consoleSessions.get(id);
   if (!session) return;
   if (session.floating) {
+    window.weblabPopouts?.focus(session.floating.panel);
     session.floating.panel.hidden = false; bringConsoleForward(session.floating.panel);
     applyFloatingConsoleLayout(session.floating);
     if (focusTerminal) session.terminal.focus();
     return;
   }
+  window.weblabPopouts?.focus($('console-panel'));
   window.weblabLayout?.show("console");
   consoleNode = id;
   $("console-panel").hidden = false;
@@ -1750,6 +1775,7 @@ function openConsole(id) {
 function closeConsole(id) {
   const session = consoleSessions.get(id);
   if (!session) return;
+  if (session.floating) window.weblabPopouts?.restore(session.floating.panel);
   const ids = [...consoleSessions.keys()], index = ids.indexOf(id);
   const wasHidden = $("console-panel").hidden;
   closeSocket(session);
@@ -1825,11 +1851,12 @@ function fitWorkspaceViewport() {
 }
 function dockHeightLimits() {
   const area = document.querySelector('.workarea');
-  const reserved = document.querySelector('.canvas-toolbar').offsetHeight + document.querySelector('.canvas-footer').offsetHeight + 80;
+  const reserved = $('topology-panel').querySelector('.canvas-toolbar').offsetHeight + $('topology-panel').querySelector('.canvas-footer').offsetHeight + 80;
   const max = Math.max(120, area.clientHeight - reserved);
   return {min:Math.min(240, max), max};
 }
 function applyConsoleLayout() {
+  if (window.weblabPopouts?.has($('console-panel'))) { fitConsole(); return; }
   fitWorkspaceViewport();
   const panel = $("console-panel");
   if (window.weblabLayout?.consoleLayout()) return;
@@ -1894,6 +1921,7 @@ function setDockHeight(height) {
   applyConsoleLayout();
 }
 function startConsoleGesture(event, kind, floating = null) {
+  if (window.weblabPopouts?.has(floating?.panel || $('console-panel'))) return;
   if (event.button !== 0 || consoleGesture || kind !== 'dock' && (floating ? floating.maximized : !consoleFloating || consoleMaximized)) return;
   if (floating?.panel.classList.contains('workspace-docked')) return;
   if (kind === 'move' && !event.target.closest('.console-move,.console-title,.topology-window-title')) return;
@@ -1974,6 +2002,7 @@ function updateDockedConsoleState() {
   }
 }
 function applyFloatingConsoleLayout(view) {
+  if (window.weblabPopouts?.has(view.panel)) return;
   if (view.applyLayout) { view.applyLayout(); return; }
   if (view === topologyWindow) { applyTopologyLayout(); return; }
   view.rect = boundedConsoleRect(view.rect);
@@ -1990,6 +2019,7 @@ function applyFloatingConsoleLayout(view) {
 function removeFloatingConsole(session) {
   const view = session.floating;
   if (!view) return;
+  window.weblabPopouts?.restore(view.panel);
   if (consoleGesture?.floating === view) consoleGesture = null;
   view.observer.disconnect(); view.panel.remove();
   floatingConsoleOrder = floatingConsoleOrder.filter(p => p !== view.panel);
@@ -1998,6 +2028,8 @@ function removeFloatingConsole(session) {
 function dockConsole(id, remember = true) {
   const session = consoleSessions.get(id);
   if (!session?.floating) return;
+  window.weblabPopouts?.restore(session.floating.panel);
+  window.weblabPopouts?.restore($('console-panel'));
   if (remember) consoleOpenMode = 'docked';
   $("terminal").append(session.element);
   removeFloatingConsole(session);
@@ -2007,6 +2039,7 @@ function dockConsole(id, remember = true) {
   activateConsole(id);
 }
 function floatConsole(id, remember = true) {
+  window.weblabPopouts?.restore($('console-panel'));
   const session = consoleSessions.get(id);
   if (!session) return;
   if (session.floating) { activateConsole(id); return; }
@@ -2031,6 +2064,9 @@ function floatConsole(id, remember = true) {
   session.floating = view;
   q('detach-console-tab').remove();
   q('console-name').textContent = session.name;
+  q('consoles-popout').title = `Open ${session.name} console in a separate window`;
+  q('consoles-popout').setAttribute('aria-label', `Pop out ${session.name} console`);
+  q('consoles-popout').onclick = () => window.weblabPopouts?.open(panel);
   q('detach-console').textContent = 'Dock'; q('detach-console').title = 'Dock this console';
   q('detach-console').setAttribute('aria-label','Dock this console'); q('detach-console').setAttribute('aria-pressed','true');
   for (const name of ['detach-console','expand-console','clear-console']) q(name).disabled = false;
@@ -2067,6 +2103,7 @@ function floatConsole(id, remember = true) {
 }
 $("detach-console-tab").onclick = () => floatConsole(consoleNode);
 function setAllConsolesFloating(floating) {
+  window.weblabPopouts?.restore($('console-panel'));
   dismissCompactPanel(); consoleGesture = null;
   consoleOpenMode = floating ? 'floating' : 'docked';
   const active = consoleNode || [...consoleSessions.keys()][0];
@@ -2083,6 +2120,7 @@ function setAllConsolesFloating(floating) {
   }
 }
 function applyTopologyLayout() {
+  if (window.weblabPopouts?.has($('topology-panel'))) return;
   const view = topologyWindow;
   if (!view) return;
   view.rect = boundedConsoleRect(view.rect);
@@ -2097,6 +2135,7 @@ function applyTopologyLayout() {
   expand.textContent = view.maximized ? '↙' : '↗';
 }
 function floatTopology() {
+  if (window.weblabPopouts?.focus($('topology-panel'))) return;
   window.weblabLayout?.leave();
   dismissCompactPanel();
   if (topologyWindow) { topologyWindow.panel.hidden = false; applyTopologyLayout(); bringConsoleForward(topologyWindow.panel); return; }
@@ -2116,6 +2155,7 @@ function floatTopology() {
   applyConsoleLayout();
 }
 function dockTopology() {
+  window.weblabPopouts?.restore($('topology-panel'));
   if (!topologyWindow) return;
   const panel = topologyWindow.panel, area = $("canvas-scroll");
   const scroll = {left:area.scrollLeft,top:area.scrollTop};
@@ -2149,18 +2189,23 @@ for (const [id,kind] of [['topology-move','move'],['topology-resize','resize']])
 for (const event of ['pointerdown','focusin']) $("topology-panel").addEventListener(event,()=>{
   if (topologyWindow) bringConsoleForward(topologyWindow.panel);
 });
-function arrangeWindows() {
+function arrangeWindows(floatingOnly = false) {
+  if (!floatingOnly) window.weblabPopouts?.restoreAll();
   const terminalFocus = document.activeElement?.closest('.xterm') ? document.activeElement : null;
   consoleGesture = null;
-  floatTopology();
-  if (consoleFloating && !consoleNode) {
+  if (!floatingOnly) floatTopology();
+  if (!floatingOnly && consoleFloating && !consoleNode) {
     consoleFloating = false; consoleMaximized = false;
     applyConsoleLayout(); updateDockedConsoleState();
   }
-  const windows = [{panel:topologyWindow.panel,set:rect => {
+  const eligible = panel => !panel.hidden && (!floatingOnly ||
+    (panel.ownerDocument === document && panel.classList.contains('floating') &&
+     !panel.classList.contains('workspace-docked') && panel.getClientRects().length));
+  const windows = [];
+  if (topologyWindow && eligible(topologyWindow.panel)) windows.push({panel:topologyWindow.panel,set:rect => {
     topologyWindow.maximized = false; topologyWindow.rect = rect; applyTopologyLayout();
-  }}];
-  if (!$("console-panel").hidden && consoleNode) {
+  }});
+  if (consoleNode && eligible($("console-panel")) && (!floatingOnly || consoleFloating)) {
     consoleFloating = true;
     windows.push({panel:$("console-panel"),set:rect => {
       consoleMaximized = false; consoleRect = rect; applyConsoleLayout();
@@ -2168,14 +2213,15 @@ function arrangeWindows() {
   }
   for (const session of consoleSessions.values()) {
     const view = session.floating;
-    if (view && !view.panel.hidden) windows.push({panel:view.panel,set:rect => {
+    if (view && eligible(view.panel)) windows.push({panel:view.panel,set:rect => {
       view.maximized = false; view.rect = rect; applyFloatingConsoleLayout(view);
     }});
   }
-  for (const view of documentWindows) if (!view.panel.hidden) windows.push({panel:view.panel,set:rect => {
+  for (const view of documentWindows) if (eligible(view.panel)) windows.push({panel:view.panel,set:rect => {
     view.maximized = false; view.rect = rect; view.applyLayout();
   }});
   const bounds = consoleViewport(), gap = 8, count = windows.length;
+  if (!count) { toast('No floating windows are open in this workspace.'); return; }
   // Prefer readable landscape panes. Never squeeze terminals below their manual
   // resize minimum; cascade if this viewport cannot accommodate a complete grid.
   let grid = null;
@@ -2203,12 +2249,12 @@ function arrangeWindows() {
   // Reparenting a docked terminal can blur it. Restore focus in the same user
   // gesture so arranging does not dismiss a touch keyboard.
   if (terminalFocus?.isConnected) terminalFocus.focus({preventScroll:true});
-  requestAnimationFrame(() => { fitMap(); fitConsole(); });
+  requestAnimationFrame(() => { if (!floatingOnly || windows.some(win=>win.panel.id==='topology-panel')) fitMap(); fitConsole(); });
   if (!grid) toast('Not enough room to tile every window. Windows have been cascaded; hide some or enlarge the view, then arrange again.');
 }
 let touchConsoleControl = null;
-const consoleTouchControlSelector = '.console-menu summary,.console-menu-list button,[data-console-key],[data-arrange-windows]';
-document.addEventListener('click',event => {
+const consoleTouchControlSelector = '.console-menu summary,.console-menu-list button,[data-console-key],[data-arrange-windows],[data-arrange-floating]';
+workspaceListen('click',event => {
   const control = event.target.closest(consoleTouchControlSelector);
   if (control && touchConsoleControl === control && control.matches('summary')) {
     // The native summary click may take focus even when pointerdown was
@@ -2226,6 +2272,7 @@ document.addEventListener('click',event => {
     }
   }
   if (event.target.closest('[data-arrange-windows]')) arrangeWindows();
+  if (event.target.closest('[data-arrange-floating]')) arrangeWindows(true);
   if (event.target.closest('[data-show-topology]')) floatTopology();
   if (event.target.closest('[data-float-consoles]')) setAllConsolesFloating(true);
   if (event.target.closest('[data-dock-consoles]')) setAllConsolesFloating(false);
@@ -2233,7 +2280,8 @@ document.addEventListener('click',event => {
 });
 function positionConsoleMenu(menu) {
   const list = menu.querySelector('.console-menu-list'), anchor = menu.querySelector('summary').getBoundingClientRect();
-  const bounds = consoleViewport();
+  const owner = menu.ownerDocument.defaultView;
+  const bounds = owner === window ? consoleViewport() : {x:8,y:8,width:owner.innerWidth-16,height:owner.innerHeight-16};
   list.style.maxHeight = bounds.height+'px';
   const box = list.getBoundingClientRect();
   const below = anchor.bottom+4;
@@ -2241,11 +2289,11 @@ function positionConsoleMenu(menu) {
   list.style.left = clampConsole(anchor.right-box.width,bounds.x,bounds.x+bounds.width-box.width)+'px';
   list.style.top = clampConsole(top,bounds.y,bounds.y+bounds.height-box.height)+'px';
 }
-document.addEventListener('scroll',event => {
+workspaceListen('scroll',event => {
   if (!event.target.matches?.('.console-toolbar,.toolbar-scroll')) return;
   event.target.querySelectorAll('.console-menu[open]').forEach(positionConsoleMenu);
 },true);
-document.addEventListener('wheel',event => {
+workspaceListen('wheel',event => {
   if (event.ctrlKey || event.metaKey || event.target.closest('.console-menu-list') || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
   const tabStrip = event.target.closest('.console-tabs');
   const toolbar = event.target.closest('.console-toolbar,.canvas-toolbar');
@@ -2256,30 +2304,30 @@ document.addEventListener('wheel',event => {
   strip.scrollLeft += event.deltaY * scale;
   event.preventDefault();
 }, {passive:false});
-document.addEventListener('toggle',event => {
+workspaceListen('toggle',event => {
   const menu = event.target;
   if (!menu.matches('.console-menu') || !menu.open) return;
-  document.querySelectorAll('.console-menu[open]').forEach(other => { if (other !== menu) other.open = false; });
+  workspaceQueryAll('.console-menu[open]').forEach(other => { if (other !== menu) other.open = false; });
   positionConsoleMenu(menu);
 },true);
-document.addEventListener('pointerdown',event => {
-  document.querySelectorAll('.console-menu[open]').forEach(menu => { if (!menu.contains(event.target)) menu.open = false; });
+workspaceListen('pointerdown',event => {
+  workspaceQueryAll('.console-menu[open]').forEach(menu => { if (!menu.contains(event.target)) menu.open = false; });
   touchConsoleControl = event.pointerType === 'touch' ? event.target.closest(consoleTouchControlSelector) : null;
   // A touch action must not focus a summary/button and dismiss the keyboard
   // before Arrange measures the visual viewport. Mouse/keyboard focus is native.
   if (touchConsoleControl || event.target.closest('[data-console-key]')) event.preventDefault();
 },true);
-document.addEventListener('pointercancel',()=>{ touchConsoleControl = null; },true);
-document.addEventListener('keydown',event => {
+workspaceListen('pointercancel',()=>{ touchConsoleControl = null; },true);
+workspaceListen('keydown',event => {
   if (event.key !== 'Escape') return;
-  const menu = document.querySelector('.console-menu[open]');
+  const menu = event.target.ownerDocument.querySelector('.console-menu[open]');
   if (menu) {
     event.preventDefault(); event.stopImmediatePropagation();
     menu.open = false; menu.querySelector('summary').focus();
   }
 },true);
 for (const target of [window,window.visualViewport].filter(Boolean)) target.addEventListener('resize',()=>{
-  document.querySelectorAll('.console-menu[open]').forEach(positionConsoleMenu);
+  workspaceQueryAll('.console-menu[open]').forEach(positionConsoleMenu);
 });
 for (const event of ['pointerdown','focusin']) $("console-panel").addEventListener(event,()=>{
   if (consoleFloating) bringConsoleForward($("console-panel"));
@@ -2291,7 +2339,7 @@ window.visualViewport?.addEventListener('scroll', resizeConsoleLayouts);
 applyConsoleLayout();
 new ResizeObserver(fitConsole).observe($("terminal"));
 window.addEventListener("beforeunload", () => { for (const session of consoleSessions.values()) closeSocket(session); });
-document.addEventListener("keydown", e => {
+workspaceListen("keydown", e => {
   if (e.target.closest("input,textarea,select,.xterm,.instructions-panel") || document.querySelector("dialog[open]") || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key.toLowerCase() === "v") setMode("select");
   if (e.key.toLowerCase() === "l") setMode("link");

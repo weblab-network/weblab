@@ -46,10 +46,18 @@ class ConsoleTimeout(ValueError):
 
 
 class Console:
-    def __init__(self, port, cursor=None, identity=None):
+    def __init__(self, port, cursor=None, identity=None, *, human_identity=None):
         if cursor is not None and not re.fullmatch(r'[a-z0-9-]{1,80}:\d{1,16}', cursor):
             raise ValueError('Invalid console cursor')
         headers = ''
+        self.human = human_identity is not None
+        if human_identity is not None:
+            role, owner = human_identity
+            if identity is not None or role not in ('admin', 'writer', 'reader') or not re.fullmatch(r'[a-f0-9]{64}', owner):
+                raise ValueError('Invalid human console identity')
+            headers = f'X-Weblab-Role: {role}\r\nX-Weblab-Console-Identity: {owner}\r\n'
+            if role == 'reader':
+                headers += 'X-Weblab-Read-Only: 1\r\n'
         if identity is not None:
             role, owner = identity
             if role not in ('admin', 'writer') or not re.fullmatch(r'[a-f0-9]{64}', owner):
@@ -173,7 +181,7 @@ class Console:
                                 self.stream = message
                             if message.get('type') == 'console-lock':
                                 self.lock = message
-                                if message.get('error'):
+                                if message.get('error') and not self.human:
                                     raise ValueError(message['error'])
                             return b''
                         if opcode == 2 and getattr(self, 'stream', None) is not None:

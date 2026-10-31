@@ -50,7 +50,9 @@ let log='';fixture.stderr.on('data',data=>log+=data);
   await panel.waitFor({state:'visible'});
   await page.waitForFunction(()=>document.querySelector('.traffic-panel [data-part=status]').textContent.includes('Capturing'));
   const toolbar=panel.locator('[data-part=toolbar]');
-  for (const part of ['start','stop','download','protocol','direction','follow']) {
+  assert.equal(await panel.locator('[data-part=duration]').inputValue(),'300');
+  assert.equal(await panel.locator('[data-part=duration]').isDisabled(),true);
+  for (const part of ['duration','start','stop','download','protocol','direction','follow']) {
     assert.equal(await panel.locator(`[data-part=${part}]`).evaluate(e=>!!e.closest('[data-part=toolbar]')),true);
   }
   const help=panel.locator('[data-part=help]'), helpButton=help.locator('summary');
@@ -116,6 +118,13 @@ let log='';fixture.stderr.on('data',data=>log+=data);
     await page.waitForFunction(()=>document.querySelector('.traffic-detail').textContent.includes('Dynamic Trunk Protocol'));
   }
   if(process.env.TRAFFIC_SCREENSHOT) await page.screenshot({path:process.env.TRAFFIC_SCREENSHOT});
+  const rowsBeforePopout=await panel.locator('tbody tr').count();
+  const popEvent=page.waitForEvent('popup');await panel.locator('.popout-button').click();
+  const child=await popEvent;await child.locator('.traffic-panel').waitFor();
+  assert.equal(await child.locator('tbody tr').count(),rowsBeforePopout);
+  assert.equal(await child.locator('[data-part=duration]').isDisabled(),true);
+  await child.locator('[data-part=hex]').click();
+  await child.locator('#pane-return').click();await panel.waitFor();
   await panel.locator('[data-part=stop]').click();
   await page.waitForFunction(()=>document.querySelector('.traffic-panel [data-part=status]').textContent.includes('Stopped by user'));
   const dl=page.waitForEvent('download');await panel.locator('[data-part=download]').click();
@@ -145,7 +154,10 @@ let log='';fixture.stderr.on('data',data=>log+=data);
 
   await page.setViewportSize({width:1440,height:1000});
   await panel.locator('[data-part=protocol]').selectOption('LLDP');
+  await panel.locator('[data-part=duration]').selectOption('120');
+  const captureRequest=page.waitForRequest(r=>r.method()==='POST' && r.url().endsWith('/capture'));
   await panel.locator('[data-part=start]').click();
+  assert.deepEqual((await captureRequest).postDataJSON(),{duration_seconds:120});
   await page.waitForFunction(()=>document.querySelectorAll('.traffic-panel tbody tr').length===0);
   fixture.stdin.write('frames\n');
   await page.waitForFunction(()=>document.querySelectorAll('.traffic-panel tbody tr').length===1); // LLDP filter retained.

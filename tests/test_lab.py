@@ -138,6 +138,17 @@ while True:
         with urlopen(request, timeout=10) as response:
             return json.load(response)
 
+    def test_popout_environment_and_state(self):
+        with patch.dict(os.environ, {'WL_ALLOW_POPOUT':'0'}):
+            self.assertFalse(lab_server.parse_args([]).allow_popout)
+        with patch.dict(os.environ, {'WL_ALLOW_POPOUT':'1'}):
+            self.assertTrue(lab_server.parse_args([]).allow_popout)
+        with patch.dict(os.environ, {'WL_ALLOW_POPOUT':'yes'}), patch('sys.stderr', io.StringIO()):
+            with self.assertRaises(SystemExit): lab_server.parse_args([])
+        self.assertTrue(self.request('/api/state')['allow_popout'])
+        self.lab.allow_popout = False
+        self.assertFalse(self.request('/api/state')['allow_popout'])
+
     def test_console_launch_proxy_fragmentation_reconnect_and_cleanup(self):
         self.request("/api/nodes/r1/start", "POST", {})
         runtime = copy.deepcopy(self.lab.runtime["r1"])
