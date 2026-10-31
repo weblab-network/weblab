@@ -105,6 +105,8 @@ fixture.stderr.on('data', d => log += d);
     const popupEvent=page.waitForEvent('popup');await page.locator('#instructions-popout').click();
     const popup=await popupEvent;popup.on('pageerror',e=>errors.push(e.message));
     const reader=popup.locator('#reader-body');
+    // A popup event does not guarantee that the reader DOM is ready yet.
+    await popup.locator('#reader-title').waitFor();
     await popup.waitForFunction(()=>document.querySelector('#reader-title').textContent==='exercise.md');
     await panel.waitFor({state:'hidden'});
     assert.equal(await reader.innerHTML(),await body.innerHTML());
@@ -130,6 +132,7 @@ fixture.stderr.on('data', d => log += d);
     await page.locator('#instructions-smaller').click();
     const secondEvent=page.waitForEvent('popup');await page.locator('#instructions-popout').click();
     const second=await secondEvent;
+    await second.locator('#reader-title').waitFor();
     await second.waitForFunction(()=>document.querySelector('#reader-title').textContent==='exercise.md');
     await second.close();await panel.waitFor({state:'visible'});
     await page.locator('#instructions-fullscreen').click();

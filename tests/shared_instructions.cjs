@@ -75,6 +75,8 @@ let logs=''; fixture.stderr.on('data', d=>logs+=d);
   // Readers can pop out published instructions without acquiring editing controls.
   const guestPopupEvent=guest.waitForEvent('popup');await guest.click('#instructions-popout');
   const guestPopup=await guestPopupEvent;guestPopup.on('pageerror',e=>errors.push(e.message));
+  // The popup event can arrive before its reader document has been parsed.
+  await guestPopup.locator('#reader-title').waitFor();
   await guestPopup.waitForFunction(()=>document.querySelector('#reader-title').textContent==='first.md');
   assert.equal(await guestPopup.locator('#instructions-publish,#instructions-open').count(),0);
   // Two administrators: preserve the local draft but reject its stale publish.
@@ -120,6 +122,7 @@ let logs=''; fixture.stderr.on('data', d=>logs+=d);
   await choose(admin,'private.md','# PRIVATE PREVIEW');
   const privateEvent=admin.waitForEvent('popup');await admin.click('#instructions-popout');
   const privatePopup=await privateEvent;
+  await privatePopup.locator('#reader-title').waitFor();
   await privatePopup.waitForFunction(()=>document.querySelector('#reader-title').textContent==='private.md');
   const closed=privatePopup.waitForEvent('close');await admin.click('#auth-logout');await closed;
   assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
