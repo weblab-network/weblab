@@ -133,3 +133,12 @@ CSS variables define the palette. Keep text contrast, visible keyboard focus,
 reduced-motion behavior and a usable no-JavaScript page when extending the design.
 The section index scrolls horizontally on narrow screens; the page itself should
 not. Additional themes are not part of this website change.
+
+## Sandbox invitation
+
+The hero links to the practice sandbox lobby and shows a clickable thumbnail of
+`assets/sandbox-campus.png`. This is the maintainer-supplied 1897×1364 screenshot,
+kept unchanged: the full topology, consoles and packet decoding are real lab
+output. Scale it through CSS and preserve the full-size image link. The sandbox
+has FRR/LL2S/PC exercises; external SSH access, Agent and Internet access require
+a separate installation.
