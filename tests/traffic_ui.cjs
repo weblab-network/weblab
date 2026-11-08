@@ -146,7 +146,13 @@ async function returnToWorkspace(child) {
   const before=await panel.boundingBox();await panel.locator('[data-part=resize]').focus();await page.keyboard.press('ArrowLeft');
   const after=await panel.boundingBox();assert.ok(after.width<before.width);
   await page.setViewportSize({width:390,height:740});
-  const small=await panel.boundingBox();assert.ok(small.x>=0 && small.width<=390);
+  // setViewportSize can resolve before the window's resize listener clamps
+  // floating panes. Wait for the resulting geometry, without skipping its check.
+  await page.waitForFunction(()=>{
+    const box=document.querySelector('.traffic-panel').getBoundingClientRect();
+    return box.width>0 && box.x>=0 && box.right<=390;
+  },null,{timeout:3000});
+  const small=await panel.boundingBox();assert.ok(small.x>=0 && small.width<=390,JSON.stringify(small));
   for(const part of ['move','help','maximize','close']) {
     const box=await panel.locator(`[data-part=${part}]`).boundingBox();
     assert.ok(box.x>=small.x && box.x+box.width<=small.x+small.width,'Window controls stay inside the narrow title bar');
