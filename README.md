@@ -93,7 +93,7 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
-## Latest release: v0.13.0
+## Latest release: v0.13.1
 
 Agents can now perform approved cable and directional frame-loss tests, inspect
 failover and verify recovery. Console helpers and bulk commands support common
@@ -103,7 +103,7 @@ tested Junos profiles use graceful Stop before ZIP export.
 
 A new [native ARM64 source profile](docs/arm64.md) runs custom FRR, LL2S and
 Alpine PCs. Prebuilt releases remain amd64. See the
-[v0.13.0 release notes](docs/releases/v0.13.0.md) for setup, limits and validation.
+[v0.13.1 release notes](docs/releases/v0.13.1.md) for setup, limits and validation.
 
 ## Introduced in v0.12.0
 
@@ -181,7 +181,7 @@ export…**, with confirmation, stopped-device checks and stale-workspace protec
 See [release notes](docs/releases/v0.9.0.md), [traffic monitoring](docs/link-actions.md#monitor-traffic)
 and [backup/reset behavior](docs/backups.md#export-and-reset-the-workspace).
 
-Use **0.13.0** for matching core, Agent, EXOS and optional Internet helper images. The installer retains the
+Use **0.13.1** for matching core, Agent, EXOS and optional Internet helper images. The installer retains the
 optional core-only DNS override from v0.8.3.
 
 ## Weblab FRR

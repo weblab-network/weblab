@@ -279,7 +279,7 @@ jobs:
           ref: ${{ env.SOURCE_REVISION }}
       - name: Select helper identity
         run: |
-          version=0.13.0-dev
+          version=0.13.1-dev
           selector=sha-${SOURCE_REVISION}
           if [ "$RELEASE_BUILD" = true ]; then
             version=${RELEASE_TAG#v}

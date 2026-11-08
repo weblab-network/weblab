@@ -97,8 +97,17 @@ fixture.stderr.on('data', data => { fixtureLog += data; });
     await page.evaluate(()=>activateConsole('r2'));
     const windowActions=page.locator('#console-window-r2 .console-actions');
     await windowActions.locator('summary').tap();
+    // Opening <details> queues its toggle event. A tap can return before that
+    // event positions the menu, especially on CI; assert the resulting layout.
+    await page.waitForFunction(() => {
+      const menu=document.querySelector('#console-window-r2 .console-actions');
+      const box=menu.querySelector('.console-menu-list').getBoundingClientRect();
+      return menu.open && box.width>0 && box.height>0 && box.x>=0 && box.y>=0 &&
+        box.right<=390 && box.bottom<=420;
+    }, null, {timeout:3000});
     const box=await windowActions.locator('.console-menu-list').boundingBox();
-    assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=420,'Menu fits with a small keyboard viewport');
+    assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=420,
+      'Menu fits with a small keyboard viewport: '+JSON.stringify(box));
     await page.screenshot({path:'/tmp/netlab-console-actions-mobile.png'});
     await consoleAction(page.locator('#console-window-r2 [data-dock-consoles]'),true);
     await page.evaluate(()=>activateConsole('r2'));
