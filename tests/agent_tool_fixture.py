@@ -43,7 +43,11 @@ class Model(BaseHTTPRequestHandler):
                             'patch:typeof tools.apply_patch, process:typeof process, fetch:typeof fetch, '
                             'require:typeof require}); '
                             'text(await tools.mcp__weblab__get_lab_state({}));'
-                            r'text({commandValidation:await tools.mcp__weblab__send_console_command({node_id:"missing", command:"show clock\\r", expected_revision:"unused", expected_cursor:"unused"})});')}
+                            'text({linkRead:await tools.mcp__weblab__get_link_state({link_id:"missing"})});'
+                            'text({linkGuard:await tools.mcp__weblab__set_link_frame_loss({link_id:"missing",blocked_a_to_b:true,blocked_b_to_a:false,expected_revision:"unused",expected_link_revision:"unused"})});'
+                            r'text({commandValidation:await tools.mcp__weblab__send_console_command({node_id:"missing", command:"show clock\\r", expected_revision:"unused", expected_cursor:"unused"})});'
+                            r'text({batchValidation:await tools.mcp__weblab__send_console_commands({node_id:"missing", commands:["show clock","show version\\r"], expected_revision:"unused", expected_cursor:"unused"})});'
+                            r'text({bulkValidation:await tools.mcp__weblab__send_console_commands_to_nodes({targets:[{node_id:"missing",expected_cursor:"unused"}], commands:["show clock","show version\\r"], expected_revision:"unused"})});')}
                 if Model.management:
                     item['input'] += (
                         'const payload=r=>{if(r.isError)throw new Error(JSON.stringify(r));return JSON.parse(r.content[0].text);}; '
@@ -64,7 +68,14 @@ class Model(BaseHTTPRequestHandler):
                     except ValueError: pass
                 exposure = next(o for o in objects if isinstance(o,dict) and 'names' in o)
                 assert exposure['names'] and all(n.startswith('mcp__weblab__') for n in exposure['names'])
+                assert {'mcp__weblab__get_link_state', 'mcp__weblab__set_link_frame_loss', 'mcp__weblab__set_link_carrier'} <= set(exposure['names'])
+                assert next(o['linkRead'] for o in objects if isinstance(o,dict) and 'linkRead' in o).get('isError')
+                guarded = next(o['linkGuard'] for o in objects if isinstance(o,dict) and 'linkGuard' in o)
+                assert guarded.get('isError') and 'Read get_link_state' in json.dumps(guarded), guarded
                 assert 'mcp__weblab__send_console_command' in exposure['names']
+                assert 'mcp__weblab__send_console_key' in exposure['names']
+                assert 'mcp__weblab__send_console_commands' in exposure['names']
+                assert 'mcp__weblab__send_console_commands_to_nodes' in exposure['names']
                 assert all(exposure[k] == 'undefined' for k in ('shell','patch','process','fetch','require'))
                 result = next(o for o in objects if isinstance(o,dict) and 'content' in o)
                 assert not result.get('isError'), result
@@ -78,6 +89,10 @@ class Model(BaseHTTPRequestHandler):
                 rejected = next(o['commandValidation'] for o in objects if isinstance(o,dict) and 'commandValidation' in o)
                 assert rejected.get('isError'), rejected
                 assert 'omit Enter escapes' in json.dumps(rejected), rejected
+                batch = next(o['batchValidation'] for o in objects if isinstance(o,dict) and 'batchValidation' in o)
+                assert batch.get('isError') and 'omit Enter escapes' in json.dumps(batch), batch
+                bulk = next(o['bulkValidation'] for o in objects if isinstance(o,dict) and 'bulkValidation' in o)
+                assert bulk.get('isError') and 'omit Enter escapes' in json.dumps(bulk), bulk
                 item = {'id':'msg_fixture','type':'message','role':'assistant','status':'completed',
                         'content':[{'type':'output_text','text':'Fixture verified: Code Mode read the empty Weblab topology; only Weblab tools are callable.','annotations':[]}]}
             Model.calls += 1

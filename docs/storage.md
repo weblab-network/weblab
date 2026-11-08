@@ -93,8 +93,9 @@ storage all affect reclamation. Weblab does not currently enable discard for
 these disks or perform automatic offline disk compaction. Never run repair,
 conversion or compaction against a live guest disk.
 
-Keep the [Junos shutdown sequence](devices.md#juniper-vjunos): commit, issue
-`request system power-off`, wait for guest shutdown, then stop the node/lab or
-container. Storage monitoring does not change Stop semantics or verify guest
-shutdown. Automatic graceful shutdown and complete real-guest ZIP restoration
-coverage remain future work.
+Keep the [Junos shutdown sequence](devices.md#juniper-vjunos): commit, request
+graceful Stop for the tested profiles (or use `request system power-off`), and
+wait for stopped status before exporting or stopping the Weblab container.
+Real-guest ZIP restoration has been checked on both documented 26.2R1.7 profiles.
+Storage monitoring does not establish guest filesystem health or change these
+shutdown requirements.

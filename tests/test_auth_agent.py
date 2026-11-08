@@ -130,6 +130,35 @@ class AuthAgentTests(unittest.TestCase):
         fresh, csrf = self.fixture.login()
         self.assertEqual(self.http('state',cookie=fresh,csrf=csrf)[0],409)
 
+    def test_link_fault_permission_audit_and_logout_boundary(self):
+        settings = {**self.session['settings'], 'link_faults':True, 'auto_approve':True}
+        self.assertEqual(self.http('settings', settings)[0], 200)
+        turn = 'f'*32
+        self.assertEqual(self.http('turn', {'prompt':'Test a cable', 'request_id':turn})[0], 200)
+        local = self.manager.sessions[self.session['id']]
+        self.wait(lambda:local.status == 'running')
+        lab = self.fixture.lab
+        lab.start('r1')
+        self.bridge.automation.console_read('r1', wait_seconds=.1)
+        link = lab.topology['links'][0]['id']
+        def tool(operation, data):
+            return self.bridge.tool(self.session, 'POST', '/api/automation/'+operation, data, turn)
+        read = tool('link-state', {'link_id':link})
+        args = dict(link_id=link, blocked_a_to_b=True, blocked_b_to_a=False,
+                    expected_revision=read['revision'], expected_link_revision=read['link_revision'])
+        self.assertTrue(tool('link-frame-loss', args)['applied'])
+        record = self.auth.activity_page({'source':['agent']})['records'][0]
+        self.assertEqual(record['operation'], 'tool.link-frame-loss')
+        self.assertEqual(record['result'], 'tool_ok')
+        self.assertEqual(record['account'], 'admin')
+        self.assertEqual(record['target'], link)
+        self.assertNotIn(self.session['gate'], json.dumps(record))
+        self.assertEqual(self.fixture.http('/api/automation/link-frame-loss', 'POST', args,
+                                          self.cookie, self.csrf)[0], 403)
+        self.assertEqual(self.fixture.http('/api/auth/logout', 'POST', {}, self.cookie, self.csrf)[0], 200)
+        with self.assertRaises(ValueError): tool('link-state', {'link_id':link})
+        self.assertNotIn(self.session['id'], self.bridge.link_observations)
+
     def test_admin_agent_can_start_and_type_but_cannot_bypass_a_human_lock(self):
         settings = {**self.session['settings'], 'lab_changes':True,
                     'console_input':True, 'auto_approve':True}
@@ -169,6 +198,51 @@ class AuthAgentTests(unittest.TestCase):
             self.assertTrue(client.lock['mine'])
         finally:
             client.close()
+
+    def test_bulk_borrows_own_lock_but_refuses_other_login_before_any_send(self):
+        lab = self.fixture.lab
+        image = self.fixture.root / 'fake.bin'
+        image.write_text(image.read_text().replace("b'BOOT READY\\r\\n'", "b'R# '").replace(
+            "os.write(1, b'RX:' + data)", "os.write(1, b'RX:' + data.replace(b'\\r', b'\\r\\n') + b'\\r\\nR# ')") )
+        lab.start('r1'); lab.start('r2')
+        self.session['settings'].update(console_input=True, auto_approve=True)
+        turn = 'd'*32
+        self.assertEqual(self.http('turn', {'prompt':'Inspect consoles', 'request_id':turn})[0], 200)
+        self.wait(lambda:self.manager.sessions[self.session['id']].status == 'running')
+        def tool(operation, data):
+            return self.bridge.tool(self.session, 'POST', '/api/automation/'+operation, data, turn)
+        other, _ = self.fixture.login()
+        for cookie in (other, self.cookie):
+            with self.subTest(own=cookie == self.cookie):
+                human = test_lab.WebSocket(self.fixture.port, 'r2', 'netlab.console.v2', headers={'Cookie':cookie})
+                try:
+                    human.output, human.lock = b'', None
+                    wait = lambda predicate:test_console_lock.ConsoleLockTests.read_until(self, human, predicate)
+                    wait(lambda:human.lock is not None)
+                    human.send(json.dumps({'action':'lock', 'revision':human.lock['revision']}).encode())
+                    wait(lambda:human.lock['mine'])
+                    targets = []
+                    for node in ('r1', 'r2'):
+                        read = tool('console-read', {'node_id':node, 'wait_seconds':.1, 'latest':True})
+                        targets.append({'node_id':node,'expected_cursor':read['cursor']})
+                    args = {'targets':targets, 'expected_revision':read['revision'], 'input':'bulk-check\r', 'wait_seconds':.1}
+                    with self.assertRaises(TypeError): tool('console-send-bulk', {**args, 'identity':self.owner})
+                    if cookie == self.cookie:
+                        result = tool('console-send-bulk', args)
+                        self.assertEqual(result['input_status'], 'sent')
+                        wait(lambda:b'bulk-check' in human.output)
+                        self.assertTrue(tool('console-read', {'node_id':'r2', 'wait_seconds':.1})['lock_owned_by_session'])
+                    else:
+                        with self.assertRaisesRegex(lab_server.LabError, 'lock'):
+                            tool('console-send-bulk', args)
+                        self.assertNotIn('bulk-check', tool('console-read', {'node_id':'r1', 'wait_seconds':.1})['output'])
+                    self.assertTrue(human.lock['mine'])
+                finally:
+                    human.close()
+        records = self.auth.activity_page({'source':['agent']})['records']
+        self.assertEqual(records[0]['operation'], 'tool.console-send-bulk')
+        self.assertEqual(records[0]['result'], 'input_sent')
+        self.assertNotIn('bulk-check', json.dumps(records))
 
     def test_expiry_rejects_gateway_before_cleanup_and_retries_offline_cleanup(self):
         self.assertEqual(self.http('state')[0],200)

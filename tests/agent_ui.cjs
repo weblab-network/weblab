@@ -24,7 +24,7 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
  page.on('pageerror',e=>errors.push(e.message));
  await page.goto(base);await page.waitForFunction(()=>loaded);
  assert.ok(await page.locator('#open-agent').isHidden());
- let status='idle',messages=[],count=0,stop=0,proposals=[],approvals=[],decisions=[],phase='Thinking',toolError=null,usage=null,auth={status:'unknown',signed_in:false,models:[]};
+ let status='idle',messages=[],count=0,stop=0,proposals=[],approvals=[],decisions=[],phase='Thinking',toolError=null,usage=null,stateError='',auth={status:'unknown',signed_in:false,models:[]};
  const settings={endpoint:'http://model:11434/v1',model:'gpt-oss:20b',lab_changes:false,console_input:false,auto_approve:false,context_window:32768,turn_timeout:900};
  let conversationId='c'.repeat(32), conversationNumber=0;
  const historyRecords=new Map();
@@ -37,7 +37,7 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
    record.messages=messages;if(!record.title && messages.length)record.title=messages[0].text.slice(0,100);
    historyRecords.set(conversationId,record);
    const history=[...historyRecords.values()].map(r=>({id:r.id,title:r.title||'New conversation',updated:r.updated,model:r.settings.model,active:r.id===conversationId,message_count:r.messages.length}));
-   return {status,messages,settings,proposals,approvals,history,conversation_id:conversationId,activity:'',error:'',phase,elapsed_seconds:5,quiet_seconds:0,tool_error:toolError,usage,auth};
+   return {status,messages,settings,proposals,approvals,history,conversation_id:conversationId,activity:'',error:stateError,phase,elapsed_seconds:5,quiet_seconds:0,tool_error:toolError,usage,auth};
   };
   let result;
   if(action==='info')result={enabled:true,providers:[settings.endpoint]};
@@ -76,7 +76,15 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
    else if(action==='history-open'){state();conversationId=body.id;messages=historyRecords.get(body.id).messages;proposals=[];approvals=[];status='completed';result=state();}
    else if(action==='history-rename'){historyRecords.get(body.id).title=body.title;result=state();}
    else if(action==='history-delete'){historyRecords.delete(body.id);result=state();}
-   else if(action==='decision'){decisions.push(body);if(body.auto_approve)settings.auto_approve=true;approvals.find(a=>a.id===body.id).status=body.approve?'completed':'denied';result=state();}
+   else if(action==='decision'){
+    decisions.push(body);if(body.auto_approve)settings.auto_approve=true;
+    const item=approvals.find(a=>a.id===body.id);item.status=body.approve?'completed':'denied';
+    if(body.approve && item.operation==='console-send'){
+      item.input_status='sent';item.result_evidence={scope:'this_capture_only',tail_hint:'user_exec',
+        error_lines:['% Invalid input <img src=x onerror="window.injected=true">']};
+    }
+    result=state();
+   }
    else if(action==='proposal')result={topology:{version:1,name:'VLAN practice',nodes:[],links:[]},instructions_markdown:'# Exercise',warnings:['Review before import']};
    else throw Error(action);
   }
@@ -88,14 +96,17 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
  assert.equal(await page.locator('#agent-tabs #agent-settings-tab').count(),1);
  assert.equal(await page.locator('#agent-auto-approve').isChecked(),false);
  assert.equal(await page.locator('#agent-internet-changes').isChecked(),false);
+ assert.equal(await page.locator('#agent-link-faults').isChecked(),false);
  assert.equal(await page.locator('#agent-deadline').getAttribute('max'),'3600');
  await page.locator('#agent-check').click();await page.waitForFunction(()=>document.querySelector('#agent-check-result').textContent.includes('available'));
  assert.equal(await page.locator('#agent-model').getAttribute('placeholder'),'gpt-oss:20b');
  await page.locator('#agent-model').fill('vision-test');
  await page.locator('#agent-lab-changes').check();await page.locator('#agent-console-input').check();
  await page.locator('#agent-internet-changes').check();
+ await page.locator('#agent-link-faults').check();
  await page.locator('#agent-save').click();await page.locator('#agent-chat').waitFor({state:'visible'});
  assert.equal(settings.internet_changes,true);
+ assert.equal(settings.link_faults,true);
  assert.ok(await page.locator('#agent-intro').isVisible());
  assert.ok((await page.locator('#agent-prompt').getAttribute('placeholder')).startsWith('Create an FRR'));
  const cfg={name:'router.cfg',mimeType:'text/plain',buffer:Buffer.from('router ospf\n<img src=x onerror="window.injected=true">')};
@@ -175,7 +186,10 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
  assert.equal(await page.locator('#agent-approvals img').count(),0);
  assert.ok((await page.locator('#agent-approvals pre').textContent()).includes('show version\\r'));
  await page.getByRole('button',{name:'Approve once',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('#agent-approvals').textContent.includes('completed'));
+ await page.waitForFunction(()=>document.querySelector('#agent-approvals').textContent.includes('Input sent'));
+ assert.ok((await page.locator('#agent-approvals').textContent()).includes('Command completion is unverified'));
+ assert.ok((await page.locator('#agent-approvals pre').textContent()).includes('% Invalid input'));
+ assert.equal(await page.locator('#agent-approvals img').count(),0);
  assert.deepEqual(decisions,[{id:'approval1',approve:true}]);
  approvals=[{...approvals[0],id:'approval2',status:'pending'}];
  await page.locator('#agent-approval-dialog').waitFor({state:'visible'});
@@ -235,6 +249,16 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
  assert.match(await page.locator('#agent-usage-detail').textContent(),/Turn duration: 1m 23s/);
  usage=null;
  await page.waitForFunction(()=>document.querySelector('#agent-status').textContent.endsWith(' · completed'));
+ await page.locator('#agent-chat-tab').click();
+ await page.locator('#agent-prompt').fill('Inspect completed operations and continue');
+ status='failed';stateError='The model ended without a text response. Completed operations remain; inspect Operations before asking it to continue. No prompt was resent.';
+ await page.waitForFunction(()=>document.querySelector('#agent-status').textContent.includes('without a text response'));
+ assert.ok(await page.locator('#agent-status').isVisible());
+ assert.ok(await page.locator('#agent-send').isEnabled());
+ assert.ok(await page.locator('#agent-stop').isDisabled());
+ assert.equal(count,1,'An empty response error does not automatically resend the prompt');
+ assert.equal(await page.locator('#agent-prompt').inputValue(),'Inspect completed operations and continue');
+ status='completed';stateError='';
  await page.locator('#agent-settings-tab').click();await page.locator('#agent-auto-approve').check();
  await page.locator('#agent-deadline').fill('1800');await page.locator('#agent-save').click();
  await page.waitForFunction(()=>document.querySelector('#agent-mode').textContent==='YOLO');
@@ -348,7 +372,11 @@ let logs='';fixture.stderr.on('data',d=>logs+=d);
  assert.match(await page.locator('#agent-usage-detail').textContent(),/Account-wide/);
  const activityBox=await page.locator('#agent-status-line').boundingBox(),usageBox=await page.locator('#agent-usage-summary').boundingBox();
  assert.ok(usageBox.x>activityBox.x+activityBox.width/2 && usageBox.y>=activityBox.y && usageBox.y+usageBox.height<=activityBox.y+activityBox.height+1);
- await page.locator('#agent-usage-refresh').click();
+ await Promise.all([
+  page.waitForResponse(response=>response.url().endsWith('/api/agent/login-status') && response.request().method()==='POST'),
+  page.locator('#agent-usage-refresh').click()
+ ]);
+ await page.waitForFunction(()=>!document.querySelector('#agent-usage-refresh').disabled);
  auth.allowance.unavailable=true;
  await page.waitForFunction(()=>document.querySelector('#agent-usage-summary').textContent.includes('last known'));
  await page.locator('#agent-usage-summary').click();await page.keyboard.press('Escape');

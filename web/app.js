@@ -23,6 +23,7 @@ const icons = {
 };
 workspaceQueryAll("[data-icon]").forEach(el => el.innerHTML = icons[el.dataset.icon]);
 let topology = {version: 1, name: "Untitled lab", nodes: [], links: []};
+let containerOnly = false;
 let statuses = {}, images = [], selected = null, busy = false, loaded = false, dragging = false;
 let allowUntestedFrr = false;
 let iolL1Profiles = [];
@@ -46,8 +47,8 @@ const hasRunning = () => Object.values(statuses).some(s => s.state === "running"
 const isQemu = n => n.type !== "pc" && n.image?.endsWith(".qcow2");
 const isExos = n => isQemu(n) && /^exos-vm[_-]/i.test(n.image);
 const isVeos = n => isQemu(n) && /^veos(?:64)?-lab-/i.test(n.image);
-const isLl2s = n => ["ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1", "ghcr.io/weblab-network/ll2s:0.2.0", "ll2s:dev"].includes(n.image);
-const isFrr = n => n.image?.startsWith("quay.io/frrouting/frr:") || ["weblab-frr:10.7.1-lldp1", "weblab-frr:10.7.1-lldp-snmp1", "weblab-frr:10.7.1-lldp-snmp-vlan1", "weblab-frr:10.7.1-lldp-snmp-vlan-vrrp1", "ghcr.io/weblab-network/weblab-frr:10.7.1-wl1"].includes(n.image);
+const isLl2s = n => ["ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1", "ghcr.io/weblab-network/ll2s:0.2.0", "ll2s:dev", "ll2s:0.2.0-ovs-rstp1-arm64"].includes(n.image);
+const isFrr = n => n.image?.startsWith("quay.io/frrouting/frr:") || ["weblab-frr:10.7.1-lldp1", "weblab-frr:10.7.1-lldp-snmp1", "weblab-frr:10.7.1-lldp-snmp-vlan1", "weblab-frr:10.7.1-lldp-snmp-vlan-vrrp1", "ghcr.io/weblab-network/weblab-frr:10.7.1-wl1", "weblab-frr:10.7.1-wl1-arm64"].includes(n.image);
 const isJunosSwitch = n => isQemu(n) && /^vjunos-switch-/i.test(n.image);
 const isJunosEvolved = n => isQemu(n) && /^vjunosevolved-/i.test(n.image);
 const isJunos = n => isJunosSwitch(n) || isJunosEvolved(n);
@@ -168,6 +169,15 @@ function accept(result, updateForm = true) {
   window.dispatchEvent(new CustomEvent('weblab-storage', {detail:result.storage}));
   iolL1Profiles = result.iol_l1_profiles || [];
   allowUntestedFrr = result.allow_untested_frr === true;
+  containerOnly = result.container_only === true;
+  $('upload-image').hidden = containerOnly;
+  for (const [type, label] of [['switch', 'LL2S · Layer 2'], ['router', 'FRR · Layer 3']]) {
+    const caption = document.querySelector(`.device-template[data-type="${type}"] small`);
+    if (caption && containerOnly) caption.textContent = label;
+  }
+  const internetTile = document.querySelector('.device-template[data-type="cloud"]');
+  internetTile.title = containerOnly ? 'Internet is unavailable in the ARM64 container-only profile.' : '';
+
   topology = result.topology; statuses = result.status; images = result.images; loaded = true;
   linkStates = result.link_state || {}; linkError = result.link_error || "";
   for (const id of selectedNodes) if (!nodeById(id)) selectedNodes.delete(id);
@@ -493,7 +503,7 @@ function applyRoleControls() {
 }
 
 function updateControls() {
-  $("upload-image").disabled = busy || !loaded;
+  $("upload-image").disabled = busy || !loaded || containerOnly;
   for (const id of ["start-all", "stop-all", "import", "export", "starter", "link-tool", "select-tool", "multi-select-tool", "apply-node", "start-node", "stop-node", "open-console", "delete-node", "logs"]) $(id).disabled = busy || !loaded;
   $("start-all").disabled ||= !topology.nodes.some(n => !isDiagram(n) && state(n.id) !== "running");
   $("stop-all").disabled ||= !hasRunning();
@@ -501,7 +511,7 @@ function updateControls() {
   $("link-tool").disabled ||= hasRunning();
   $("lab-name").disabled = busy || !loaded;
   $("node-name").disabled = busy || !loaded || !authCan("admin");
-  workspaceQueryAll(".device-template").forEach(el => { el.disabled = busy || !loaded || hasRunning(); el.draggable = !el.disabled; });
+  workspaceQueryAll(".device-template").forEach(el => { el.disabled = busy || !loaded || hasRunning() || (containerOnly && el.dataset.type === 'cloud'); el.draggable = !el.disabled; });
   $("delete-node").disabled ||= hasRunning();
   if (selected) {
     $("start-node").disabled ||= state(selected) === "running";
@@ -738,7 +748,7 @@ function renderEthernetSettings(n) {
   $("ethernet-label").textContent = qcow || frr || ll2s ? "Ethernet interfaces" : "Ethernet slots";
   $("node-ethernet").innerHTML = Array.from({length: exos ? 12 : veos || junos ? 15 : qcow ? 16 : 8}, (_, i) => `<option>${i + (exos || veos || junos ? 2 : 1)}</option>`).join("");
   $("node-ethernet").value = n.ethernet;
-  $("ethernet-help").textContent = ll2s ? `LL2S switch: eth0–eth7, Open vSwitch, no KVM. Install ${n.image} on the Docker host; load its openvswitch module. Fresh switches use RSTP and access VLAN 1. Configure in ll2sh, commit, then write memory before Stop. Exit opens a Linux shell; type ll2sh to return.` : junos ? "Junos: 4 vCPUs, management plus ge-/et-0/0/x data ports. Switch needs bare-metal Intel KVM and at least 5120 MB; Evolved needs UEFI and 8192 MB. Before Stop: commit, then request system power-off and wait for shutdown. Initial snippets and config-text export are not supported." : n.image === "ghcr.io/weblab-network/weblab-frr:10.7.1-wl1" ? "Weblab FRR: LLDP, read-only SNMPv2c, routed VLANs and IPv4 VRRP through vtysh. Pull this image on the Docker host or load the release archive first. LLDP/SNMP default off. Write memory before Stop. eth0–eth7; no KVM." : n.image === "weblab-frr:10.7.1-lldp-snmp-vlan-vrrp1" ? "Experimental FRR LLDP/SNMP/VLAN/IPv4 VRRP image: build locally and enable WL_ALLOW_UNTESTED_FRR. Native vrrp commands provision IPv4 virtual interfaces; inspect show vrrp platform. Write memory before Stop. eth0–eth7; no KVM." : n.image === "weblab-frr:10.7.1-lldp-snmp-vlan1" ? "Experimental FRR LLDP/SNMP/VLAN image: build locally and enable WL_ALLOW_UNTESTED_FRR. Create routed tagged interfaces with vlan interface eth0.10 in vtysh; configure addresses and routing on eth0.10. Write memory before Stop. eth0–eth7; no KVM." : n.image === "weblab-frr:10.7.1-lldp-snmp1" ? "Experimental FRR LLDP/SNMP image: build locally and enable WL_ALLOW_UNTESTED_FRR. LLDP and read-only SNMPv2c default off; configure in vtysh. SNMP requires a listen address, source prefix and community. Write memory before Stop. eth0–eth7; no KVM." : n.image === "weblab-frr:10.7.1-lldp1" ? "Experimental FRR LLDP image: build locally, enable WL_ALLOW_UNTESTED_FRR, then configure lldp run in vtysh. LLDP is off by default. Write memory before Stop. eth0–eth7; no KVM." : frr ? "FRR container: eth0–eth7, no KVM. Pull quay.io/frrouting/frr:10.7.1 on the Docker host first. Configure in vtysh. Top-level exit opens the Linux shell; type vtysh to return. Write memory before stopping. Memory is the container limit." : veos ? "Includes Management1 plus Ethernet data ports. Uses 2 vCPUs; tested with 6144 MB RAM. Requires Aboot-veos-serial-8.0.2.iso. On first boot, log in as admin and run zerotouch disable (reboots)." : exos ? "Includes Mgmt plus numbered data ports (1–12). Allow a few minutes for EXOS to boot." : qcow
+  $("ethernet-help").textContent = ll2s ? `LL2S switch: eth0–eth7, Open vSwitch, no KVM. Install ${n.image} on the Docker host; load its openvswitch module. Fresh switches use RSTP and access VLAN 1. Configure in ll2sh, commit, then write memory before Stop. Exit opens a Linux shell; type ll2sh to return.` : junos ? "Junos: 4 vCPUs, management plus ge-/et-0/0/x data ports. Switch needs bare-metal Intel KVM and at least 5120 MB; Evolved needs UEFI and 8192 MB. Before Stop: commit, then request system power-off and wait for shutdown. Initial snippets and config-text export are not supported." : n.image === "ghcr.io/weblab-network/weblab-frr:10.7.1-wl1" ? "Weblab FRR: LLDP, read-only SNMPv2c, routed VLANs and IPv4 VRRP through vtysh. Pull this image on the Docker host or load the release archive first. LLDP/SNMP default off. Write memory before Stop. eth0–eth7; no KVM." : n.image === "weblab-frr:10.7.1-wl1-arm64" ? "Native ARM64 Weblab FRR: LLDP, read-only SNMPv2c, routed VLANs and IPv4 VRRP. Build with tools/build_frr_lldp.py; see docs/arm64.md. Write memory before Stop. eth0–eth7; no KVM." : n.image === "weblab-frr:10.7.1-lldp-snmp-vlan-vrrp1" ? "Experimental FRR LLDP/SNMP/VLAN/IPv4 VRRP image: build locally and enable WL_ALLOW_UNTESTED_FRR. Native vrrp commands provision IPv4 virtual interfaces; inspect show vrrp platform. Write memory before Stop. eth0–eth7; no KVM." : n.image === "weblab-frr:10.7.1-lldp-snmp-vlan1" ? "Experimental FRR LLDP/SNMP/VLAN image: build locally and enable WL_ALLOW_UNTESTED_FRR. Create routed tagged interfaces with vlan interface eth0.10 in vtysh; configure addresses and routing on eth0.10. Write memory before Stop. eth0–eth7; no KVM." : n.image === "weblab-frr:10.7.1-lldp-snmp1" ? "Experimental FRR LLDP/SNMP image: build locally and enable WL_ALLOW_UNTESTED_FRR. LLDP and read-only SNMPv2c default off; configure in vtysh. SNMP requires a listen address, source prefix and community. Write memory before Stop. eth0–eth7; no KVM." : n.image === "weblab-frr:10.7.1-lldp1" ? "Experimental FRR LLDP image: build locally, enable WL_ALLOW_UNTESTED_FRR, then configure lldp run in vtysh. LLDP is off by default. Write memory before Stop. eth0–eth7; no KVM." : frr ? "FRR container: eth0–eth7, no KVM. Pull quay.io/frrouting/frr:10.7.1 on the Docker host first. Configure in vtysh. Top-level exit opens the Linux shell; type vtysh to return. Write memory before stopping. Memory is the container limit." : veos ? "Includes Management1 plus Ethernet data ports. Uses 2 vCPUs; tested with 6144 MB RAM. Requires Aboot-veos-serial-8.0.2.iso. On first boot, log in as admin and run zerotouch disable (reboots)." : exos ? "Includes Mgmt plus numbered data ports (1–12). Allow a few minutes for EXOS to boot." : qcow
     ? "Up to 16 GigabitEthernet interfaces. Allow a few minutes for IOSv to boot."
     : "Four Ethernet ports per slot. Interfaces are shown as slot/port.";
 }
@@ -755,7 +765,8 @@ $("node-image").addEventListener("change", () => {
 
 function updateInspectorStatus() {
   if (!selected) return;
-  $("selected-status").textContent = isDiagram(nodeById(selected)) ? "Diagram only" : state(selected);
+  $("selected-status").textContent = isDiagram(nodeById(selected)) ? "Diagram only" :
+    statuses[selected]?.shutdown_pending ? "Shutting down" : state(selected);
   $("node-error").textContent = statuses[selected]?.error || "";
   $("node-error").hidden = !statuses[selected]?.error;
   const warning = statuses[selected]?.warning || (isFrr(nodeById(selected) || {}) && allowUntestedFrr
@@ -1077,7 +1088,12 @@ $("lab-name").addEventListener("change", () => edit(() => topology.name = $("lab
 $("delete-node").onclick = () => requestDelete("node", selected);
 function stopDevices(id) {
   return perform(id === null ? "Stopping lab…" : "Stopping device…",
-    () => api(id === null ? "/api/lab/stop" : `/api/nodes/${id}/stop`, "POST", {}));
+    async () => {
+      const result = await api(id === null ? "/api/lab/stop" : `/api/nodes/${id}/stop`, "POST", {});
+      if (Object.values(result.status).some(s => s.shutdown_pending))
+        toast('Junos shutdown requested. Wait for stopped status before exporting or restarting the server.');
+      return result;
+    });
 }
 function requestStop(id = null) {
   if (busy || !loaded) return;
@@ -1109,13 +1125,15 @@ $("starter").onclick = () => structuralEdit(() => {
   topology.links.push({id: uid(), a: {node:r.id, port:nodePorts(r)[0]}, b:{node:s.id, port:nodePorts(s)[noConfigExport(s) ? 1 : 0]}}, {id:uid(), a:{node:s.id,port:nodePorts(s)[noConfigExport(s) ? 2 : 1]}, b:{node:p.id,port:"eth0"}});
   setSelection(r.id);
 });
-let pendingResetRevision = null;
+let pendingResetRevision = null, pendingInstructionsRevision = null;
 async function prepareWorkspaceReset(required = $("export-reset").checked) {
   pendingResetRevision = null;
+  pendingInstructionsRevision = null;
   if (!required) return;
   const current = await api("/api/state");
   if (Object.values(current.status).some(s => s.state === 'running')) throw new Error('Stop all nodes before resetting.');
   if (JSON.stringify(current.topology) !== JSON.stringify(topology)) throw new Error('Lab changed. Close Export and try again.');
+  pendingInstructionsRevision = (await api('/api/instructions')).revision;
   pendingResetRevision = current.workspace_revision;
 }
 function showResetConfirmation(exported) {
@@ -1124,6 +1142,7 @@ function showResetConfirmation(exported) {
     ? 'Check that your download has finished and is saved before resetting.'
     : 'No backup will be created. This cannot be undone.';
   $("reset-lab-message").textContent = '';
+  $("reset-preserve-instructions").checked = false;
   $("reset-lab-dialog").showModal();
   $("cancel-reset-lab").focus();
 }
@@ -1144,14 +1163,18 @@ function finishExport() {
   }
 }
 $("cancel-reset-lab").onclick = () => $("reset-lab-dialog").close();
-$("reset-lab-dialog").addEventListener('close', () => { pendingResetRevision = null; });
+$("reset-lab-dialog").addEventListener('close', () => { pendingResetRevision = pendingInstructionsRevision = null; });
 $("reset-lab-dialog").addEventListener('cancel', event => { if (busy) event.preventDefault(); });
 $("confirm-reset-lab").onclick = async () => {
   if (busy || !pendingResetRevision || !authCan('admin')) return;
   busy = true; updateControls();
   $("confirm-reset-lab").disabled = $("cancel-reset-lab").disabled = true;
+  $("reset-preserve-instructions").disabled = true;
   try {
-    const result = await api('/api/lab/reset', 'POST', {expected_revision:pendingResetRevision});
+    const result = await api('/api/lab/reset', 'POST', {expected_revision:pendingResetRevision,
+      expected_instructions_revision:pendingInstructionsRevision,
+      preserve_instructions:$("reset-preserve-instructions").checked});
+    window.weblabInstructions?.didReset(result.instructions);
     for (const id of [...consoleSessions.keys()]) closeConsole(id);
     setSelection(null); accept(result);
     $("reset-lab-dialog").close(); toast('Lab reset. Ready for a new topology.');
@@ -1159,6 +1182,7 @@ $("confirm-reset-lab").onclick = async () => {
   finally {
     busy = false; updateControls();
     $("confirm-reset-lab").disabled = $("cancel-reset-lab").disabled = false;
+    $("reset-preserve-instructions").disabled = false;
   }
 };
 function updateExportControls() {
@@ -1342,10 +1366,12 @@ function consoleStatus(session, text) {
 }
 
 function sendConsoleInput(session, data) {
-  if (!authCan("write") || session.readonly || session.agentBusy) return;
+  if (!authCan("write") || session.readonly || session.agentBusy) return false;
   if (session.socket?.readyState === WebSocket.OPEN && session.lockReady && (!session.locked || session.lockMine)) {
     session.socket.send(new TextEncoder().encode(data));
+    return true;
   }
+  return false;
 }
 
 function consoleControl(session, action, revision = session.lockRevision, extra = {}) {

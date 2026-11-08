@@ -178,3 +178,11 @@ Random packet loss, latency injection, payload corruption
 and moving a cable while devices run are not implemented. Stop the lab before
 recabling. See [development and testing](development.md) for the opt-in carrier
 and forwarding tests.
+
+## Agent and MCP
+
+The Agent's separate **Allow link faults** permission enables exact-action
+requests for directional frame blocking and supported endpoint unplug/reconnect.
+External MCP uses `--allow-link-faults`. Both read `get_link_state` first and
+pass its revisions; stale topology/runtime/fault changes are rejected. See the
+[automation workflow](automation.md#link-faults). Capture tools remain browser-only.

@@ -83,6 +83,7 @@
       <label>Turn deadline (seconds)<input id="agent-deadline" type="number" min="30" max="3600" required></label>
       <p class="agent-hint">Total time for one message, including model generation, tools and approval waits. New sessions default to 900 seconds (15 minutes). Completed actions remain if time runs out; inspect and continue in another turn.</p>
       <label class="agent-permission"><input id="agent-lab-changes" type="checkbox"> Allow topology apply and node starts</label>
+      <label class="agent-permission"><input id="agent-link-faults" type="checkbox"> Allow link faults (frame blocking and unplug/reconnect)</label>
       <label class="agent-permission"><input id="agent-internet-changes" type="checkbox"> Allow Internet gateway settings and stop/start</label>
       <label class="agent-permission"><input id="agent-console-input" type="checkbox"> Allow console input</label>
       <label class="agent-permission"><input id="agent-auto-approve" type="checkbox"> YOLO — automatically approve enabled actions</label>
@@ -112,9 +113,9 @@
   document.body.append(approvalDialog);
   let approvalId = '', deciding = false;
   const dismissedApprovals = new Set();
-  const operationNames = {'apply':'Replace topology','start-node':'Start node','console-send':'Send console input',
+  const operationNames = {'link-frame-loss':'Set directional frame blocking','link-carrier':'Unplug/reconnect cable endpoint','apply':'Replace topology','start-node':'Start node','console-send':'Send console input','console-send-bulk':'Send commands to selected consoles',
     'apply-internet':'Apply Internet settings','stop-internet':'Stop Internet gateway','start-internet':'Start Internet gateway'};
-  function approvalDetail(item) { return JSON.stringify({arguments:item.arguments,context:item.context},null,2); }
+  function approvalDetail(item) { return JSON.stringify({arguments:item.arguments,context:item.context,result_evidence:item.result_evidence},null,2); }
   function syncApprovalDialog() {
     const pending = (state?.approvals || []).filter(item=>item.status==='pending' && item.expires_at*1000>Date.now());
     for (const id of dismissedApprovals) if (!pending.some(item=>item.id===id)) dismissedApprovals.delete(id);
@@ -127,7 +128,7 @@
     approvalId=item.id;
     $('agent-approval-summary').textContent=operationNames[item.operation] || item.operation;
     $('agent-approval-detail').textContent=approvalDetail(item);
-    $('agent-approval-expiry').textContent=`Expires at ${new Date(item.expires_at*1000).toLocaleTimeString()}. Topology, console and input-lock checks still apply.`;
+    $('agent-approval-expiry').textContent=`Expires at ${new Date(item.expires_at*1000).toLocaleTimeString()}. Topology, link state, console and input-lock checks still apply.`;
     $('agent-approval-yolo').checked=false;
     $('agent-approval-accept').textContent='Approve once';
     $('agent-approval-error').hidden=true;
@@ -219,6 +220,7 @@
     $('agent-deadline').value = settings.turn_timeout;
     $('agent-lab-changes').checked = !!settings.lab_changes;
     $('agent-internet-changes').checked = !!settings.internet_changes;
+    $('agent-link-faults').checked = !!settings.link_faults;
     $('agent-console-input').checked = !!settings.console_input;
     $('agent-auto-approve').checked = !!settings.auto_approve;
     settingsDirty = false;
@@ -226,7 +228,7 @@
   function settings() {
     return {provider:$('agent-provider').value,endpoint:$('agent-endpoint').value,model:$('agent-model').value.trim(),
       context_window:Number($('agent-context').value),turn_timeout:Number($('agent-deadline').value),
-      lab_changes:$('agent-lab-changes').checked,internet_changes:$('agent-internet-changes').checked,console_input:$('agent-console-input').checked,
+      lab_changes:$('agent-lab-changes').checked,internet_changes:$('agent-internet-changes').checked,link_faults:$('agent-link-faults').checked,console_input:$('agent-console-input').checked,
       auto_approve:$('agent-auto-approve').checked};
   }
   function providerControls() {
@@ -411,7 +413,8 @@
       const card = document.createElement('article'), title = document.createElement('strong');
       card.className = 'agent-approval';
       card.dataset.status = item.status;
-      title.textContent = `${operationNames[item.operation] || item.operation} · ${item.status}${item.auto_approved ? ' · YOLO' : ''}${item.enabled_auto_approve ? ' · Enabled session YOLO' : ''}`;
+      const outcome = ['console-send','console-send-bulk'].includes(item.operation) && item.status === 'completed' ? 'Input sent' : item.status;
+      title.textContent = `${operationNames[item.operation] || item.operation} · ${outcome}${item.auto_approved ? ' · YOLO' : ''}${item.enabled_auto_approve ? ' · Enabled session YOLO' : ''}`;
       const detail = document.createElement('details'), summary = document.createElement('summary'), content = document.createElement('pre');
       summary.textContent = 'Exact operation and context';
       // JSON escaping makes carriage returns/control bytes visible. Never render device text as HTML.
@@ -430,7 +433,7 @@
       }
       if (item.error || item.input_status) {
         const result = document.createElement('p');
-        result.textContent = item.error || `Input status: ${item.input_status}. Read console output to verify execution.`;
+        result.textContent = item.error || `Input status: ${item.input_status}. Command completion is unverified; inspect device output.`;
         card.append(result);
       }
       container.append(card);
@@ -499,8 +502,9 @@
       get_storage_report:'Checking storage',list_device_profiles:'Reading device profiles',get_authoring_guide:'Reading authoring guide',
       preview_topology:'Validating topology',get_proposal:'Reading proposal',apply_topology:'Applying approved topology',
       get_internet_settings:'Reading gateway settings',preview_internet_settings:'Validating gateway settings',
+      get_link_state:'Reading cable state',set_link_frame_loss:'Changing approved frame blocking',set_link_carrier:'Changing approved cable carrier',
       apply_internet_settings:'Applying approved gateway settings',stop_internet_node:'Stopping approved gateway',start_internet_node:'Starting approved gateway',
-      start_node:'Starting approved node',send_console_input:'Sending approved input'};
+      start_node:'Starting approved node',send_console_input:'Sending approved input',send_console_commands_to_nodes:'Sending approved bulk commands'};
     const raw = state.phase || 'Waiting for model';
     let phase = raw.startsWith('Using ') ? (labels[raw.slice(6)] || 'Using Weblab tool') : raw;
     if (pending) phase = 'Waiting for your approval';
@@ -583,7 +587,7 @@
     renderUsage(next); renderApprovals(next.approvals || []); renderHistory(next.history || []); updateTabCounts(); progress(); syncApprovalDialog();
     const toolError = $('agent-tool-error'); toolError.hidden = !next.tool_error;
     toolError.querySelector('pre').textContent = next.tool_error ? `${next.tool_error.operation}: ${next.tool_error.message}` : '';
-    $('agent-mode').textContent = (next.settings.lab_changes || next.settings.internet_changes || next.settings.console_input) ?
+    $('agent-mode').textContent = (next.settings.lab_changes || next.settings.internet_changes || next.settings.link_faults || next.settings.console_input) ?
       (next.settings.auto_approve ? 'YOLO' : 'Approval required') : 'Read & preview';
     const elapsed = turnDuration(next);
     $('agent-status').textContent = (next.error || `${next.settings.model} · ${next.status}${next.activity ? ' · '+next.activity : ''}`)

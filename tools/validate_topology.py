@@ -13,12 +13,18 @@ class FileValidator:
     def __init__(self, data, image_dir=None):
         self.topology = {'nodes': []}
         self.allow_untested_frr = False
+        # Offline structure/image-file checks are independent of the validator
+        # host's architecture. The target server enforces its profile on Start.
+        self.container_only = False
         self.image_dir = image_dir
         self.data = data
 
     def occupied_ids(self):
         # Port/ID occupancy is checked again when the user imports the lab.
         return set()
+
+    def require_supported_node(self, node):
+        return Lab.require_supported_node(self, node)
 
     def catalog(self):
         if self.image_dir is not None:

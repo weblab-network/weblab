@@ -4,6 +4,9 @@ A browser workspace for building and running network labs with Cisco IOL,
 IOSv/IOSvL2, Virtual EXOS, Arista vEOS-lab, FRRouting, LL2S switches and Alpine PCs,
 plus Juniper vJunos profiles.
 
+On Linux ARM64, the optional [container-only source profile](docs/arm64.md)
+runs native FRR routers, LL2S switches and Alpine PCs.
+
 Keep the topology, multiple device consoles and lab instructions together in one
 page. Float, resize and arrange windows for desktop or tablet use; share consoles
 across workstations with input locks and confirmed takeover. Practice failure
@@ -90,7 +93,19 @@ for the GHCR pull-and-start commands. The optional
 [EXOS demo edition](docs/containers.md) includes Virtual EXOS and an unconfigured
 three-switch/two-PC topology with a companion exercise.
 
-## Latest release: v0.12.0
+## Latest release: v0.13.0
+
+Agents can now perform approved cable and directional frame-loss tests, inspect
+failover and verify recovery. Console helpers and bulk commands support common
+preparation tasks, while fresh reads, input locks and approval guards stay in
+place. Reset clears Instructions unless you choose to preserve them, and the
+tested Junos profiles use graceful Stop before ZIP export.
+
+A new [native ARM64 source profile](docs/arm64.md) runs custom FRR, LL2S and
+Alpine PCs. Prebuilt releases remain amd64. See the
+[v0.13.0 release notes](docs/releases/v0.13.0.md) for setup, limits and validation.
+
+## Introduced in v0.12.0
 
 Connect to shared device consoles over SSH, or enable an Internet node's SSH
 jumpbox to reach configured lab IPs. Public-key grants are managed locally, with
@@ -166,7 +181,7 @@ export…**, with confirmation, stopped-device checks and stale-workspace protec
 See [release notes](docs/releases/v0.9.0.md), [traffic monitoring](docs/link-actions.md#monitor-traffic)
 and [backup/reset behavior](docs/backups.md#export-and-reset-the-workspace).
 
-Use **0.12.0** for matching core, Agent, EXOS and optional Internet helper images. The installer retains the
+Use **0.13.0** for matching core, Agent, EXOS and optional Internet helper images. The installer retains the
 optional core-only DNS override from v0.8.3.
 
 ## Weblab FRR

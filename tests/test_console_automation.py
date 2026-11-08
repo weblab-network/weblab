@@ -222,5 +222,147 @@ class ConsoleAutomationTests(unittest.TestCase):
         self.assertTrue(human.lock['mine'])
 
 
+
+
+class BulkConsoleTests(unittest.TestCase):
+    """Two real shared PTYs: all-target preflight and explicit partial outcomes."""
+    def setUp(self):
+        self.fixture = test_lab.LabTests()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.tearDown)
+        self.lab = self.fixture.lab
+        image = self.fixture.root / 'fake.bin'
+        script = image.read_text().replace("b'BOOT READY\\r\\n'", "b'BOOT READY\\r\\nR# '")
+        script = script.replace("os.write(1, b'RX:' + data)",
+            "os.write(1, data[5:].rstrip(b'\\r') if data.startswith(b'TAIL:') else b'RX:' + data.replace(b'\\r', b'\\r\\n') + b'\\r\\nR# ')")
+        image.write_text(script)
+        self.api = lab_automation.Automation(self.lab, lab_server.LabError, lab_server.ports, lab_server.run)
+        self.lab.automation = self.api
+        self.lab.start('r1')
+        self.lab.start('r2')
+
+    def arguments(self):
+        reads = [self.api.console_read(n, wait_seconds=.1, latest=True) for n in ('r1', 'r2')]
+        return {'targets': [{'node_id': r['node_id'], 'expected_cursor': r['cursor']} for r in reads],
+                'expected_revision': reads[0]['revision'], 'input': 'show clock\rshow version\r', 'wait_seconds': .1}
+
+    def tail(self, node_id, text):
+        r = self.api.console_read(node_id, wait_seconds=.1)
+        self.api.console_send(node_id, 'TAIL:\n'+text+'\r', r['revision'], r['cursor'], wait_seconds=.1)
+
+    def assert_unsent(self):
+        for node in ('r1', 'r2'):
+            self.assertNotIn('show clock', self.api.console_read(node, wait_seconds=.1)['output'])
+
+    def test_real_bulk_http_output_and_lock_release(self):
+        result = self.fixture.request('/api/automation/console-send-bulk', 'POST', self.arguments())
+        self.assertEqual(result['input_status'], 'sent')
+        self.assertEqual(result['command_completion'], 'unverified')
+        self.assertEqual([r['node_id'] for r in result['results']], ['r1', 'r2'])
+        for capture in result['results']:
+            self.assertIn('RX:show clock', capture['output'])
+            self.assertIn('show version', capture['output'])
+            self.assertFalse(self.api.console_read(capture['node_id'], wait_seconds=.1)['locked'])
+
+    def test_second_stale_or_locked_target_prevents_all_input(self):
+        args = self.arguments()
+        self.tail('r2', 'R#')
+        with self.assertRaisesRegex(lab_server.LabError, 'Console changed'):
+            self.api.console_send_bulk(**args)
+        human = console_capture.Console(self.lab.runtime['r2']['port'])
+        self.addCleanup(human.close)
+        human.acquire()
+        with self.assertRaisesRegex(lab_server.LabError, 'input lock'):
+            self.api.console_send_bulk(**self.arguments())
+        self.assert_unsent()
+        self.assertFalse(self.api.console_read('r1', wait_seconds=.1)['locked'])
+
+    def test_unknown_pending_pager_config_or_mixed_mode_refused(self):
+        for tail in ('Password:', 'R#show clock', '--More--', 'R(config-if)#', 'R>', 'still booting'):
+            with self.subTest(tail=tail):
+                self.tail('r2', tail)
+                with self.assertRaisesRegex(lab_server.LabError, 'prompt|mode'):
+                    self.api.console_send_bulk(**self.arguments())
+        # Do not look back to the older R# prompt before a later question.
+        self.assertNotIn('RX:show clock', self.api.console_read('r1', wait_seconds=.1)['output'])
+
+    def test_mixed_pc_or_vendor_refused_before_any_input(self):
+        for kind, image, prompt in (('pc', 'alpine:latest', 'pc:~#'),
+                                     ('router', 'quay.io/frrouting/frr:10.7.1', 'R#')):
+            with self.subTest(image=image):
+                self.lab.node('r2').update(type=kind, image=image)
+                self.tail('r2', prompt)
+                with self.assertRaisesRegex(lab_server.LabError, 'same device family'):
+                    self.api.console_send_bulk(**self.arguments())
+        self.assert_unsent()
+
+    def test_bulk_preflight_uses_recent_tail_not_entire_long_history(self):
+        for node in ('r1', 'r2'):
+            read = self.api.console_read(node, wait_seconds=.1)
+            self.api.console_send(node, 'old-'+'x'*3500+'\r', read['revision'], read['cursor'], wait_seconds=.1)
+        args = self.arguments()
+        with patch.object(console_capture, 'LATEST_SCAN_LIMIT', 16):
+            result = self.api.console_send_bulk(**args)
+        self.assertEqual(result['input_status'], 'sent')
+
+    def test_pc_only_batch_accepts_stock_shell_prompts(self):
+        for node in ('r1', 'r2'):
+            self.lab.node(node).update(type='pc', image='alpine:latest')
+            self.tail(node, '/ # ')
+        args = self.arguments()
+        args['input'] = 'ip address\r'
+        result = self.api.console_send_bulk(**args)
+        self.assertEqual(result['platform'], 'alpine')
+        self.assertEqual(result['input_status'], 'sent')
+
+    def test_malformed_arguments_never_send_a_valid_prefix(self):
+        args = self.arguments()
+        variants = [{'targets': []}, {'targets': args['targets']*5}, {'targets': [args['targets'][0]]*2},
+                    {'targets': [{'node_id':'r1', 'expected_cursor':None}]}, {'input':'show clock\r\r'},
+                    {'input':'show clock\rnext\nline\r'}, {'input':'show clock\rnext\\r\r'},
+                    {'input':'show clock\r\x03\r'}, {'input':'show clock'}, {'input':'x\r'*33},
+                    {'input':'x'*4096+'\r'}, {'wait_seconds':6}, {'expected_revision':'stale'}]
+        for change in variants:
+            with self.subTest(change=change), self.assertRaises(lab_server.LabError):
+                self.api.console_send_bulk(**{**args, **change})
+        self.assert_unsent()
+
+    def test_stop_between_targets_reports_partial_and_does_not_retry(self):
+        checks = []
+        def guard():
+            checks.append(1)
+            if len(checks) == 2:
+                raise ValueError('Turn expired')
+        self.api._console_bulk_guard = guard
+        result = self.api.console_send_bulk(**self.arguments())
+        self.assertEqual(result['input_status'], 'partial')
+        self.assertEqual([r['input_status'] for r in result['results']], ['sent', 'not_sent'])
+        self.assertIn('Turn expired', result['results'][1]['error'])
+        self.assertNotIn('show clock', self.api.console_read('r2', wait_seconds=.1)['output'])
+
+    def test_uncertain_send_stops_remaining_nodes_and_keeps_read_cursor(self):
+        original = console_capture.Console.send
+        def disconnected(console, data, opcode=2):
+            if opcode == 2:
+                raise OSError('connection lost during send')
+            return original(console, data, opcode)
+        args = self.arguments()
+        with patch.object(console_capture.Console, 'send', disconnected):
+            result = self.api.console_send_bulk(**args)
+        self.assertEqual([r['input_status'] for r in result['results']], ['unknown', 'not_sent'])
+        self.assertEqual(result['results'][0]['cursor'], args['targets'][0]['expected_cursor'])
+        self.assertEqual(result['results'][0]['capture_end'], 'limit')
+        self.assert_unsent()
+
+    def test_total_capture_budget_preserves_resume_on_each_node(self):
+        result = self.api.console_send_bulk(**self.arguments(), max_bytes=8)
+        self.assertEqual(result['capture_max_bytes_per_node'], 4)
+        for capture in result['results']:
+            self.assertEqual(capture['capture_end'], 'limit')
+            self.assertEqual(capture['bytes_read'], 4)
+            rest = self.api.console_read(capture['node_id'], cursor=capture['cursor'], wait_seconds=.1)
+            self.assertIn('RX:show clock\nshow version', capture['output'] + rest['output'])
+
+
 if __name__ == '__main__':
     unittest.main()

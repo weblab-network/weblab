@@ -37,6 +37,11 @@ Compose services; this release is not a Docker-in-Docker appliance.
 
 ## Build and select
 
+The builder also supports a native Linux ARM64 Docker host. It chooses a pinned
+ARM64 base and defaults to `weblab-frr:10.7.1-wl1-arm64`, with the same extensions
+and explicit local-build opt-in. See the [ARM64 setup guide](../../docs/arm64.md).
+The published release image and archive described above remain amd64.
+
 Docker and a local upstream FRR Git checkout containing release `frr-10.7.1`
 are required. From the Weblab source directory:
 

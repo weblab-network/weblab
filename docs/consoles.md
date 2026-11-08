@@ -127,6 +127,33 @@ The Hide action keeps sessions and the selected layout alive; click a node to
 show the panel again. Reload starts docked; window placement and local terminal history are not restored.
 Font and clipboard preferences remain saved in this browser. No separate browser window opens.
 
+## Bulk console commands
+
+Choose **Layout → Bulk console commands…** on the topology, or **Actions →
+Bulk console commands…** in any console pane, including floating/pop-out panes.
+The dialog opens in the main workspace. Select devices with the checkboxes and
+paste commands, one per line. No devices are selected automatically. Closed
+consoles open on send; stopped devices, read-only access, other stations' locks
+and consoles currently used by the Agent cannot receive the paste.
+
+Blank lines press Enter. The final line is submitted even without a trailing
+newline. **Insert Cisco startup example** inserts two blank lines, `enable`, and
+`terminal length 0`; use it only on a Cisco CLI where `enable` needs no password.
+Enter real newlines in the text box, rather than literal `\n` or `\r` text.
+Each paste is limited to 32 lines and 4096 UTF-8 bytes, including Enter keys.
+
+Check the prompts first. This is a paste into each selected shared console: it
+does not wait between commands, stop on errors, answer questions or verify the
+result. Each device reports submitted, skipped or uncertain delivery; inspect
+its console output before continuing. There are no automatic retries. Close
+the dialog to cancel devices still waiting; input already submitted remains.
+Reopen the dialog for another batch. Commands stay in this page's memory until
+reload and are not saved as a browser preference.
+
+Agents have a separate guarded MCP tool, `send_console_commands_to_nodes`.
+It requires fresh console reads, empty recognized prompts and a single device
+family/mode per batch. See the [agent console guide](agent-console-guide.md#send-the-same-commands-to-several-nodes).
+
 ## Clipboard
 
 **Actions → Clipboard** enables optional **Copy on selection / right-click

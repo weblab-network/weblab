@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "name": "ARM64 \u2014 OSPF over redundant LL2S",
+  "nodes": [
+    {
+      "id": "nfcbc925291c14d2db117da1",
+      "type": "switch",
+      "name": "SW1",
+      "image": "ll2s:0.2.0-ovs-rstp1-arm64",
+      "memory": 256,
+      "ethernet": 3,
+      "x": 410,
+      "y": 260,
+      "startup_config": "hostname SW1\nspanning-tree mode rstp\nspanning-tree priority 4096\nlldp run\nvlan 1,100\ninterface eth0\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth1\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth2\n switchport mode access\n switchport access vlan 100\n spanning-tree portfast\n no shutdown\nexit\n"
+    },
+    {
+      "id": "n30b84fa8ea2347b8bb4f9fc",
+      "type": "router",
+      "name": "R1",
+      "image": "weblab-frr:10.7.1-wl1-arm64",
+      "memory": 512,
+      "ethernet": 2,
+      "x": 220,
+      "y": 260,
+      "startup_config": "frr defaults traditional\nhostname R1\nservice integrated-vtysh-config\nlldp run\ninterface lo\n ip address 10.255.0.1/32\n ip ospf area 0\ninterface eth0\n description Transit through LL2S VLAN 100\n ip address 10.100.0.1/24\n ip ospf area 0\n ip ospf hello-interval 1\n ip ospf dead-interval 4\ninterface eth1\n description PC LAN\n ip address 10.0.1.1/24\n ip ospf area 0\nrouter ospf\n ospf router-id 10.255.0.1\n passive-interface default\n no passive-interface eth0\n!\n"
+    },
+    {
+      "id": "nde79ca556e904abb973ceb4",
+      "type": "pc",
+      "name": "PC1",
+      "image": "alpine:latest",
+      "memory": 256,
+      "ethernet": 1,
+      "x": 220,
+      "y": 440,
+      "ipv4": "10.0.1.10/24",
+      "gateway": "10.0.1.1"
+    },
+    {
+      "id": "nf289c2a634e946048ac9881",
+      "type": "switch",
+      "name": "SW2",
+      "image": "ll2s:0.2.0-ovs-rstp1-arm64",
+      "memory": 256,
+      "ethernet": 3,
+      "x": 630,
+      "y": 260,
+      "startup_config": "hostname SW2\nspanning-tree mode rstp\nspanning-tree priority 8192\nlldp run\nvlan 1,100\ninterface eth0\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth1\n switchport mode trunk\n switchport trunk allowed vlan 100\n no shutdown\nexit\ninterface eth2\n switchport mode access\n switchport access vlan 100\n spanning-tree portfast\n no shutdown\nexit\n"
+    },
+    {
+      "id": "n4c8905cce9c84c259ed44ef",
+      "type": "router",
+      "name": "R2",
+      "image": "weblab-frr:10.7.1-wl1-arm64",
+      "memory": 512,
+      "ethernet": 2,
+      "x": 820,
+      "y": 260,
+      "startup_config": "frr defaults traditional\nhostname R2\nservice integrated-vtysh-config\nlldp run\ninterface lo\n ip address 10.255.0.2/32\n ip ospf area 0\ninterface eth0\n description Transit through LL2S VLAN 100\n ip address 10.100.0.2/24\n ip ospf area 0\n ip ospf hello-interval 1\n ip ospf dead-interval 4\ninterface eth1\n description PC LAN\n ip address 10.0.2.1/24\n ip ospf area 0\nrouter ospf\n ospf router-id 10.255.0.2\n passive-interface default\n no passive-interface eth0\n!\n"
+    },
+    {
+      "id": "n3fefb57c647f448ba1a3fe9",
+      "type": "pc",
+      "name": "PC2",
+      "image": "alpine:latest",
+      "memory": 256,
+      "ethernet": 1,
+      "x": 820,
+      "y": 440,
+      "ipv4": "10.0.2.10/24",
+      "gateway": "10.0.2.1"
+    }
+  ],
+  "links": [
+    {
+      "id": "l3af77fb1ce0544c6ad7469e",
+      "a": {
+        "node": "nfcbc925291c14d2db117da1",
+        "port": "eth0"
+      },
+      "b": {
+        "node": "nf289c2a634e946048ac9881",
+        "port": "eth0"
+      }
+    },
+    {
+      "id": "l54b8096fa1cc4b26839a94e",
+      "a": {
+        "node": "nfcbc925291c14d2db117da1",
+        "port": "eth1"
+      },
+      "b": {
+        "node": "nf289c2a634e946048ac9881",
+        "port": "eth1"
+      }
+    },
+    {
+      "id": "l6be452f24aed4e668c05c05",
+      "a": {
+        "node": "n30b84fa8ea2347b8bb4f9fc",
+        "port": "eth0"
+      },
+      "b": {
+        "node": "nfcbc925291c14d2db117da1",
+        "port": "eth2"
+      }
+    },
+    {
+      "id": "l969a34ecf37540e5b517864",
+      "a": {
+        "node": "n4c8905cce9c84c259ed44ef",
+        "port": "eth0"
+      },
+      "b": {
+        "node": "nf289c2a634e946048ac9881",
+        "port": "eth2"
+      }
+    },
+    {
+      "id": "leb30db8e0e4e4003a98d4be",
+      "a": {
+        "node": "nde79ca556e904abb973ceb4",
+        "port": "eth0"
+      },
+      "b": {
+        "node": "n30b84fa8ea2347b8bb4f9fc",
+        "port": "eth1"
+      }
+    },
+    {
+      "id": "lc9e72cdd499f44ad8c84a5d",
+      "a": {
+        "node": "n3fefb57c647f448ba1a3fe9",
+        "port": "eth0"
+      },
+      "b": {
+        "node": "n4c8905cce9c84c259ed44ef",
+        "port": "eth1"
+      }
+    }
+  ]
+}

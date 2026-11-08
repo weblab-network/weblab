@@ -6,13 +6,13 @@ The optional **Agent** button opens a floating tabbed window.
 It uses a separate Codex app-server companion and an operator-selected Ollama
 model or OpenAI model through ChatGPT sign-in to discover profiles, draft exercises and inspect live consoles. By default
 it can read and preview. In **Settings**, separately enable **topology apply and
-node starts**, **Internet gateway settings and stop/start**, and **console input**
+node starts**, **Internet gateway settings and stop/start**, **link faults**, and **console input**
 to let it request those changes independently. By default each
 operation requires your approval in Operations. The optional **YOLO** setting
 preapproves enabled actions for this session; it is off by default.
 Topology apply replaces the current topology; all nodes must already be stopped.
-Stopping ordinary guest nodes, deleting nodes, manipulating live links and uploading
-images remain manual operations. The agent can configure running devices through their CLI
+Stopping ordinary guest nodes, adding/removing live cables, deleting nodes and
+uploading images remain manual operations. The agent can configure running devices through their CLI
 when input is enabled and approved, individually or through YOLO.
 
 The Agent's required authoring guide includes an
@@ -20,8 +20,8 @@ The Agent's required authoring guide includes an
 directional frame blocking for UDLD/loop guard, carrier control, traffic capture,
 Instructions, gateway settings, diagrams and backup limits. It distinguishes
 available tools from browser-only steps the learner must perform. This adds
-guidance, not new tools or permissions; capture, link-fault controls and publishing
-Instructions remain browser actions.
+guidance; capture and publishing Instructions remain browser actions. Link faults
+have dedicated tools and a separate default-off permission.
 
 Agent replies display Markdown headings, emphasis, lists, tables and code blocks.
 Wide tables and code blocks scroll within the reply. Raw HTML is shown as text;
@@ -49,6 +49,25 @@ Existing sessions retain that permission off. Full topology apply still replaces
 the complete topology with all nodes stopped. See the
 [MCP feature coverage](automation.md#internet-gateways-and-appearance).
 
+**Allow link faults (frame blocking and unplug/reconnect)** is a separate,
+default-off permission for both providers. The Agent first reads `get_link_state`,
+then can request `set_link_frame_loss` for A→B, B→A, both, or neither, and
+`set_link_carrier` for unplug/reconnect of a supported endpoint. Operations shows
+the named endpoints, current state and exact requested flags. Each write needs a
+fresh read in this turn and approval, unless session YOLO is enabled. Layout-only
+moves are allowed; changed topology, endpoint/relay runtimes or intervening fault
+changes invalidate the request. Reads from another session cannot authorize it.
+
+Frame blocking leaves carrier unchanged; clearing it does not reconnect a cable.
+Reconnect leaves frame blocking unchanged. Tested IOL profiles still require the
+Inspector's explicit carrier opt-in while stopped. Carrier requests may take time
+to reach the guest; errors can leave an **uncertain** state. The Agent must inspect
+state and console evidence before continuing and report any remaining faults.
+Capture controls and Instructions publishing still require the browser.
+After upgrading the source, rebuild/recreate both core and Agent containers and
+reload the browser to obtain the new setting and tools; existing sessions default
+to having this permission off.
+
 Initial console checks show the latest retained output rather than the start of
 old boot logs. When older text is omitted, the tool reports it; the excerpt is
 not a complete running configuration. Subsequent reads use a cursor to collect
@@ -57,13 +76,34 @@ continue reading before typing. Console changes and human input locks still
 reject stale input, including in YOLO mode. A timeout alone does not prove a
 guest is ready or a command has finished.
 
+Both providers also have `send_console_commands` for a small, explicitly approved
+batch on one device. `send_console_commands_to_nodes` shares the same commands
+across 1–8 selected devices after a fresh read and empty-prompt check for every
+console. It rejects mixed PCs/network CLIs, vendors and prompt modes, and reports
+partial delivery per node. Both use the console-input permission and one exact
+approval per batch. The single-device helper validates 1–32 command strings,
+then pastes them without intermediate waits or error checks. Use only predictable non-interactive steps;
+passwords, confirmations and pagers need separate handling. See the
+[console guide](agent-console-guide.md) for the paging dictionary and read/send workflow.
+
 Both providers can use `send_console_command` for one plain-text CLI command;
 the tool appends Enter automatically. It uses the existing console-input setting
 and appears as **Send console input** in Operations, with the exact bytes shown
 for approval. Multiline input, control characters and literal `\r`/`\n` escapes
-are rejected before sending. The raw `send_console_input` tool remains available
-for bare Enter, control keys and pager input. Neither tool clears pending input
-or verifies successful execution automatically.
+are rejected before sending. `send_console_key` sends a named Enter, space, Tab,
+Ctrl+C or Ctrl+U without requiring the model to encode control characters. Raw
+`send_console_input` remains available for other keys and literal/partial text.
+All three share the same input permission and approvals; none clears pending
+input or verifies successful execution automatically.
+
+For requested console work, the Agent is instructed to try one named Enter when
+only idle boot/syslog messages remain without a prompt, then read again. It must
+first rule out known unfinished input, login/password or confirmation questions,
+pagers and active commands. Old boot messages alone do not mean the device is
+still booting. Model compliance with these instructions still needs verification.
+Console results also include contextual guidance for idle Cisco syslog tails and
+recognized pagers. This advice never sends keys automatically or treats an
+unrecognized console state as ready.
 
 Ollama sessions use compact MCP responses: node discovery excludes bulky startup
 snippets and pages large topologies with explicit continuation offsets. Console
@@ -87,7 +127,7 @@ login. Writer/reader Agent access and external MCP remain disabled. See
 
 ## Known model and console issues
 
-In testing with Ollama-hosted `gpt-oss:20b` and Qwen3.5 9B, local models could
+In testing with Ollama-hosted `gpt-oss:20b`, Gemma4 12B and Qwen3.5 9B, local models could
 discover devices and complete some console tasks, but did not reliably finish
 multi-step configuration or verification. Observed failures included:
 
@@ -99,6 +139,9 @@ multi-step configuration or verification. Observed failures included:
   all pages/chunks of command output.
 - Claiming an action succeeded when it was rejected, or describing an explicit
   CLI error as no output. A completed conversation is not a verified result.
+- Ending a turn after tools without a text response. Weblab now reports this as
+  a failed response with an explicit explanation; completed operations remain
+  recorded. It does not automatically resend the prompt or repeat those actions.
 
 These issues are not exclusive to local models. An OpenAI `gpt-6-luna` run also
 double-escaped Enter in JavaScript tool calls, typing literal `\r` characters
@@ -106,14 +149,28 @@ instead of submitting commands. The tool returned echoed input, not results
 from those commands. Other calls in the same conversation used Enter correctly;
 a successful earlier command does not guarantee later input is encoded correctly.
 Prefer `send_console_command` to avoid encoding Enter for ordinary commands.
-It addresses this submission error, not incorrect CLI choices or unsupported
-claims about results; models can still misuse the raw-input tool.
+Prefer `send_console_key` for Enter and supported control/pager keys. These helpers
+address submission errors, not incorrect CLI choices or unsupported claims about
+results; models can still misuse the raw-input tool or stop before collecting all
+requested output. Seeing the requested fields before `--More--` is not a complete
+configuration capture.
 
 These are observed model/workflow limitations, not evidence that every model
 or every run fails. Larger models may handle the workflow better, but that has not been
 validated as a remedy; model size or provider alone is not a reliability guarantee.
 The console-output and compact-response fixes reduce missing context but do not
 resolve these remaining reasoning and tool-use errors.
+
+Console tool results now include bounded, capture-only prompt/error hints, and
+sends explicitly leave command completion unverified. Operations labels a delivered
+console action **Input sent**. Its details include captured evidence when available;
+an accepted input is still not proof of a successful command. Delayed reads from
+ended turns cannot authorize later input, and disconnected reads require another
+read before approval. These guards do not guarantee that a model correctly
+interprets a device's output or finishes a task.
+After a limited capture, a later excerpt cannot authorize the next input if it
+skipped unread bytes. The tool returns `unread_cursor` so the Agent can collect
+the missing output before continuing.
 
 When trying a model, start with a small inspection task, keep individual
 approvals enabled, and compare its answer with Operations and fresh device output.
@@ -204,8 +261,9 @@ In a checkout of that release, or a directory with `compose.prebuilt.yaml` and
 `compose.agent.prebuilt.yaml` from the same release:
 
 For an existing workspace, first save configurations and gracefully shut down
-guests. For Junos, use `request system power-off` and wait for shutdown before
-Stop. Export a stopped-lab ZIP before recreating Weblab. Keep the existing
+guests. For Junos, commit, use graceful Stop for the tested profiles (or
+`request system power-off`), and wait for stopped status. Export a stopped-lab
+ZIP before recreating Weblab. Keep the existing
 image/data mounts and project name when adding the companion.
 
 ```sh
@@ -251,8 +309,9 @@ docker compose -f compose.yaml -f compose.kvm.yaml -f compose.agent.yaml up -d -
 ```
 
 Omit `-f compose.kvm.yaml` if you use only container devices. Save and gracefully
-shut down running guests before recreating an existing Weblab service; Junos
-requires `request system power-off` from its console first.
+shut down running guests before recreating an existing Weblab service. For
+Junos, follow the [shutdown sequence](devices.md#juniper-vjunos) and wait for
+stopped status before recreating the container.
 
 `WL_AGENT_PROVIDERS` is a comma-separated allowlist of complete Ollama `/v1`
 URLs. Settings can select only those destinations. Use addresses reachable from
@@ -564,8 +623,8 @@ every refresh; a new request will. Expired or cancelled requests close it.
 To skip subsequent prompts, check **Automatically approve subsequent operations
 in this session (YOLO)**, then **Approve and enable YOLO**. This approves the
 current request and enables the session's existing YOLO setting immediately,
-including future turns. It does not enable unchecked lab-change or console-input
-permissions. Already pending requests still need a decision. Deny or Later never
+including future turns. It does not enable unchecked lab-change, gateway, link-fault
+or console-input permissions. Already pending requests still need a decision. Deny or Later never
 enables YOLO, even if the checkbox is checked. Turn it off in Settings between
 turns; Operations records which approval enabled it.
 
@@ -582,7 +641,7 @@ explicitly preapproves subsequent enabled actions.
 Pending cards expire after at most 60 seconds, within the overall turn deadline.
 With YOLO enabled, operation cards are recorded as automatically approved and
 execute immediately. The title bar and cards show **YOLO**. This permits enabled
-apply/start/input operations, including potentially disruptive guest commands;
+apply/start/input and link-fault operations, including potentially disruptive guest commands;
 it adds no general stop/delete/upload tools or host access. Only the separately
 enabled gateway tools can stop/start an Internet node. The model cannot enable YOLO,
 approve its own requests, change the approved arguments, or reach the general
@@ -685,7 +744,8 @@ For a new installation, simply omit the Agent override. Source builds use
 model account or companion container is required.
 
 For an existing installation, first save configurations, gracefully shut down
-guests and stop the lab. Junos requires `request system power-off` before Stop.
+guests and stop the lab. For Junos, follow the
+[shutdown sequence](devices.md#juniper-vjunos) and wait for stopped status.
 Keep the same Compose project directory/name, environment, mounts and KVM settings.
 Stop/remove only the optional companion, then recreate the lab without its override:
 

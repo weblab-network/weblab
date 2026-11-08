@@ -13,8 +13,8 @@ import qmp
 
 class QMPTests(unittest.TestCase):
     def test_negotiation_events_and_device_error(self):
-        for reject in (False, True):
-            with self.subTest(reject=reject), tempfile.TemporaryDirectory(prefix='qmp-test-') as directory:
+        for command, reject in ((c, r) for c in ('set_link', 'system_powerdown') for r in (False, True)):
+            with self.subTest(command=command, reject=reject), tempfile.TemporaryDirectory(prefix='qmp-test-') as directory:
                 path = Path(directory) / 'qmp'
                 server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 server.bind(str(path)); server.listen(1)
@@ -32,13 +32,47 @@ class QMPTests(unittest.TestCase):
                             client.sendall(json.dumps(response).encode() + b'\r\n')
                 worker = threading.Thread(target=serve)
                 worker.start()
+                def invoke():
+                    if command == 'system_powerdown':
+                        qmp.powerdown(path)
+                    else:
+                        qmp.set_link(path, 3, False)
                 try:
                     if reject:
                         with self.assertRaisesRegex(qmp.QMPError, 'Device not found'):
-                            qmp.set_link(path, 3, False)
+                            invoke()
                     else:
-                        qmp.set_link(path, 3, False)
-                    self.assertEqual(requests[1]['arguments'], {'name': 'nic3', 'up': False})
+                        invoke()
+                    self.assertEqual(requests[1]['execute'], command)
+                    if command == 'set_link':
+                        self.assertEqual(requests[1]['arguments'], {'name': 'nic3', 'up': False})
+                    else:
+                        self.assertNotIn('arguments', requests[1])
+                finally:
+                    worker.join(timeout=5)
+
+    def test_powerdown_lost_or_invalid_reply_does_not_replay(self):
+        for reply in (b'', b'null\n', b'{"id":2,"error":null}\n'):
+            with self.subTest(reply=reply), tempfile.TemporaryDirectory(prefix='qmp-failure-') as directory:
+                path = Path(directory) / 'qmp'
+                server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                server.bind(str(path))
+                server.listen(1)
+                requests = []
+                def serve():
+                    with server, server.accept()[0] as client, client.makefile('rb') as reader:
+                        client.sendall(b'{"QMP":{}}\n')
+                        requests.append(json.loads(reader.readline()))
+                        client.sendall(b'{"id":1,"return":{}}\n')
+                        requests.append(json.loads(reader.readline()))
+                        if reply:
+                            client.sendall(reply)
+                worker = threading.Thread(target=serve)
+                worker.start()
+                try:
+                    with self.assertRaises(qmp.QMPError):
+                        qmp.powerdown(path)
+                    self.assertEqual([r['execute'] for r in requests], ['qmp_capabilities', 'system_powerdown'])
                 finally:
                     worker.join(timeout=5)
 

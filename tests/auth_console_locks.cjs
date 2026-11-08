@@ -1,4 +1,5 @@
 // Real role-aware console handoff; disposable echo nodes and independent logins.
+const {consoleAction} = require('./console_ui.cjs');
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
 const {spawn} = require('node:child_process');
@@ -56,6 +57,12 @@ fixture.stderr.on('data', data => logs += data);
    return page;
   }
   const admin = await login('admin'), writer = await login('user'), reader = await login('guest');
+  // The bulk entry point must not give readers an alternate typing path.
+  await consoleAction(reader.locator('#console-toolbar [data-console-bulk]'));
+  assert.equal(await reader.locator('#console-bulk-targets input[value="r1"]').isDisabled(), true);
+  await reader.locator('#console-bulk-commands').fill('READER_BULK_PROBE');
+  assert.equal(await reader.locator('#console-bulk-send').isDisabled(), true);
+  await reader.locator('#console-bulk-close').click();
   async function agentAccess(action) {
    const token = (await admin.context().cookies()).find(c => c.name === 'weblab_session').value;
    const ready = once(fixture.stdout, 'data');

@@ -379,16 +379,29 @@ def recover(directory):
         elif not record['had_nodes'] and not (stage / 'nodes').exists() and nodes.exists():
             shutil.rmtree(nodes)
         write_json(directory / 'topology.json', record['topology'])
+        if 'had_instructions' in record:
+            instructions = directory / 'instructions.json'
+            previous = stage / 'old-instructions.json'
+            if previous.exists():
+                previous.replace(instructions)
+                sync_dir(directory)
+            elif not record['had_instructions']:
+                instructions.unlink(missing_ok=True)
+                sync_dir(directory)
     # Remove the marker before staging cleanup: repeated crash recovery is safe.
     marker.unlink()
     sync_dir(directory)
     shutil.rmtree(stage, ignore_errors=True)
 
 
-def install(lab, stage, topology):
+def install(lab, stage, topology, instructions=None):
     marker = lab.directory / '.restore.json'
     nodes = lab.directory / 'nodes'
     record = {'phase': 'prepared', 'stage': stage.name, 'had_nodes': nodes.exists(), 'topology': lab.topology}
+    instructions_path = lab.directory / 'instructions.json'
+    if instructions is not None:
+        write_json(stage / 'instructions.json', instructions)
+        record['had_instructions'] = instructions_path.exists()
     write_json(marker, record)
     try:
         if nodes.exists():
@@ -397,6 +410,14 @@ def install(lab, stage, topology):
         sync_dir(stage)
         sync_dir(lab.directory)
         write_json(lab.topology_path, topology)
+        if instructions is not None:
+            if instructions_path.exists():
+                instructions_path.replace(stage / 'old-instructions.json')
+                sync_dir(stage)
+                sync_dir(lab.directory)
+            (stage / 'instructions.json').replace(instructions_path)
+            sync_dir(stage)
+            sync_dir(lab.directory)
         record['phase'] = 'committed'
         write_json(marker, record)
     except BaseException:

@@ -16,6 +16,7 @@ SNMP_IMAGE = 'weblab-frr:10.7.1-lldp-snmp1'
 VLAN_IMAGE = 'weblab-frr:10.7.1-lldp-snmp-vlan1'
 VRRP_IMAGE = 'weblab-frr:10.7.1-lldp-snmp-vlan-vrrp1'
 PUBLIC_IMAGE = 'ghcr.io/weblab-network/weblab-frr:10.7.1-wl1'
+ARM64_IMAGE = 'weblab-frr:10.7.1-wl1-arm64'
 # Immutable Docker config identity; survives save/load and registry publication.
 PUBLIC_IMAGE_ID = 'sha256:85775f0e1c09e8d92f7af0d0f8834cd92ddc8d8c60e5ebfbc9dc6d136562b423'
 DIGEST = 'quay.io/frrouting/frr@sha256:e995beaa50fdc9edb35eadcfefa29b7f062cc06f2b812613789b68fa541554d2'
@@ -24,7 +25,7 @@ DAEMONS = ('bgpd', 'ospfd', 'ospf6d', 'ripd', 'ripngd', 'isisd', 'bfdd', 'vrrpd'
 
 
 def is_frr(node):
-    return node.get('image', '').startswith('quay.io/frrouting/frr:') or node.get('image') in (LLDP_IMAGE, SNMP_IMAGE, VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE)
+    return node.get('image', '').startswith('quay.io/frrouting/frr:') or node.get('image') in (LLDP_IMAGE, SNMP_IMAGE, VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE, ARM64_IMAGE)
 
 
 def config_path(node, directory):
@@ -33,34 +34,36 @@ def config_path(node, directory):
 
 def inspect_image(run, error, allow_untested=False, name=None):
     name = name or IMAGE
-    if name not in (IMAGE, LLDP_IMAGE, SNMP_IMAGE, VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE):
+    if name not in (IMAGE, LLDP_IMAGE, SNMP_IMAGE, VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE, ARM64_IMAGE):
         raise error('Unsupported FRR image selector')
     try:
         image = json.loads(run('docker', 'image', 'inspect', name))[0]
     except (ValueError, IndexError, error) as exc:
         if name == PUBLIC_IMAGE:
             raise error(f'Install the Weblab FRR release image first: docker pull {PUBLIC_IMAGE}; or load its release archive') from exc
-        if name in (LLDP_IMAGE, SNMP_IMAGE, VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE):
+        if name in (LLDP_IMAGE, SNMP_IMAGE, VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE, ARM64_IMAGE):
             raise error(f'Build {name} first; see packaging/frr/README.md') from exc
         raise error(f'Pull the FRR image on the Docker host first: docker pull {IMAGE}') from exc
     if not isinstance(image, dict) or not re.fullmatch(r'sha256:[a-f0-9]{64}', str(image.get('Id', ''))):
         raise error('Docker returned an invalid FRR image ID')
+    if name == ARM64_IMAGE and image.get('Architecture') != 'arm64':
+        raise error('The ARM64 FRR selector requires a native arm64 image; rebuild it on the ARM host')
     image['tested'] = ((name == IMAGE and DIGEST in (image.get('RepoDigests') or [])) or
                        (name == PUBLIC_IMAGE and image['Id'] == PUBLIC_IMAGE_ID))
-    if name in (LLDP_IMAGE, SNMP_IMAGE, VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE):
+    if name in (LLDP_IMAGE, SNMP_IMAGE, VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE, ARM64_IMAGE):
         labels = (image.get('Config') or {}).get('Labels') or {}
         if labels.get('network.weblab.frr.extension') != 'lldp-1':
             raise error('FRR LLDP image is missing its extension identity; rebuild it')
-        if name in (SNMP_IMAGE, VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE) and labels.get('network.weblab.frr.snmp') != 'v2c-1':
+        if name in (SNMP_IMAGE, VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE, ARM64_IMAGE) and labels.get('network.weblab.frr.snmp') != 'v2c-1':
             raise error('FRR SNMP image is missing its extension identity; rebuild it')
-        if name in (VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE) and labels.get('network.weblab.frr.vlan') != '8021q-1':
+        if name in (VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE, ARM64_IMAGE) and labels.get('network.weblab.frr.vlan') != '8021q-1':
             raise error('FRR VLAN image is missing its extension identity; rebuild it')
-        if name in (VRRP_IMAGE, PUBLIC_IMAGE) and labels.get('network.weblab.frr.vrrp') != 'ipv4-1':
+        if name in (VRRP_IMAGE, PUBLIC_IMAGE, ARM64_IMAGE) and labels.get('network.weblab.frr.vrrp') != 'ipv4-1':
             raise error('FRR VRRP image is missing its extension identity; rebuild it')
     if not image['tested'] and not allow_untested:
         if name == PUBLIC_IMAGE:
             raise error('Weblab FRR image does not match the tested release ID. Pull the release image or load its archive; locally rebuilt images require WL_ALLOW_UNTESTED_FRR=1')
-        if name in (LLDP_IMAGE, SNMP_IMAGE, VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE):
+        if name in (LLDP_IMAGE, SNMP_IMAGE, VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE, ARM64_IMAGE):
             raise error('The experimental FRR extension image requires WL_ALLOW_UNTESTED_FRR=1 '
                         '(or --allow-untested-frr); see packaging/frr/README.md')
         raise error(f'FRR image does not match the tested digest; pull {DIGEST} and tag it {IMAGE}. '
@@ -132,7 +135,7 @@ def start(lab, node, run, error, root):
             '--ipv6', '--subnet', subnet6,
             '--label', f'iol.lab={lab.owner}', '-o', f"parent={port['tap']}",
             # VRRP must receive frames addressed to virtual MACs too.
-            *(('-o', 'macvlan_mode=passthru') if node['image'] in (VRRP_IMAGE, PUBLIC_IMAGE) else ()),
+            *(('-o', 'macvlan_mode=passthru') if node['image'] in (VRRP_IMAGE, PUBLIC_IMAGE, ARM64_IMAGE) else ()),
             port['network'])
         port['network_created'] = True
         lab.journal()
@@ -146,11 +149,11 @@ def start(lab, node, run, error, root):
         *(('--sysctl', 'net.ipv4.conf.all.arp_ignore=1',
            '--sysctl', 'net.ipv4.conf.all.arp_announce=2',
            '--sysctl', 'net.ipv4.conf.all.ignore_routes_with_linkdown=1')
-          if node['image'] in (VRRP_IMAGE, PUBLIC_IMAGE) else ()),
+          if node['image'] in (VRRP_IMAGE, PUBLIC_IMAGE, ARM64_IMAGE) else ()),
         # Docker enables IPv6 on provisioned ports, but leaves its default off
         # for new links. Routed VLAN children need it before Zebra adds addresses.
         *(('--sysctl', 'net.ipv6.conf.default.disable_ipv6=0')
-          if node['image'] in (VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE) else ()),
+          if node['image'] in (VLAN_IMAGE, VRRP_IMAGE, PUBLIC_IMAGE, ARM64_IMAGE) else ()),
         '--entrypoint', '/bin/sh', image_id, '-c',
         'while [ ! -e /run/weblab-ready ]; do sleep 0.1; done; exec /usr/lib/frr/docker-start')
     runtime['container_created'] = True
@@ -167,7 +170,7 @@ def start(lab, node, run, error, root):
         run('docker', 'exec', stem, 'ip', 'link', 'set', name, 'name', f'wl{index}')
     for index in range(node['ethernet']):
         name = f'eth{index}'
-        if node['image'] in (VRRP_IMAGE, PUBLIC_IMAGE):
+        if node['image'] in (VRRP_IMAGE, PUBLIC_IMAGE, ARM64_IMAGE):
             # A private one-port bridge prevents Linux from flattening nested
             # macvlans into Docker's passthru endpoint. Each ethN remains its
             # own isolated cable; no bridge ever joins different lab ports.

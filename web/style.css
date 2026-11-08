@@ -617,3 +617,11 @@ body.map-workspace>.topbar{display:none}
 #group-settings .group-sticky { display:flex; align-items:center; gap:8px; }
 #group-move-contents { width:auto; }
 #group-color { height:36px; padding:3px; }
+
+/* Bulk console paste: readable target states, including on small screens. */
+#console-bulk-dialog { width:min(680px,calc(100vw - 32px)); max-height:calc(100dvh - 32px); overflow:auto; }
+#console-bulk-targets { max-height:220px; overflow:auto; }
+#console-bulk-targets label { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:6px 2px; margin:0; }
+#console-bulk-targets input { width:auto; flex:none; margin:0; }
+#console-bulk-targets .muted { margin-left:auto; font-size:12px; }
+#console-bulk-commands { display:block; box-sizing:border-box; width:100%; margin:6px 0 10px; padding:8px; resize:vertical; font:13px LabMono,monospace; color:var(--text); background:var(--sheet-bg); border:1px solid var(--border); border-radius:6px; }

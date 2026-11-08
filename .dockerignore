@@ -15,6 +15,7 @@
 !ll2s_device.py
 !tap_net.py
 !console_capture.py
+!console_evidence.py
 !cisco_config.py
 !saved_config.py
 !initial_config.py

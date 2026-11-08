@@ -33,6 +33,14 @@ const fixtureArgs=process.env.TRAFFIC_TEST_IMAGE
  : ['-u','-c',fixtureCode];
 const fixture=spawn(process.env.TRAFFIC_TEST_IMAGE ? 'docker' : 'python3',fixtureArgs,{cwd:path.resolve(__dirname,'..'),stdio:['pipe','pipe','pipe']});
 let log='';fixture.stderr.on('data',data=>log+=data);
+// Returning closes the clicked page. Observe closure, then check the parent pane below.
+async function returnToWorkspace(child) {
+  const closed=child.waitForEvent('close');
+  await child.locator('#pane-return').click({noWaitAfter:true}).catch(error=>{
+    if (!child.isClosed() || !error.message.includes('Target page, context or browser has been closed')) throw error;
+  });
+  await closed;
+}
 (async()=>{
  let browser;
  try {
@@ -124,7 +132,8 @@ let log='';fixture.stderr.on('data',data=>log+=data);
   assert.equal(await child.locator('tbody tr').count(),rowsBeforePopout);
   assert.equal(await child.locator('[data-part=duration]').isDisabled(),true);
   await child.locator('[data-part=hex]').click();
-  await child.locator('#pane-return').click();await panel.waitFor();
+  // The click intentionally closes its own page; verify restoration in the parent.
+  await returnToWorkspace(child);await panel.waitFor();
   await panel.locator('[data-part=stop]').click();
   await page.waitForFunction(()=>document.querySelector('.traffic-panel [data-part=status]').textContent.includes('Stopped by user'));
   const dl=page.waitForEvent('download');await panel.locator('[data-part=download]').click();

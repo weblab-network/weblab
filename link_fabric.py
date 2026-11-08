@@ -9,6 +9,7 @@ import errno
 import json
 from pathlib import Path
 import selectors
+import secrets
 import socket
 import stat
 import struct
@@ -59,6 +60,7 @@ class LinkFabric:
         self.error = ''
         self.captures = captures
         self.capture_source = object()
+        self.generation = secrets.token_hex(16)
         self.netio.mkdir(mode=0o755, exist_ok=True)
         candidates = iter(i for i in range(1023, 0, -1) if i not in occupied)
         try:
@@ -82,7 +84,7 @@ class LinkFabric:
                 self.journal()
                 self.links[link['id']] = {**link, 'id_number': app_id, 'socket': sock,
                                          'blocked_a_to_b': False, 'blocked_b_to_a': False,
-                                         'carrier_a': 'up', 'carrier_b': 'up'}
+                                         'carrier_a': 'up', 'carrier_b': 'up', 'control_revision': 0}
                 for side, port in (('a', 0), ('b', 16)):
                     endpoint = link[side]
                     self.peers[(endpoint['node'], endpoint['interface'])] = {'id': app_id, 'port': port}
@@ -109,10 +111,17 @@ class LinkFabric:
                 raise FabricError(self.error or 'Link relay is not running')
             link = self.links[link_id]
             link['blocked_a_to_b'], link['blocked_b_to_a'] = a_to_b, b_to_a
+            link['control_revision'] += 1
+
+    def revision(self, link_id):
+        """Include intervening changes even when the final flags are identical."""
+        with self.lock:
+            return self.generation, self.links[link_id]['control_revision']
 
     def set_carrier(self, link_id, side, state):
         with self.lock:
             self.links[link_id]['carrier_' + side] = state
+            self.links[link_id]['control_revision'] += 1
 
     def reset_node(self, node_id):
         with self.lock:
@@ -120,6 +129,7 @@ class LinkFabric:
                 for side in ('a', 'b'):
                     if link[side]['node'] == node_id:
                         link['carrier_' + side] = 'up'
+                        link['control_revision'] += 1
 
     def forward(self, link, packet):
         if not 14 + HEADER.size <= len(packet) <= MAX_FRAME + HEADER.size:

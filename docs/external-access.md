@@ -105,10 +105,10 @@ shared device PTY or override another station's terminal size.
 ## Enable the Internet node's SSH shell
 
 Pull the matching helper on the Docker host and select it with
-`WL_INTERNET_IMAGE=ghcr.io/weblab-network/weblab-internet:0.12.0`:
+`WL_INTERNET_IMAGE=ghcr.io/weblab-network/weblab-internet:0.13.0`:
 
 ```sh
-docker pull ghcr.io/weblab-network/weblab-internet:0.12.0
+docker pull ghcr.io/weblab-network/weblab-internet:0.13.0
 ```
 
 For source deployments, build the updated helper instead:

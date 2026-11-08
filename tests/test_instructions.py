@@ -40,7 +40,7 @@ class InstructionsTests(unittest.TestCase):
         self.assertNotEqual(saved['revision'], '0')
         self.assertEqual(self.http('/api/instructions', cookie=cookie)[2], saved)
         unchanged = self.http('/api/instructions?revision=' + saved['revision'], cookie=cookie)[2]
-        self.assertEqual(unchanged, {'revision':saved['revision'], 'unchanged':True})
+        self.assertEqual(unchanged, {'revision':saved['revision'], 'reset_revision':'0', 'unchanged':True})
         self.assertIsNone(self.http('/api/state', cookie=cookie)[2].get('instructions'))
 
     def test_restart_atomic_failure_clear_and_stale_updates(self):
@@ -73,6 +73,21 @@ class InstructionsTests(unittest.TestCase):
         self.assertEqual(sorted(result[0] for result in results), [200, 409])
         winner = next(result[2] for result in results if result[0] == 200)
         self.assertEqual(self.lab.published_instructions(), winner)
+
+    def test_legacy_document_and_reset_generation_survive_restart_and_publish(self):
+        saved = self.lab.publish_instructions(self.payload())
+        del saved['reset_revision']
+        lab_backup.write_json(self.lab.directory / 'instructions.json', saved)
+        self.assertEqual(self.lab.published_instructions()['reset_revision'], '0')
+        cleared = self.lab.reset_workspace({'expected_revision': self.lab.workspace_revision,
+                                           'expected_instructions_revision': saved['revision']})['instructions']
+        updated = self.lab.publish_instructions(self.payload(cleared['revision'], 'New exercise'))
+        self.assertEqual(updated['reset_revision'], cleared['reset_revision'])
+        self.assertNotEqual(updated['revision'], cleared['revision'])
+        self.lab.file_lock.close()
+        restarted = lab_server.Lab(self.lab.directory)
+        self.addCleanup(restarted.file_lock.close)
+        self.assertEqual(restarted.published_instructions(), updated)
 
     def test_validation_utf8_size_and_failed_changes_preserve_document(self):
         saved = self.http('/api/instructions', 'PUT', self.payload())[2]

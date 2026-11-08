@@ -2,6 +2,10 @@
 
 [Help index](README.md) · [Project overview](../README.md)
 
+The [native ARM64 profile](arm64.md) supports locally built FRR and LL2S images
+plus Alpine PCs. The vendor IOL/QEMU profiles below require x86-64; their disks
+and binaries cannot be used with this ARM profile.
+
 ## Supported profiles
 
 These are tested profiles, not a guarantee that every virtual-image release or
@@ -472,32 +476,43 @@ and requires the same base image on restore. Directional traffic blocking uses
 the existing link fabric; Junos carrier/unplug control is not enabled.
 
 
-Validation of 26.2R1.7: a bare-metal deployment booted vJunos-switch in under two
-minutes and passed VLAN 10/20/30 access switching, an 802.1Q trunk to FRR, and
-inter-VLAN traffic between three Alpine PCs. This was a user-run integration
-test. A nested-VM test reached Junos but failed to initialize the forwarding
-plane; a working CLI alone is insufficient. Evolved boot/console and the UUID
-correction have been tested, but full forwarding and real-guest ZIP restore
-coverage remain incomplete. Repeated boots of both profiles and installation
-from the published instructions have also been user-tested. These results
-apply to the listed images and host requirements, not arbitrary Junos releases.
+Validation of 26.2R1.7 includes user-run VLAN/trunk/inter-VLAN switching and a
+mixed Cisco/Junos OSPF/VRRP lab. An independent Intel bare-metal check committed
+configuration on both Junos profiles, powered them off through their CLIs,
+exported a ZIP, cleared the disposable source storage, restored the ZIP and
+booted again. Saved credentials and interface configuration survived; both
+forwarding planes became online and routed traffic between two Alpine PCs
+passed in both directions. The automated check also repeated boot and forwarding
+after Weblab's graceful Stop, with unchanged base-image hashes. These results
+apply to the listed images and host
+requirements, not arbitrary Junos releases. A nested-VM test reached the CLI
+without a working forwarding plane; a working CLI alone is insufficient.
 
 On a fresh image, log in as `root` with an empty password, then enter `cli`.
 Set a root password before committing configuration. Use `show chassis fpc`
 and `show interfaces terse` to check forwarding-plane readiness. Save changes
-with `commit`. Before Weblab Stop, use `request system power-off` and wait for
-guest shutdown. Weblab Stop terminates QEMU; it does not currently perform a
-Junos-aware graceful shutdown. Juniper warns that abrupt termination can damage
-the switch's disk; see its [deployment guide](https://www.juniper.net/documentation/us/en/software/vjunos/vjunos-switch-kvm/topics/deploy-and-manage-vjunos-switch-onkvm.html).
+with `commit` before shutdown; Stop does not commit candidate changes.
 
-**Required shutdown sequence:** `commit` configuration changes, return to
-operational mode, run `request system power-off`, and wait for guest shutdown
-before using **Stop node**, **Stop lab**, or stopping/recreating the Weblab
-container. Stopping without this sequence has caused an unbootable switch disk
-in user testing. The workspace asks for confirmation when stopping running Junos
-nodes; Cancel lets you return to their consoles. The warning does not execute
-shutdown or verify that it completed. Direct API calls and container/host
-shutdowns bypass the browser warning.
+**Stop node / Stop lab** request graceful guest shutdown for the two exact image
+filenames above. The same behavior applies to their HTTP Stop endpoints. The
+workspace asks for confirmation and shows **Shutting down** while waiting for
+the guest process to exit. A successful request is not completion: ZIP export,
+reset and restart remain unavailable while the VM is running. Repeated Stop
+requests during that wait do not send another power-button event.
+
+If the request fails or the guest has not exited after 180 seconds, Weblab keeps
+the VM and shows an error. Inspect its console, finish shutdown with
+`request system power-off` in operational mode, or retry Stop after checking
+the guest. There is no automatic forced termination. Other Junos image versions
+require manual CLI power-off. A normal guest power-off is reported as stopped;
+nonzero or unknown launcher exits remain errors.
+
+**Before stopping/recreating the Weblab container or shutting down its host,
+wait until all Junos nodes show stopped.** Server teardown and startup-failure
+cleanup still use the existing process cleanup; they do not wait for this
+interactive shutdown workflow. Abrupt termination has caused an unbootable
+switch disk in user testing. Juniper also warns about disk damage; see its
+[deployment guide](https://www.juniper.net/documentation/us/en/software/vjunos/vjunos-switch-kvm/topics/deploy-and-manage-vjunos-switch-onkvm.html).
 
 ## LL2S (Linux Layer 2 Switch)
 

@@ -44,7 +44,7 @@ On Windows, use `py -3 -m venv .venv-mcp` and
 not an additional web service. The core server has no SDK dependency; the adapter
 can run on another machine and does not need Docker or access to device files.
 
-Initially omit `--allow-write`, `--allow-internet-write` and `--allow-console-input`: discovery, console
+Initially omit `--allow-write`, `--allow-internet-write`, `--allow-link-faults` and `--allow-console-input`: discovery, console
 output, logs and temporary previews work, but apply/start and console input tools
 are absent. Enable the corresponding switch when you want those tools,
 keeping client approval enabled. `--allow-internet-write` independently exposes
@@ -94,6 +94,36 @@ may need correction after validation errors; inspect their proposed graph and
 exercise before applying. See [Cline MCP](https://docs.cline.bot/mcp/mcp-overview)
 and [Ollama tool calling](https://docs.ollama.com/capabilities/tool-calling).
 
+## Link faults
+
+`get_link_state(link_id)` is always available. Discover the link ID from
+`get_lab_state`; the read names endpoints A/B, reports frame-block flags,
+carrier support, requested state, detection delay/errors, and returns `revision`
+and `link_revision`. It does not establish guest protocol readiness.
+
+Add `--allow-link-faults` to expose these independently of topology/gateway and
+console permissions, keeping your MCP client's exact-action approvals enabled:
+
+- `set_link_frame_loss(link_id, blocked_a_to_b, blocked_b_to_a, expected_revision, expected_link_revision)`:
+  both booleans are required. False/False clears only frame blocking.
+- `set_link_carrier(link_id, side, up, expected_revision, expected_link_revision)`:
+  side is `a` or `b`; `up=False` unplugs and `up=True` reconnects a supported endpoint.
+
+Read **before every change**, passing that read's two revisions. Changes to the
+cable, endpoint/relay runtime or fault state reject stale requests, even if someone
+changed a fault and restored its original flags. Coordinate-only moves are allowed.
+A stopped or diagram-only link cannot receive faults. Tested IOL carrier control
+still needs explicit Inspector opt-in while stopped; these tools never enable it.
+
+Frame loss and carrier are independent: clearing one leaves the other intact.
+Changes are runtime-only, not saved configuration. After a change, read again and
+check console evidence for guest detection, convergence and recovery. A carrier
+failure can return `applied: false, outcome: "uncertain"`; do not blindly retry.
+Restore only the faults covered by the requested test and report any left active.
+The integrated Agent uses its separate **Allow link faults** setting and server-
+enforced session/turn read guards and browser approvals. External MCP's flags
+control tool exposure; they are not authorization for direct HTTP clients.
+
 ## Workflow and safeguards
 
 Try a request such as:
@@ -139,8 +169,11 @@ snippets. Keep those images and proposals trusted.
 
 `running` means a device process is alive. It does not mean login is available,
 interfaces are ready, OSPF has converged or traffic forwards. Complete configuration
-and verification using browser or MCP consoles. Before stopping Junos, commit and use
-`request system power-off`, then wait for shutdown.
+and verification using browser or MCP consoles. Before stopping Junos, commit.
+Use graceful Stop in the browser for the tested profiles, or
+`request system power-off` through an authorized console operation. Wait for
+stopped status before export/reset or server maintenance. The MCP adapter still
+has no general Stop tool; see [Junos shutdown behavior](devices.md#juniper-vjunos).
 
 ## Internet gateways and appearance
 
@@ -274,6 +307,21 @@ reread and inspect the prompt before requesting input with the new cursor. Outpu
 has terminal formatting removed; this is not a full terminal emulator, and a
 byte-limited window may split a UTF-8 character or escape sequence.
 
+Results also include bounded `evidence` describing this capture's last line,
+possible pending input, selected error markers and a heuristic `tail_hint`.
+Cisco/Junos prompt recognition is vendor-specific; unknown patterns and other
+vendors remain unknown. These hints never authorize input or establish readiness
+or success. A latest read can contain historical errors; an empty continuation
+does not prove completion. Sends report `command_completion: unverified` even
+if a prompt is visible. Inspect the full response and collect subsequent output.
+Compact mode can omit duplicate hints when JSON escaping would exceed its budget;
+captured text and cursors are preserved.
+The integrated Agent also tracks unread bytes after limited captures within each
+turn. If a later read skips them, its result includes `unread_cursor` and the next
+input is refused until those bytes are collected. External MCP clients still need
+to follow the documented cursor workflow themselves; this turn-scoped tracking
+belongs to the Agent bridge.
+
 The optional adapter flag `--compact-responses` is selected automatically only
 by the Ollama companion. It caps reads and send-result captures at 1024 raw bytes
 and reports `capture_max_bytes`. Larger output remains available through cursor
@@ -293,6 +341,54 @@ commands without Enter escapes. Empty/whitespace-only commands, control characte
 literal `\r`/`\n` and commands over 4095 UTF-8 bytes are rejected before any input.
 It does not inspect or clear pending input, elevate privileges, retry or determine
 command completion. Inspect the prompt first and verify returned output afterward.
+
+`send_console_commands(node_id, commands, expected_revision, expected_cursor,
+wait_seconds=1, max_bytes=65536)` submits 1–32 plain command strings as one paste,
+appending Enter to each. The whole list is validated before sending and must fit
+4096 UTF-8 bytes including line endings. It uses the same console-input permission,
+exact approval, fresh-read requirements and locks as the single-command helper.
+There are no intermediate waits/error checks, automatic retries or rollback.
+Keep interactive steps separate; batch `enable` only when known passwordless.
+Read all output afterwards and verify results before further input. See the
+[agent console guide](agent-console-guide.md#session-paging-dictionary) for
+vendor paging commands and batching examples.
+
+`send_console_commands_to_nodes(targets, commands, expected_revision,
+wait_seconds=1, max_bytes=65536)` shares a command list across **1–8 selected
+nodes**. Each target is an object with `node_id` and its own `expected_cursor`.
+Read every console first, drain unread/limited captures, and inspect every prompt;
+all reads must use the same topology revision. The Agent window enforces these
+per-node observations and presents one exact approval for the full target list
+and paste. External MCP exposes it only with `--allow-console-input`.
+
+The server checks all targets and acquires their input locks before sending any
+commands. It requires recognized empty top-level prompts, the same vendor family
+and the same mode/privilege level. PCs need a separate batch. Supported prompt
+forms are Cisco/FRR/EOS EXEC, Junos operational, EXOS/LL2S EXEC and Alpine shell;
+configuration submodes and unknown/custom prompts require individual handling.
+These checks are conservative text heuristics, not proof of guest readiness.
+
+If a console changes after preflight, later targets stop: inspect every entry in
+`results` (`sent`, `not_sent` or `unknown`). Never retry the entire batch after
+partial/uncertain delivery. Input permission, human locks, expiry and single-use
+approvals still apply; Stop/expiry prevents remaining sends but cannot undo
+submitted commands. One paste per target has no intermediate command checks.
+
+`wait_seconds` is 0.1–5 **per node**. `max_bytes` is a total raw capture budget,
+divided across targets with at least one byte each; compact Ollama mode caps the
+total at 512 bytes. Each result retains its own cursor and capture accounting.
+Read all targets again before further input, continuing each limited capture from
+its cursor (or `unread_cursor`) to collect all output.
+
+`send_console_key(node_id, key, expected_revision, expected_cursor,
+wait_seconds=1, max_bytes=65536)` also requires `--allow-console-input`.
+Choose `enter`, `space`, `tab`, `ctrl_c` or `ctrl_u`; the adapter sends one exact
+key byte through the same guarded console-send API. Unknown key names are rejected
+before input. This avoids double-escaped Enter/control characters. It does not
+automatically decide whether a key is appropriate, recover prompts or retry.
+Use one `enter` for idle post-boot prompt recovery only after checking for pending
+input or questions, then read again. All permissions, approvals, locks and
+revision/cursor checks still apply.
 
 `send_console_input(node_id, input, expected_revision, expected_cursor,
 wait_seconds=1, max_bytes=65536)` exists only with `--allow-console-input`.

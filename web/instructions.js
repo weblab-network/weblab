@@ -33,6 +33,7 @@
   });
   let documentFile = null, fontSize = 15, readGeneration = 0;
   let sharedFile = null, sharedRevision = null, draftRevision = null;
+  let resetRevision = '0', syncGeneration = 0;
   let localPreview = false, syncPromise = null, publishing = false, syncFailed = false;
   let popout = null, popoutReady = false, popoutTimer, popoutLoadTimer, popoutSignature = '';
   let popoutPosition = {top:0, left:0};
@@ -47,7 +48,7 @@
     try {
       // Authenticated tabs must not restore a previous account's private preview.
       const file = !window.weblabAuth?.enabled && localPreview ? documentFile : null;
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({file, fontSize, open:!!popout || !panel.hidden}));
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({file, resetRevision, fontSize, open:!!popout || !panel.hidden}));
     } catch (_) { /* Reading still works when browser storage is disabled or full. */ }
   }
   function applyLayout() {
@@ -155,6 +156,13 @@
   function acceptPublished(result) {
     if (typeof result?.revision !== 'string') throw new Error('Invalid instructions response');
     syncFailed = false;
+    const nextReset = result.reset_revision || '0';
+    if (nextReset !== resetRevision) {
+      // Reset invalidates private previews too, including a restored tab's copy.
+      ++readGeneration;
+      localPreview = false; draftRevision = null;
+      resetRevision = nextReset;
+    }
     if (!result.unchanged) {
       sharedRevision = result.revision; sharedFile = result.file;
       if (!localPreview) {
@@ -169,14 +177,21 @@
     if (publishing) return Promise.resolve();
     if (syncPromise) return syncPromise;
     syncPromise = (async () => {
+      const generation = syncGeneration;
       try {
         const suffix = sharedRevision === null ? '' : '?revision=' + encodeURIComponent(sharedRevision);
-        acceptPublished(await api('/api/instructions' + suffix));
-      } catch (_) { syncFailed = true; updateSharingControls(); }
+        const result = await api('/api/instructions' + suffix);
+        if (generation === syncGeneration) acceptPublished(result);
+      } catch (_) { if (generation === syncGeneration) { syncFailed = true; updateSharingControls(); } }
       finally { syncPromise = null; }
     })();
     return syncPromise;
   }
+  window.weblabInstructions = {didReset(result) {
+    if (!result) return; // Preserve Instructions leaves the reader untouched.
+    ++syncGeneration; // A pre-reset poll must not restore the old document.
+    acceptPublished(result);
+  }};
   function viewPublished() {
     ++readGeneration;
     localPreview = false; draftRevision = null; documentFile = sharedFile;
@@ -187,9 +202,11 @@
     if (!authCan('admin') || publishing || sharedRevision === null) return;
     if (syncPromise) await syncPromise;
     if (publishing || syncFailed) return;
+    const generation = syncGeneration;
     publishing = true; updateSharingControls();
     try {
       const result = await api('/api/instructions', 'PUT', {revision, file});
+      if (generation !== syncGeneration) return;
       localPreview = false; draftRevision = null;
       acceptPublished(result); remember();
       toast(file ? 'Instructions published to all stations.' : 'Published instructions removed.');
@@ -347,15 +364,16 @@
     let saved;
     try {
       saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY));
+      resetRevision = typeof saved?.resetRevision === 'string' ? saved.resetRevision : '0';
       const file = saved?.file;
       if (!window.weblabAuth?.enabled && file && typeof file.name === 'string' && typeof file.text === 'string' &&
           /\.(md|markdown|txt)$/i.test(file.name) && new TextEncoder().encode(file.text).length <= MAX_BYTES) {
-        renderFile(file); documentFile = file; localPreview = true;
+        documentFile = file; localPreview = true;
       }
       if (Number.isInteger(saved?.fontSize)) setFont(saved.fontSize);
     } catch (_) { /* Invalid/inaccessible tab storage starts with no document open. */ }
     await syncPublished();
-    if (localPreview) draftRevision = sharedRevision;
+    if (localPreview) { draftRevision = sharedRevision; renderFile(documentFile); }
     updateSharingControls();
     // Split layouts restore their selected tool themselves. Restoring a document
     // after the async fetch must not replace that selection (or a user's click).

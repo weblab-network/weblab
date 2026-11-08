@@ -41,6 +41,19 @@ accordingly. It does not claim that the document is current.
 Without authentication, Weblab retains its trusted-workspace behavior: any
 station may publish. Local-only reading still works without publishing.
 
+## Resetting a lab
+
+Both **Reset without export** and **Reset lab after export** offer an unchecked
+**Preserve Instructions** checkbox in the final confirmation. A successful reset
+clears the shared document and local previews by default, including popped-out
+readers on other connected stations. Offline tabs clear their old preview on
+their next successful sync. Check the box to retain Instructions for the next lab.
+Cancelling or failing the reset keeps the document. Your original files are
+never deleted; JSON/ZIP exports do not include Instructions. Ordinary topology
+and saved-lab imports still leave Instructions unchanged.
+
+## Storage
+
 Published instructions are stored atomically in `<lab-data>/instructions.json`
 and survive server/container restarts when the data directory is retained. They
 are separate workspace content: topology JSON and saved ZIP exports **do not

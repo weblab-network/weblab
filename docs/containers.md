@@ -23,6 +23,9 @@ not remove the KVM requirement for QEMU guests. FRR/LL2S/Alpine-only labs
 are not supported by this deployment. See [installation](installation.md) for
 permissions, trusted-network access and the standard edition.
 
+Linux ARM64 uses a separate [native source-build profile](arm64.md) for FRR,
+LL2S and Alpine PCs. The prebuilt editions on this page remain amd64.
+
 The `edge` edition has also been independently field-tested on a fresh minimal
 Debian 13 installation with KVM enabled. The documented deployment uses explicit
 device access, NET_ADMIN and persistent storage; a successful privileged test does
@@ -38,7 +41,7 @@ weights or network-device images and has no Docker socket or lab-data mount.
 
 ## Optional Internet helper
 
-Use the matching **0.12.0** helper with core for Internet nodes, or add
+Use the matching **0.13.0** helper with core for Internet nodes, or add
 `--with-internet` to a fresh installer invocation. Existing deployments pull the
 helper separately on the Docker host and set `WL_INTERNET_IMAGE`. It is not a
 standalone Compose service. See [Internet setup](internet.md#install-a-prebuilt-gateway)

@@ -124,7 +124,7 @@ class Ll2sTests(unittest.TestCase):
                 return {'Id': 'sha256:' + {ll2s.IMAGE: 'a', ll2s.LEGACY_IMAGE: 'b', ll2s.PREVIOUS_IMAGE: 'c'}[name]*64}
             inspect.side_effect = installed
             lab_backup.restore(self.lab, io.BytesIO(content), lambda *a: None)
-            self.assertEqual(set(calls), set(ll2s.IMAGES))
+            self.assertEqual(set(calls), {n['image'] for n in self.lab.topology['nodes']})
         self.assertEqual(path.read_bytes(), b'hostname LEGACY\n')
         self.assertEqual(previous_path.read_bytes(), b'hostname PREVIOUS\n')
         self.assertEqual(self.lab.node('previous')['image'], ll2s.PREVIOUS_IMAGE)

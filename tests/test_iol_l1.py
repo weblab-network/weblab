@@ -35,18 +35,44 @@ class L1Tests(unittest.TestCase):
     def test_signal_is_independent_of_loss_and_selected_carrier(self):
         self.l1.add_node('s', link_fabric.identity(self.endpoint))
         packet = struct.pack('>HHBBBB', 201, self.fabric.links['wire']['id_number'], 0x21, 0, 3, 0)
+        def assert_signals_stopped():
+            # A completed stop prevents future sends, but cannot retract
+            # datagrams already queued at the receiver. Drain those first,
+            # then observe silence for three heartbeat intervals.
+            self.sock.setblocking(False)
+            queued = 0
+            try:
+                for _ in range(32):
+                    try:
+                        received = self.sock.recv(100)
+                    except BlockingIOError:
+                        break
+                    self.assertEqual(received, packet)
+                    queued += 1
+                else:
+                    self.fail('L1 receiver queue did not drain')
+            finally:
+                self.sock.settimeout(1.5)
+            self.assertGreater(queued, 0, 'Exercise a heartbeat queued before stopping')
+            with self.assertRaises(socket.timeout):
+                self.sock.recv(100)
+
         self.assertEqual(self.sock.recv(100), packet)
         self.fabric.set_blocked('wire', True, True)
         self.assertEqual(self.sock.recv(100), packet)
+        with self.l1.lock:
+            self.l1.send(self.l1.targets[('wire', 'a')])
         self.l1.set_carrier('wire', 'a', False)
         self.assertEqual(self.fabric.states()['wire']['carrier_a'], 'down')
         self.assertGreater(self.l1.states()[('wire', 'a')]['pending'], 0)
-        with self.assertRaises(socket.timeout): self.sock.recv(100)
+        assert_signals_stopped()
         self.l1.set_carrier('wire', 'a', True)
         self.assertEqual(self.sock.recv(100), packet)
         self.assertTrue(self.fabric.states()['wire']['blocked_a_to_b'])
+        with self.l1.lock:
+            self.l1.send(self.l1.targets[('wire', 'a')])
         self.l1.remove_node('s')
-        with self.assertRaises(socket.timeout): self.sock.recv(100)
+        assert_signals_stopped()
 
     def test_socket_replacement_blocks_traffic_and_requires_restart(self):
         self.l1.add_node('s', link_fabric.identity(self.endpoint)); self.sock.recv(100)

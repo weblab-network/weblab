@@ -65,21 +65,26 @@ class BackupTests(unittest.TestCase):
     def test_workspace_reset_and_backup_recovery(self):
         archive = self.backup()
         instructions = self.lab.directory / 'instructions.json'
-        instructions.write_text('preserved instructions')
+        published = self.lab.publish_instructions({'revision': '0', 'file': {'name': 'exercise.md', 'text': 'Original'}})
         retained = self.lab.node_dir('removed-node') / 'old-config'
         retained.write_text('retained storage')
         revision = self.lab.snapshot()['workspace_revision']
-        result = self.fixture.request('/api/lab/reset', 'POST', {'expected_revision': revision})
+        result = self.fixture.request('/api/lab/reset', 'POST', {
+            'expected_revision': revision, 'expected_instructions_revision': published['revision']})
         self.assertEqual(result['topology']['nodes'], [])
         self.assertEqual(result['topology']['links'], [])
         self.assertFalse(self.nvram.exists())
         self.assertFalse(retained.exists())
-        self.assertEqual(instructions.read_text(), 'preserved instructions')
+        cleared = self.lab.published_instructions()
+        self.assertIsNone(cleared['file'])
+        self.assertNotEqual(cleared['reset_revision'], published['reset_revision'])
+        self.assertEqual(result['instructions'], cleared)
         self.assertTrue((self.lab.image_dir / 'fake.bin').exists())
         with self.assertRaises(lab_server.LabError):
             self.lab.reset_workspace({'expected_revision': revision})
         self.restore(archive)
         self.assertEqual(self.nvram.read_bytes(), self.contents)
+        self.assertEqual(self.lab.published_instructions(), cleared)
 
     def test_workspace_reset_rejects_changed_or_running_lab(self):
         revision = self.lab.workspace_revision
@@ -107,11 +112,51 @@ class BackupTests(unittest.TestCase):
             return original(path, value)
         with patch.object(lab_backup, 'write_json', side_effect=fail_topology):
             with self.assertRaises(OSError):
-                self.lab.reset_workspace({'expected_revision': self.lab.workspace_revision})
+                self.lab.reset_workspace({'expected_revision': self.lab.workspace_revision,
+                                          'expected_instructions_revision': '0'})
         self.assertEqual(self.lab.topology, topology)
         self.assertEqual(json.loads(self.lab.topology_path.read_text()), topology)
         self.assertEqual(self.nvram.read_bytes(), self.contents)
         self.assertFalse((self.lab.directory / '.restore.json').exists())
+
+    def test_reset_preserves_instructions_when_requested_and_rejects_stale_document(self):
+        published = self.lab.publish_instructions({'revision': '0', 'file': {'name': 'old.md', 'text': 'Keep'}})
+        request = {'expected_revision': self.lab.workspace_revision,
+                   'expected_instructions_revision': published['revision']}
+        updated = self.lab.publish_instructions({'revision': published['revision'], 'file': None})
+        for bad in (request, {'expected_revision': self.lab.workspace_revision},
+                    {**request, 'preserve_instructions': 'false'}):
+            with self.assertRaises(lab_server.LabError):
+                self.lab.reset_workspace(bad)
+            self.assertEqual(self.lab.published_instructions(), updated)
+            self.assertTrue(self.nvram.exists())
+        result = self.lab.reset_workspace({**request, 'preserve_instructions': True})
+        self.assertNotIn('instructions', result)
+        self.assertEqual(self.lab.published_instructions(), updated)
+
+    def test_reset_rolls_back_document_after_install_failure(self):
+        for published in (False, True):
+            with self.subTest(published=published):
+                if published:
+                    self.lab.publish_instructions({'revision': '0', 'file': {'name': 'keep.md', 'text': 'Keep'}})
+                path = self.lab.directory / 'instructions.json'
+                old_bytes = path.read_bytes() if path.exists() else None
+                previous = self.lab.published_instructions()
+                revision = self.lab.workspace_revision
+                original = lab_backup.write_json
+                def fail_commit(path, value):
+                    if path.name == '.restore.json' and value['phase'] == 'committed':
+                        self.assertIsNone(self.lab.published_instructions()['file'])
+                        raise OSError('commit failed after instructions replacement')
+                    return original(path, value)
+                with patch.object(lab_backup, 'write_json', side_effect=fail_commit):
+                    with self.assertRaises(OSError):
+                        self.lab.reset_workspace({'expected_revision': revision,
+                                                  'expected_instructions_revision': previous['revision']})
+                self.assertEqual(self.lab.workspace_revision, revision)
+                self.assertEqual(path.read_bytes() if path.exists() else None, old_bytes)
+                self.assertEqual(self.nvram.read_bytes(), self.contents)
+                self.assertFalse((self.lab.directory / '.restore.json').exists())
 
     def test_agent_transcript_roundtrip_is_reference_only(self):
         source = {'title': 'OSPF lab', 'created': 123, 'updated': 456,
@@ -341,6 +386,26 @@ class BackupTests(unittest.TestCase):
         lab_backup.recover(self.lab.directory)
         self.assertEqual(self.nvram.read_bytes(), self.contents)
         self.assertFalse((self.lab.directory / 'nodes' / 'replacement').exists())
+        self.assertEqual(json.loads(self.lab.topology_path.read_text()), self.lab.topology)
+
+    def test_interrupted_reset_recovers_exact_published_document(self):
+        path = self.lab.directory / 'instructions.json'
+        self.lab.publish_instructions({'revision': '0', 'file': {'name': 'exercise.md', 'text': 'Keep me'}})
+        old_bytes = path.read_bytes()
+        stage = self.lab.directory / ('.restore-' + 'b' * 32)
+        stage.mkdir()
+        record = {'phase': 'prepared', 'stage': stage.name, 'had_nodes': True,
+                  'had_instructions': True, 'topology': self.lab.topology}
+        lab_backup.write_json(self.lab.directory / '.restore.json', record)
+        (self.lab.directory / 'nodes').replace(stage / 'old-nodes')
+        (self.lab.directory / 'nodes').mkdir()
+        path.replace(stage / 'old-instructions.json')
+        lab_backup.write_json(path, {'file': None})
+        lab_backup.write_json(self.lab.topology_path, {'name': 'partial reset'})
+        lab_backup.recover(self.lab.directory)
+        lab_backup.recover(self.lab.directory)
+        self.assertEqual(path.read_bytes(), old_bytes)
+        self.assertEqual(self.nvram.read_bytes(), self.contents)
         self.assertEqual(json.loads(self.lab.topology_path.read_text()), self.lab.topology)
 
     @unittest.skipUnless(shutil.which('qemu-img') and shutil.which('qemu-io'), 'Requires qemu-utils')

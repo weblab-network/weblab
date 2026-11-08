@@ -32,6 +32,15 @@ storage or bypass QEMU disk locks. Run node-launching suites sequentially.
 
 ## Installer checks
 
+Native ARM64 setup is documented in [arm64.md](arm64.md). Profile and builder
+guards run in `test_arm64.py` with the standard backend suite. The opt-in
+`python3 tests/arm64_native.py` runs a separate six-node lab for FRR OSPF,
+LLDP/SNMP, LL2S RSTP, PC forwarding, shared console locks, TShark decoding,
+cable failover and exact-image ZIP restore. Run it on ARM64 with its native
+images installed, sequentially with other node-launching tests.
+`node tests/arm64_ui.cjs` checks the ARM library and device selectors using a
+disposable HTTP fixture on either architecture, without starting devices.
+
 `python3 -m unittest discover -s tests -p test_installer.py -v` exercises the
 POSIX shell installer with recording Docker/host commands and simulated device
 availability. It verifies refusal of existing state, remote/rootless Docker,
@@ -71,6 +80,18 @@ Install those utilities to run the conversion cases locally; otherwise they skip
 `node tests/agent_ui.cjs` checks the picker, provider restriction and downloads.
 Use disposable fixtures, with no live provider request or active lab changes.
 
+## Link automation checks
+
+`tests/test_link_automation.py` covers HTTP state/block/clear, independent Agent
+permission, session-owned reads, exact approvals, denial/expiry/YOLO, stale fault
+changes including change-and-restore, endpoint/socket replacement, layout-only
+moves, carrier support, failure uncertainty and independent carrier/frame flags.
+It uses disposable echo devices and a mocked QMP command, not vendor images.
+`test_link_fabric.py` exercises real Ethernet forwarding/blocking over local sockets.
+The MCP smoke suite also checks full/compact tool exposure and read/block/clear;
+`agent_ui.cjs` checks the default-off setting and saving it. Run node-launching
+suites sequentially. These checks do not establish guest protocol convergence.
+
 ## Backend tests
 
 From the repository root on Linux, with Python 3.11+ and Perl installed:
@@ -82,6 +103,10 @@ python3 -m unittest discover -s tests -v
 Workspace reset regressions are in `tests/test_backup.py`, `tests/test_web_auth.py`
 and `tests/workspace_features.cjs`: exported ZIP recovery, transactional rollback,
 stopped/stale-state checks, admin/CSRF enforcement, cancellation and failed exports.
+Instructions reset coverage also includes the unchecked preserve option, rollback
+of published content, offline tab previews, other stations and popped-out readers.
+`tests/shared_instructions.cjs` delays a pre-reset poll to check that stale replies
+cannot restore the cleared document.
 They use disposable fixtures and never reset the active lab.
 
 The default suite uses disposable fake device processes, real PTYs/WebSockets,
@@ -108,6 +133,7 @@ node tests/ll2s_ui.cjs
 node tests/junos_ui.cjs
 node tests/iol_l1_ui.cjs
 node tests/console_clipboard.cjs
+node tests/console_bulk.cjs
 node tests/instructions.cjs
 node tests/pane_popouts.cjs
 node tests/workspace_features.cjs
@@ -173,6 +199,7 @@ free Docker provisioning subnets/application IDs.
 | `tests/exos_native.cjs` | `EXOS_IMAGE`, KVM, Docker/TAP, Alpine; EXOS boot/console/forwarding |
 | `tests/exos_cpu_native.py IMAGE` | Root, KVM, QEMU and EXOS 33.1; reproduce AMD CPU-name boot failure, then verify the compatible profile |
 | `tests/veos_native.cjs` | `VEOS_IMAGE` and Aboot beside it, KVM, Docker/TAP, Alpine; vEOS boot/console/forwarding |
+| `tests/junos_backup_native.py` | Intel bare metal/KVM, OVMF, both exact Junos 26.2R1.7 images, Docker/TAP and Alpine; saved ZIP restore, CLI/ACPI shutdown and boot/forwarding after each (reserves IDs 930–933) |
 
 For example, with your own license and IOL L2 image installed:
 
@@ -183,6 +210,23 @@ IOURC=/path/to/iourc python3 tests/iol_vlan_backup_native.py
 The older L1 diagnostics expect `images/iourc` and isolate their `/etc/hosts` view
 as described in their headers. Do not interpret a fixture's environment-specific
 boot error as a failed protocol or restore test. Report what actually ran.
+
+For Junos, run in a dedicated development container with the normal KVM/TAP,
+NET_ADMIN and Docker access, and mount the supplied images read-only. Allow at
+least 14 GiB of available RAM plus host overhead and several GiB of writable disk:
+
+```sh
+python3 -u tests/junos_backup_native.py --image-dir /iou --work-parent /data/native-tests
+```
+
+Each run creates its own lab manager and fresh directory beneath `work-parent`;
+it never imports into an existing server lab. Three boots check committed
+configuration and traffic across CLI shutdown/ZIP restoration and guarded Stop.
+The test retains a ZIP, redacted console transcripts, result JSON and a private
+test-password file. Keep these artifacts out of source control and release
+images. On failure it first requests graceful shutdown, then may forcibly clean
+up only its own disposable guests. A timeout or forced cleanup is a failed test.
+Run sequentially with other native tests; switch boot can take several minutes.
 
 ## Examples and browser assets
 
@@ -196,6 +240,11 @@ start devices or establish IOS command/protocol correctness.
 
 Browser assets are shipped in `web/vendor/` with their licenses. `fetch_assets.py`
 restores the pinned versions; it needs network access. Preserve those notices.
+
+`tests/console_bulk.cjs` checks checkbox targeting, leading blank lines/final
+Enter, UTF-8 and line limits, lock changes, owned locks, cancellation, reader
+controls and pop-out entry points through disposable PTY/WebSocket consoles.
+It does not validate vendor command semantics or model inference.
 
 ## Standalone consoles
 
@@ -371,7 +420,11 @@ The ordinary backend suite covers opt-in, validation, stale proposals, retained
 storage, HTTP downloads and echo-device starts. `test_console_automation.py`
 checks console reads/input, cursor replay and truncation, lock ownership, stale
 history/restarts, bounded captures, disconnections and HTTP opt-in using real
-disposable PTYs. For actual STDIO MCP transport:
+disposable PTYs. Bulk cases also cover all-target preflight, mixed families/modes,
+partial delivery, long console histories and per-node output continuation.
+`test_agent.py` and `test_auth_agent.py` exercise per-node observations, exact bulk
+approvals, turn expiry and borrowing only the authenticated login’s human locks.
+For actual STDIO MCP transport:
 
 ```sh
 .venv-mcp/bin/python tests/mcp_smoke.py
@@ -405,6 +458,46 @@ conversation locally; review it before sharing.
 
 
 ## Optional Agent window checks
+
+`test_console_evidence.py` exercises capture-only Cisco/Junos hints and a scripted
+CLI over real PTYs/WebSockets: expired sessions after historical prompts, rejected
+privilege/configuration commands, password questions, CLI modes, pager continuation,
+and literal versus actual Enter. These fixtures do not boot vendor images.
+`test_agent.py` checks that reads finishing after turn revocation/expiry cannot
+restore input observations and that disconnected reads cannot create approvals.
+
+For bounded model evaluation against synthetic consoles, use the optional image
+and an already installed local model (each scenario has a five-minute deadline):
+
+```sh
+python3 tests/agent_native.py --image weblab-agent:dev \
+  --ollama-url http://HOST:11434/v1 --model gpt-oss:20b \
+  --console-workflow expired-denial --console-evidence-dir /tmp/console-evidence
+python3 tests/agent_native.py --image weblab-agent:dev \
+  --ollama-url http://HOST:11434/v1 --model gpt-oss:20b \
+  --console-workflow pager --console-evidence-dir /tmp/console-evidence
+python3 tests/agent_native.py --image weblab-agent:dev \
+  --ollama-url http://HOST:11434/v1 --model gemma4:12b \
+  --console-workflow boot-prompt --console-evidence-dir /tmp/console-evidence
+python3 tests/agent_native.py --image weblab-agent:dev \
+  --ollama-url http://HOST:11434/v1 --model gemma4:12b \
+  --console-workflow ready-batch --console-evidence-dir /tmp/console-evidence
+python3 tests/agent_native.py --image weblab-agent:dev \
+  --ollama-url http://HOST:11434/v1 --model gemma4:12b \
+  --console-workflow ready-bulk --console-evidence-dir /tmp/console-evidence
+```
+
+The first scenario requires an honest refusal after rejected privilege escalation;
+the second requires collecting two paged markers. The third hides Press RETURN
+behind later boot logs and requires a bare Enter, privilege escalation and a
+spanning-tree observation. The fourth starts at an empty user EXEC prompt and
+requires a passwordless enable/paging batch followed by a spanning-tree read,
+without unnecessary Enter keys. The fifth checks two ready privileged consoles,
+one shared paging/STP command list, and reporting evidence for both nodes.
+Evidence is saved before outcome
+assertions, including failed model turns. A passing fixture is not vendor/protocol
+validation or a guarantee of reliable model judgment. Test containers, volumes,
+topology and CLI processes are disposable; no account credentials are used.
 
 `agent_bridge.py` provides browser sessions and a restricted Unix-socket gateway;
 `agent_companion.py` manages pinned Codex processes in the optional companion;

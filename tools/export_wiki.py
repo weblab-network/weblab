@@ -11,6 +11,7 @@ REPO = 'https://github.com/weblab-network/weblab'
 PAGES = {
     'README.md': 'Home',
     'installation.md': 'Installation',
+    'arm64.md': 'ARM64-container-labs',
     'authentication.md': 'Authentication-and-roles',
     'containers.md': 'Container-images-and-EXOS-demo',
     'devices.md': 'Device-profiles',

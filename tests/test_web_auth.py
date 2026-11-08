@@ -76,7 +76,7 @@ class AuthTests(unittest.TestCase):
     def test_workspace_reset_requires_admin_csrf_and_preserves_login(self):
         self.enable()
         cookie, csrf = self.login()
-        data = {'expected_revision': self.lab.workspace_revision}
+        data = {'expected_revision': self.lab.workspace_revision, 'expected_instructions_revision': '0'}
         self.assertEqual(self.http('/api/lab/reset', 'POST', data)[0], 401)
         self.assertEqual(self.http('/api/lab/reset', 'POST', data, cookie)[0], 403)
         self.assertTrue(self.lab.topology['nodes'])

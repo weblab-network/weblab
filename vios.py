@@ -11,6 +11,8 @@ import struct
 import uuid
 
 ABOOT_IMAGE = "Aboot-veos-serial-8.0.2.iso"
+JUNOS_POWERDOWN_IMAGES = frozenset(('vJunos-switch-26.2R1.7.qcow2',
+                                   'vJunosEvolved-26.2R1.7-EVO.qcow2'))
 
 
 def is_qemu(node):

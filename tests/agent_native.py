@@ -80,7 +80,7 @@ def main(args):
                 'import socket\ns=socket.socket();s.settimeout(1)\ntry: s.connect(("192.0.2.1",80))\nexcept OSError: pass\nelse: raise SystemExit("Unexpected egress")'],check=True)
             if args.tool_gateway_only:
                 settings={**api('state')['settings'], 'provider':'openai',
-                          'endpoint':agent_bridge.OPENAI_ENDPOINT, 'model':'gpt-5.6-sol', 'console_input':True}
+                          'endpoint':agent_bridge.OPENAI_ENDPOINT, 'model':'gpt-5.6-sol', 'console_input':True, 'link_faults':True}
                 if args.internet_management:
                     settings.update(internet_changes=True, auto_approve=True)
                 api('settings',settings)
@@ -137,7 +137,7 @@ def main(args):
                 assert lab.topology==before and not lab.runtime
                 print('PASS: native account check, unauthenticated guard, device-code request and cancellation; no account login or inference',flush=True)
                 return
-            if args.console_tail_only:
+            if args.console_tail_only or args.console_workflow:
                 import test_lab
                 fixture = test_lab.LabTests(); fixture.setUp()
                 bridge.lab = bridge.automation.lab = fixture.lab
@@ -149,7 +149,7 @@ def main(args):
                     result = original_tool(session, method, path, data, turn_id)
                     if path == '/api/automation/console-read':
                         console_reads.append((copy.deepcopy(data), copy.deepcopy(result)))
-                    if path in ('/api/automation/console-read', '/api/automation/console-send'):
+                    if path in ('/api/automation/console-read', '/api/automation/console-send', '/api/automation/console-send-bulk'):
                         console_results.append(copy.deepcopy(result))
                     if path == '/api/automation/state':
                         state_results.append(copy.deepcopy(result))
@@ -157,6 +157,24 @@ def main(args):
                 bridge.tool = record_console_read
                 try:
                     image = fixture.root/'fake.bin'
+                    if args.console_workflow:
+                        import agent_console_fixture
+                        agent_console_fixture.prepare(image, args.console_workflow)
+                        if args.console_workflow in ('boot-prompt', 'ready-batch'):
+                            fixture.lab.topology['nodes'][0]['name'] = 'SW1'
+                        fixture.lab.start('r1')
+                        if args.console_workflow == 'ready-bulk':
+                            fixture.lab.start('r2')
+                        api('settings', {'endpoint': args.ollama_url, 'model': args.model[-1],
+                            'context_window': 32768, 'turn_timeout': 300,
+                            'console_input': True, 'auto_approve': True})
+                        api('turn', {'prompt': agent_console_fixture.prompt(args.console_workflow),
+                                     'request_id': uuid.uuid4().hex})
+                        state = await_state(lambda s:s['status'] not in ('starting','running','stopping'))
+                        agent_console_fixture.save(args.console_evidence_dir, args.console_workflow,
+                                                   args.model[-1], state, console_reads, console_results)
+                        agent_console_fixture.verify(args.console_workflow, state, console_results)
+                        return
                     image.write_text(image.read_text().replace(
                         "os.write(1, b'BOOT READY\\r\\n')",
                         "os.write(1, b'Old boot log line\\r\\n' * 1200 + b'\\r\\nSW1#')"))
@@ -346,6 +364,10 @@ if __name__=='__main__':
     parser.add_argument('--approvals',action='store_true',help='Also test approved starts/input on disposable echo nodes')
     parser.add_argument('--protocol-preview',action='store_true',help='Check a nine-node OSPF/STP design instead of the small VLAN preview')
     parser.add_argument('--console-tail-only',action='store_true',help='Check model console input after long boot history on a disposable echo device')
+    parser.add_argument('--console-workflow', choices=('expired-denial', 'pager', 'boot-prompt', 'ready-batch', 'ready-bulk'),
+                        help='Run a bounded real-model task against a disposable scripted CLI (no vendor boot)')
+    parser.add_argument('--console-evidence-dir', type=Path,
+                        help='Save synthetic console-workflow evidence, including failed model turns')
     parser.add_argument('--image',default='weblab-agent:dev')
     args=parser.parse_args()
     if not args.model: args.model=['gpt-oss:20b']
@@ -353,6 +375,8 @@ if __name__=='__main__':
         parser.error('Choose one isolated protocol test')
     if args.internet_management and not args.tool_gateway_only:
         parser.error('--internet-management requires --tool-gateway-only')
-    if (args.openai_login_only or args.tool_gateway_only) and (args.approvals or args.approvals_only or args.protocol_preview or args.console_tail_only):
+    if args.console_workflow and (args.console_tail_only or args.approvals or args.approvals_only or args.protocol_preview):
+        parser.error('--console-workflow is a standalone inference test')
+    if (args.openai_login_only or args.tool_gateway_only) and (args.approvals or args.approvals_only or args.protocol_preview or args.console_tail_only or args.console_workflow):
         parser.error('--openai-login-only cannot be combined with inference tests')
     main(args)

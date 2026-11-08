@@ -7,6 +7,7 @@ import ipaddress
 import json
 import mimetypes
 import os
+import platform
 from pathlib import Path
 import re
 import select
@@ -112,6 +113,8 @@ class Lab:
         self.image_dir.mkdir(parents=True, exist_ok=True)
         self.allow_untested_frr = allow_untested_frr
         self.allow_popout = allow_popout
+        self.architecture = platform.machine().lower()
+        self.container_only = self.architecture in ('aarch64', 'arm64') or os.environ.get('WL_CONTAINER_ONLY') == '1'
         self.upload_lock = threading.Lock()
         self.directory = directory.resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -125,6 +128,7 @@ class Lab:
         self.exports = {}
         self.captures = traffic_capture.Captures()
         self.lock = threading.RLock()
+        self.junos_shutdowns = {}
         self.storage = storage.Monitor(self.directory, self.image_dir)
         self.fabric = None
         self.l1 = None
@@ -152,6 +156,9 @@ class Lab:
         self.automation = lab_automation.Automation(self, LabError, ports, run) if automation else None
 
     def catalog(self):
+        if self.container_only:
+            return [{'name': frr.ARM64_IMAGE, 'type': 'router'},
+                    {'name': ll2s_device.ARM64_IMAGE, 'type': 'switch'}]
         entries = [{"name": p.name, "type": "switch" if "l2" in p.name.lower() or vios.is_exos({"image":p.name}) or vios.is_veos({"image":p.name}) or vios.is_junos_switch({"image":p.name}) else "router"}
                 for p in sorted(self.image_dir.iterdir()) if p.is_file() and
                 ((p.suffix == ".bin" and os.access(p, os.X_OK)) or
@@ -170,6 +177,8 @@ class Lab:
         return entries
 
     def upload_image(self, name, stream, length):
+        if self.container_only:
+            raise LabError('Vendor image uploads are unavailable in the ARM64 container-only profile; see docs/arm64.md')
         iso = name == vios.ABOOT_IMAGE
         if not iso and not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_. -]{0,194}\.(bin|qcow2)", name):
             raise LabError(f"Use a .bin or .qcow2 filename containing letters, numbers, spaces, dots, underscores or hyphens; Arista boot media must be named {vios.ABOOT_IMAGE}")
@@ -234,6 +243,8 @@ class Lab:
                     "iol_l1_profiles": sorted(iol_l1.PROFILES),
                     "allow_untested_frr": self.allow_untested_frr,
                     "allow_popout": self.allow_popout,
+                    "architecture": self.architecture,
+                    "container_only": self.container_only,
                     "external_consoles": {"enabled": bool(getattr(self, "access", None) and self.access.enabled and self.access.server),
                                           "bind": self.access.bind if getattr(self, "access", None) else '127.0.0.1',
                                           "port": self.access.port if getattr(self, "access", None) else 2222},
@@ -241,9 +252,12 @@ class Lab:
                     "status": {n["id"]: {"state": "diagram" if n["type"] in ("network", "group") else "running" if n["id"] in self.runtime else
                                          "error" if self.errors.get(n["id"]) else "stopped",
                                          "error": self.errors.get(n["id"], ""),
+                                         "shutdown_pending": self.junos_shutdowns.get(n['id'], {}).get('phase') == 'pending',
                                          "ssh": {"fingerprint": self.runtime.get(n["id"], {}).get("cloud_ssh_fingerprint", ""),
                                                  "error": self.runtime.get(n["id"], {}).get("cloud_ssh_error", "")},
-                                         "warning": 'Running an untested FRR image. Compatibility is not guaranteed.'
+                                         "warning": 'Graceful shutdown requested; waiting for Junos to power off.'
+                                             if self.junos_shutdowns.get(n['id'], {}).get('phase') == 'pending' else
+                                             'Running an untested FRR image. Compatibility is not guaranteed.'
                                              if self.runtime.get(n['id'], {}).get('frr_untested') else ''}
                                for n in self.topology["nodes"]},
                     "images": self.catalog(),
@@ -341,7 +355,7 @@ class Lab:
             if is_ll2s and (kind != "switch" or image not in ll2s_device.IMAGES):
                 raise node_error(f"LL2S requires a switch node and image {ll2s_device.IMAGE}")
             is_frr = frr.is_frr({"image": image})
-            if is_frr and (kind != "router" or image not in (frr.IMAGE, frr.LLDP_IMAGE, frr.SNMP_IMAGE, frr.VLAN_IMAGE, frr.VRRP_IMAGE, frr.PUBLIC_IMAGE)):
+            if is_frr and (kind != "router" or image not in (frr.IMAGE, frr.LLDP_IMAGE, frr.SNMP_IMAGE, frr.VLAN_IMAGE, frr.VRRP_IMAGE, frr.PUBLIC_IMAGE, frr.ARM64_IMAGE)):
                 raise node_error(f"FRR requires a router node and image {frr.IMAGE}, {frr.LLDP_IMAGE}, {frr.SNMP_IMAGE}, {frr.VLAN_IMAGE}, {frr.VRRP_IMAGE} or {frr.PUBLIC_IMAGE}")
             if (exos or veos) and kind != "switch":
                 raise node_error(f"{'Arista vEOS' if veos else 'EXOS'} images require a switch node")
@@ -365,6 +379,7 @@ class Lab:
                 if not re.fullmatch(r"alpine(?::[a-zA-Z0-9_.-]+)?", image):
                     raise node_error("PC image must be alpine or alpine:TAG")
             elif not cloud and not diagram and not is_frr and not is_ll2s and image not in {i["name"] for i in self.catalog()}:
+                self.require_supported_node({"type": kind, "image": image, "name": raw.get("name", "Device")})
                 raise node_error("Select an IOL .bin, supported .qcow2 image, or a supported FRR/LL2S container")
             node["image"] = image
             l1 = raw.get('iol_l1', False)
@@ -525,16 +540,31 @@ class Lab:
         with self.lock:
             if self.runtime:
                 raise LabError("Stop all nodes before resetting the lab")
-            if (not isinstance(data, dict) or set(data) != {'expected_revision'} or
-                    data['expected_revision'] != self.workspace_revision):
+            if (not isinstance(data, dict) or
+                    set(data) - {'expected_revision', 'preserve_instructions', 'expected_instructions_revision'} or
+                    data.get('expected_revision') != self.workspace_revision):
                 raise LabError("Lab changed. Export again or reopen the reset confirmation.")
+            preserve = data.get('preserve_instructions', False)
+            if type(preserve) is not bool:
+                raise LabError('Preserve Instructions must be true or false')
+            instructions = None
+            if not preserve:
+                previous = self.published_instructions()
+                if data.get('expected_instructions_revision') != previous['revision']:
+                    raise LabConflict('Instructions changed. Reopen the reset confirmation before clearing them.')
+                revision = uuid.uuid4().hex
+                instructions = {'revision': revision, 'reset_revision': revision,
+                                'file': None, 'updated_at': int(time.time())}
             stage = self.directory / ('.restore-' + uuid.uuid4().hex)
             stage.mkdir()
             (stage / 'nodes').mkdir()
             try:
                 lab_backup.install(self, stage, {
-                    'version': 1, 'name': 'Untitled lab', 'nodes': [], 'links': []})
-                return self.snapshot()
+                    'version': 1, 'name': 'Untitled lab', 'nodes': [], 'links': []}, instructions=instructions)
+                result = self.snapshot()
+                if instructions is not None:
+                    result['instructions'] = instructions
+                return result
             finally:
                 if not (self.directory / '.restore.json').exists():
                     shutil.rmtree(stage, ignore_errors=True)
@@ -564,22 +594,26 @@ class Lab:
     def published_instructions(self, known_revision=None):
         with self.lock:
             path = self.directory / 'instructions.json'
-            result = {'revision': '0', 'file': None, 'updated_at': None}
+            result = {'revision': '0', 'reset_revision': '0', 'file': None, 'updated_at': None}
             if path.exists():
                 try:
                     if path.stat().st_size > 4 * 1024 * 1024:
                         raise ValueError('oversized document')
                     result = json.loads(path.read_text(encoding='utf-8'))
-                    if (not isinstance(result, dict) or set(result) != {'revision', 'file', 'updated_at'} or
+                    if (not isinstance(result, dict) or set(result) not in (
+                            {'revision', 'file', 'updated_at'}, {'revision', 'reset_revision', 'file', 'updated_at'}) or
                             not isinstance(result['revision'], str) or
                             not re.fullmatch(r'[a-f0-9]{32}', result['revision']) or
                             type(result['updated_at']) is not int):
                         raise ValueError('invalid stored metadata')
+                    reset_revision = result.setdefault('reset_revision', '0')
+                    if not isinstance(reset_revision, str) or not re.fullmatch(r'0|[a-f0-9]{32}', reset_revision):
+                        raise ValueError('invalid reset metadata')
                     result['file'] = self.validate_instructions_file(result['file'])
                 except (OSError, ValueError, LabError) as exc:
                     raise LabError('Cannot read published instructions; check instructions.json on the server') from exc
             if known_revision == result['revision']:
-                return {'revision': result['revision'], 'unchanged': True}
+                return {'revision': result['revision'], 'reset_revision': result['reset_revision'], 'unchanged': True}
             return result
 
     def publish_instructions(self, data):
@@ -590,7 +624,8 @@ class Lab:
             previous = self.published_instructions()
             if data['revision'] != previous['revision']:
                 raise LabConflict('Published instructions changed. View the published version before publishing again.')
-            result = {'revision': uuid.uuid4().hex, 'file': file, 'updated_at': int(time.time())}
+            result = {'revision': uuid.uuid4().hex, 'reset_revision': previous['reset_revision'],
+                      'file': file, 'updated_at': int(time.time())}
             try:
                 lab_backup.write_json(self.directory / 'instructions.json', result)
             except OSError as exc:
@@ -797,6 +832,13 @@ class Lab:
                     return self.node(link[other]["node"])
         raise LabError("Connect the PC eth0 interface to a running-capable switch, router or Internet gateway first; diagram-only clouds provide no connection")
 
+    def require_supported_node(self, node):
+        if not self.container_only or node['type'] in ('network', 'group', 'pc'):
+            return
+        if node.get('image') not in (frr.ARM64_IMAGE, ll2s_device.ARM64_IMAGE):
+            raise LabError(f"{node['name']}: the ARM64 container-only profile supports native FRR, LL2S and Alpine PCs. "
+                           "Select the ARM64 image in Inspector; vendor VMs/IOL and Internet are unavailable. See docs/arm64.md")
+
     def start(self, node_id):
         with self.lock:
             node = self.node(node_id)
@@ -804,6 +846,7 @@ class Lab:
                 raise LabError("Network clouds and groups are diagram-only and cannot be started")
             if node_id in self.runtime:
                 return
+            self.require_supported_node(node)
             storage.require_space(self.directory, operation='starting a node',
                                   reserve=storage.START_RESERVE, error=LabError)
             storage.require_space(Path(tempfile.gettempdir()), operation='node temporary files', error=LabError)
@@ -918,7 +961,9 @@ class Lab:
     def start_pc(self, node):
         node_id = node["id"]
         runtime = self.runtime[node_id]
-        run("docker", "image", "inspect", node["image"])
+        image_info = run("docker", "image", "inspect", node["image"])
+        if self.container_only and json.loads(image_info)[0].get('Architecture') != 'arm64':
+            raise LabError('The ARM64 profile requires native arm64 Alpine PCs; pull Alpine on the ARM host')
         stem = f"iol-{self.owner}-{node['iol_id']}"
         tap = f"it{self.owner}{node['iol_id']}"
         runtime.update({"container": stem, "network": stem, "tap": tap})
@@ -1054,6 +1099,7 @@ class Lab:
             if self.fabric:
                 self.fabric.reset_node(node_id)
             self.runtime.pop(node_id)
+            self.junos_shutdowns.pop(node_id, None)
             self.journal()
             if not self.runtime and self.fabric:
                 if self.l1:
@@ -1064,6 +1110,8 @@ class Lab:
 
     def start_all(self):
         with self.lock:
+            for node in self.topology["nodes"]:
+                self.require_supported_node(node)
             for node in self.topology["nodes"]:
                 if node["type"] == "pc":
                     self.pc_peer(node["id"])
@@ -1077,6 +1125,47 @@ class Lab:
                 for node_id in reversed(started):
                     self.stop(node_id)
                 raise
+
+    def request_stop(self, node_id=None):
+        """Interactive Stop: request Junos shutdown without killing a live guest.
+
+        Internal cleanup/server teardown still uses stop/stop_all. Callers must
+        wait for stopped state before exporting, resetting or stopping the server.
+        """
+        with self.lock:
+            if node_id is not None:
+                self.node(node_id)
+            failures = []
+            for ident in ([node_id] if node_id is not None else list(self.runtime)):
+                node, runtime = self.node(ident), self.runtime.get(ident)
+                if not runtime:
+                    continue
+                try:
+                    if vios.is_junos(node) and 'console' in runtime and self.alive(runtime['console']):
+                        pending = self.junos_shutdowns.get(ident)
+                        if (pending and pending['runtime'] is runtime and pending['phase'] == 'pending'
+                                and time.monotonic() < pending['deadline']):
+                            continue
+                        if node['image'] not in vios.JUNOS_POWERDOWN_IMAGES or not runtime.get('qemu_sockets'):
+                            raise LabError('This Junos profile requires manual CLI power-off. '
+                                           'Run request system power-off and wait for guest exit; the VM was retained.')
+                        try:
+                            qmp.powerdown(Path(runtime['qemu_sockets']) / 'qmp')
+                        except qmp.QMPError as exc:
+                            raise LabError(f'Junos shutdown request could not be confirmed; VM retained. '
+                                           f'Check the console before retrying Stop: {exc}') from exc
+                        self.junos_shutdowns[ident] = {'runtime': runtime, 'phase': 'pending',
+                                                       'deadline': time.monotonic() + 180}
+                        self.errors.pop(ident, None)
+                    else:
+                        self.stop(ident)
+                except LabError as exc:
+                    if vios.is_junos(node):
+                        self.junos_shutdowns[ident] = {'runtime': runtime, 'phase': 'unconfirmed', 'deadline': 0}
+                    self.errors[ident] = str(exc)
+                    failures.append(f"{node['name']}: {exc}")
+            if failures:
+                raise LabError('; '.join(failures))
 
     def stop_all(self):
         with self.lock:
@@ -1114,6 +1203,16 @@ class Lab:
                 for node_id, runtime in list(self.runtime.items()):
                     if node_id not in self.runtime:
                         continue
+                    pending = self.junos_shutdowns.get(node_id)
+                    if pending and pending['runtime'] is not runtime:
+                        self.junos_shutdowns.pop(node_id, None)
+                        pending = None
+                    if (pending and pending['phase'] == 'pending' and time.monotonic() >= pending['deadline']
+                            and 'console' in runtime and self.alive(runtime['console'])):
+                        pending['phase'] = 'timed_out'
+                        self.errors[node_id] = ('Junos did not power off within 180 seconds; VM kept running. '
+                                                'Inspect its console, finish CLI shutdown or retry Stop. '
+                                                'No forced termination was attempted.')
                     if runtime.get('cloud_ssh_id'):
                         try:
                             internet_cloud.sync_ssh(self, node_id, runtime, run, LabError)
@@ -1123,12 +1222,25 @@ class Lab:
                     if failed:
                         child = self.children.get(runtime[failed]['pid'])
                         code = child.poll() if child else None
-                        detail = f" (status {code})" if code is not None else ""
-                        self.errors[node_id] = f"{failed.capitalize()} process exited{detail}. Open launcher logs for details."
-                        stamp = time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
-                        print(f"{stamp} node {node_id}: {self.errors[node_id]}", file=sys.stderr, flush=True)
+                        # A Junos CLI power-off normally exits QEMU with status 0.
+                        # Keep failures visible, including unknown exit status.
+                        clean_junos_exit = failed == 'console' and code == 0 and vios.is_junos(self.node(node_id))
+                        if clean_junos_exit and pending:
+                            self.errors.pop(node_id, None)
+                        if not clean_junos_exit and not (pending and failed != 'console'):
+                            detail = f" (status {code})" if code is not None else ""
+                            self.errors[node_id] = f"{failed.capitalize()} process exited{detail}. Open launcher logs for details."
+                            stamp = time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
+                            print(f"{stamp} node {node_id}: {self.errors[node_id]}", file=sys.stderr, flush=True)
                         try:
-                            self.stop(node_id)
+                            if (failed != 'console' and vios.is_junos(self.node(node_id))
+                                    and 'console' in runtime and self.alive(runtime['console'])):
+                                # Do not turn a failed bridge or a timed-out shutdown
+                                # into a forced guest termination or an automatic retry.
+                                if not pending:
+                                    self.request_stop(node_id)
+                            else:
+                                self.stop(node_id)
                         except LabError:
                             pass
 
@@ -1460,6 +1572,9 @@ class Handler(BaseHTTPRequestHandler):
                 operations = {'preview': service.preview, 'apply': service.apply,
                               'discard': service.discard, 'start-node': service.start_node,
                               'console-read': service.console_read, 'console-send': service.console_send,
+                              'console-send-bulk': service.console_send_bulk,
+                              'link-state': service.link_state, 'link-frame-loss': service.link_frame_loss,
+                              'link-carrier': service.link_carrier,
                               'internet-settings': service.internet_settings, 'preview-internet': service.preview_internet,
                               'apply-internet': service.apply_internet, 'stop-internet': service.stop_internet,
                               'start-internet': service.start_internet}
@@ -1507,7 +1622,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.lab.start_all()
                 result = self.lab.snapshot()
             elif self.command == "POST" and path == "/api/lab/stop":
-                self.lab.stop_all()
+                self.lab.request_stop()
                 result = self.lab.snapshot()
             elif self.command == "POST" and re.fullmatch(r"/api/nodes/[\w-]+/(start|stop)", path):
                 _, _, _, node_id, action = path.split("/")
@@ -1515,7 +1630,7 @@ class Handler(BaseHTTPRequestHandler):
                     node = self.lab.node(node_id)
                     if action == 'start' and internet_cloud.is_cloud(node) and self.auth and self.principal['role'] != 'admin':
                         raise web_auth.Denied('Only administrators can enable Internet access')
-                    getattr(self.lab, action)(node_id)
+                    getattr(self.lab, 'request_stop' if action == 'stop' else action)(node_id)
                 result = self.lab.snapshot()
             else:
                 self.reply(404, {"error": "Not found"})

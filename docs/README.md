@@ -6,7 +6,7 @@ Start with [installation](installation.md), then build a small lab using the
 [starter exercise](../examples/starter.md). These pages describe the current
 workspace and its supported profiles.
 
-Release notes: [v0.12.0](releases/v0.12.0.md), [v0.11.1](releases/v0.11.1.md), [v0.11.0](releases/v0.11.0.md), [v0.10.2](releases/v0.10.2.md), [v0.10.1](releases/v0.10.1.md), [v0.10.0](releases/v0.10.0.md), [v0.9.1](releases/v0.9.1.md), [v0.9.0](releases/v0.9.0.md), [v0.8.3](releases/v0.8.3.md), [v0.8.2](releases/v0.8.2.md), [v0.8.1](releases/v0.8.1.md), [v0.8.0](releases/v0.8.0.md), [v0.7.0](releases/v0.7.0.md), [v0.6.0](releases/v0.6.0.md),
+Release notes: [v0.13.0](releases/v0.13.0.md), [v0.12.0](releases/v0.12.0.md), [v0.11.1](releases/v0.11.1.md), [v0.11.0](releases/v0.11.0.md), [v0.10.2](releases/v0.10.2.md), [v0.10.1](releases/v0.10.1.md), [v0.10.0](releases/v0.10.0.md), [v0.9.1](releases/v0.9.1.md), [v0.9.0](releases/v0.9.0.md), [v0.8.3](releases/v0.8.3.md), [v0.8.2](releases/v0.8.2.md), [v0.8.1](releases/v0.8.1.md), [v0.8.0](releases/v0.8.0.md), [v0.7.0](releases/v0.7.0.md), [v0.6.0](releases/v0.6.0.md),
 [v0.5.1](releases/v0.5.1.md). Authentication and shared instructions are available starting with v0.7.0.
 
 ## User guide
@@ -32,6 +32,9 @@ writer/reader permissions, admin activity records and current integration limits
 
 [Prebuilt container images and EXOS demo](containers.md) provide an alternative
 to building locally, including a wired introductory topology and bundled EXOS image.
+
+[Native ARM64 source build](arm64.md) — FRR, LL2S and Alpine labs on Linux ARM64,
+without KVM or x86 emulation.
 
 [Internet cloud](internet.md) — optional IPv4 NAT gateway, live outbound firewall, inbound port forwarding, DNS and return routes
 for Internet access from lab PCs and routers (separate prebuilt or locally built helper).

@@ -29,6 +29,11 @@ it is not an offline toolchain or a promise of bit-for-bit reproducibility.
 Locally rebuilt images may resolve newer Alpine dependencies and require their
 own inventory/source bundle. Weblab's untested-image opt-in applies to such builds.
 
+For a locally built ARM64 context, pass the ARM base explicitly when rebuilding:
+`docker build --platform linux/arm64 --build-arg FRR_BASE=quay.io/frrouting/frr@sha256:46e5bfb0ea9234de44d222906d51d8fe701d8a1cb7c373bc527b73326eea4d76 -t weblab-frr:10.7.1-wl1-arm64 build/`.
+The Dockerfile default remains the pinned amd64 base for existing release bundles.
+The ARM source-build profile does not publish an additional binary release bundle.
+
 The builder's `--context-dir` option retains the complete build context. The
 release bundler collects sources from the **same image** that it archives; a
 failed collection prevents producing a completed bundle. Publishing the image

@@ -54,15 +54,19 @@ jobs:
           node tests/external_access_ui.cjs
           node tests/network_cloud_ui.cjs
           node tests/diagram_groups_ui.cjs
+          node tests/arm64_ui.cjs
           node tests/instructions.cjs
           node tests/pane_popouts.cjs
           node tests/auth_ui.cjs
           node tests/auth_console_locks.cjs
+          node tests/console_keys.cjs
+          node tests/console_bulk.cjs
           node tests/auth_agent.cjs
           node tests/shared_instructions.cjs
           node tests/activity.cjs
           node tests/console_open_mode.cjs
           node tests/workspace_features.cjs
+          node tests/junos_ui.cjs
           node tests/link_actions.cjs
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -275,7 +279,7 @@ jobs:
           ref: ${{ env.SOURCE_REVISION }}
       - name: Select helper identity
         run: |
-          version=0.12.0-dev
+          version=0.13.0-dev
           selector=sha-${SOURCE_REVISION}
           if [ "$RELEASE_BUILD" = true ]; then
             version=${RELEASE_TAG#v}

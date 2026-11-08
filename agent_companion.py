@@ -25,7 +25,7 @@ import agent_pdf
 
 TOOLS = ['get_lab_state', 'get_storage_report', 'list_device_profiles',
          'get_authoring_guide', 'preview_topology', 'get_proposal', 'get_console_output', 'get_node_logs',
-         'get_internet_settings', 'preview_internet_settings']
+         'get_internet_settings', 'preview_internet_settings', 'get_link_state']
 ACTIVE = {'starting', 'running', 'stopping'}
 CONVERSATION_SETTINGS = ('provider', 'endpoint', 'model', 'context_window')
 MAX_CONVERSATIONS = 50
@@ -400,14 +400,17 @@ class Session:
         if self.settings.get('internet_changes'):
             config['mcp_servers.weblab.args'].append('--allow-internet-write')
             config['mcp_servers.weblab.enabled_tools'] += ['apply_internet_settings', 'stop_internet_node', 'start_internet_node']
+        if self.settings.get('link_faults'):
+            config['mcp_servers.weblab.args'].append('--allow-link-faults')
+            config['mcp_servers.weblab.enabled_tools'] += ['set_link_frame_loss', 'set_link_carrier']
         if self.settings.get('console_input'):
             config['mcp_servers.weblab.args'].append('--allow-console-input')
-            config['mcp_servers.weblab.enabled_tools'] += ['send_console_input', 'send_console_command']
+            config['mcp_servers.weblab.enabled_tools'] += ['send_console_input', 'send_console_command', 'send_console_commands', 'send_console_commands_to_nodes', 'send_console_key']
         # These exact tools only request Weblab's independent, server-enforced browser
         # approval. Avoid a second Codex elicitation that cannot reach the browser.
         # Generic execution/elicitation stays denied; never use a global approve policy.
-        for tool in ('apply_topology', 'start_node', 'send_console_input', 'send_console_command',
-                     'apply_internet_settings', 'stop_internet_node', 'start_internet_node'):
+        for tool in ('apply_topology', 'start_node', 'send_console_input', 'send_console_command', 'send_console_commands', 'send_console_commands_to_nodes', 'send_console_key',
+                     'apply_internet_settings', 'stop_internet_node', 'start_internet_node', 'set_link_frame_loss', 'set_link_carrier'):
             if tool in config['mcp_servers.weblab.enabled_tools']:
                 config[f'mcp_servers.weblab.tools.{tool}.approval_mode'] = 'approve'
         for feature in ('shell_tool', 'shell_snapshot', 'code_mode_host', 'multi_agent', 'apps',
@@ -481,7 +484,7 @@ class Session:
                 'When the user asks for configured working devices, include the requested FRR/LL2S baseline '
                 'in startup_config and PC addressing in ipv4/gateway before previewing. Follow the authoring '
                 'guide syntax; use console input for subsequent configuration and verification. '
-                'When enabled in Settings, topology/gateway writes, starts/stops and console input create operation '
+                'When enabled in Settings, topology/gateway writes, link faults, starts/stops and console input create operation '
                 'records in the browser. They wait for user approval unless the user enabled YOLO auto-approval. '
                 'Do not ask the user to approve in chat first or claim approval is unavailable. The read-only '
                 'sandbox applies to the companion filesystem, not to enabled Weblab tools. '
@@ -494,16 +497,61 @@ class Session:
                 'protocol/connectivity checks. Before finishing, read lab state and report completed, failed '
                 'and unverified items accurately. A partial start or provided command snippets are not a '
                 'working configured lab. Do not substitute manual instructions for enabled requested actions. '
+                'For cable/frame-loss tests, read get_link_state for the exact link before EVERY mutation. '
+                'Use its named A/B endpoints, revision and link_revision; link faults have a separate Settings permission. '
+                'set_link_frame_loss blocks all frames in either direction without changing carrier; False/False clears only frame loss. '
+                'set_link_carrier requests unplug/reconnect only where carrier_supported is true; it leaves frame blocks unchanged. '
+                'Never automatically enable IOL carrier support or substitute guest shutdown commands for requested link faults. '
+                'After each fault/restore read link state and verify guest detection and convergence using console evidence. '
+                'A pending carrier change or successful tool result does not prove the guest detected it. '
+                'On stale or uncertain results, reread and review; never blindly retry. Restore only faults within the requested scope, '
+                'and report any remaining faults if the test ends early. Capture controls and publishing Instructions still require the browser. '
                 'Read each console and inspect prompt and pending input before sending. Use that read revision/cursor. '
                 'For an initial check use get_console_output without cursor (latest output by default). '
                 'If capture_end is limit, keep reading with each returned cursor until the backlog is drained; '
                 'never send input from an incomplete read or repeatedly reread the first chunk. '
+                'If unread_cursor is present, resume at that cursor: a latest excerpt skipped earlier unread output '
+                'and cannot authorize the next input. Collect the missing bytes before continuing. '
                 'omitted_bytes means older text was left out, so a latest excerpt is not a complete configuration. '
                 'Old boot messages and topology startup_config are not evidence of current guest readiness or running configuration. '
+                'Console evidence is a bounded hint about this capture only, not persistent CLI state. '
+                'Inspect the final lines in order: a later session-expired or Press RETURN message supersedes older prompts. '
+                'To obtain a prompt for requested console work, use send_console_key with key="enter" once, '
+                'then make a fresh console read. Do this for Press RETURN or idle boot/syslog text without a prompt, '
+                'provided there is no known unfinished input, login/password, pager, confirmation or active command. '
+                'Press RETURN may be followed by later startup logs; those logs do not prove it is still booting. '
+                'Do not stop merely because no prompt was printed; try this bounded prompt recovery when appropriate. '
+                'Never send random keys, blindly repeat Enter, or submit unknown pending input. '
+                'If an empty prompt is already visible (for example SW4>), send the intended command directly. '
+                'Do not insert an extra Enter between the fresh read and enable or another command: every input consumes the read. '
+                'After a missing-fresh-read rejection, read then send the intended command, without another key in between. '
+                'If the same rejection or no-progress sequence repeats twice, stop that sequence and explain the blocker. '
+                'If there is no new output, do not invent a prompt or assume an earlier command completed. '
+                'Cisco > is user EXEC, # privileged EXEC, and (config...)# configuration mode. '
+                'For authorized privileged work, normally send enable separately and verify the resulting prompt; '
+                'stop at an unknown password request. Never treat rejected enable as applied. '
+                'At a pager, use a supported pager key and collect every page; do not type commands into it. '
+                'Session paging dictionary: Cisco IOS/IOL/IOSv EXEC, FRR vtysh EXEC and Arista EOS EXEC use terminal length 0; '
+                'Junos operational CLI uses set cli screen-length 0; EXOS uses disable clipaging (one word). '
+                'These are CLI session settings, not startup configuration; never send them to a shell or the wrong mode. '
+                'LL2S/Alpine have no paging command in this dictionary. Inspect the response before long output. '
+                'Error markers in latest/history reads may be old; errors in a send capture must be inspected, '
+                'not described as no output. A returned prompt alone does not prove a successful command. '
                 'A rejected stale cursor means reread, not wait for another boot or guess a password. '
                 'Prefer send_console_command for one ordinary CLI command: pass command text only, without Enter escapes. '
-                'It appends a real Enter byte. Use send_console_input for bare Enter, pager/control keys or partial input only. '
-                'Before EVERY command or raw input call, make a fresh get_console_output call, even after a successful send. '
+                'It appends a real Enter byte. send_console_commands accepts 1–32 plain commands as one approved paste. '
+                'For identical commands on several devices, send_console_commands_to_nodes accepts 1–8 explicit targets. '
+                'Read EVERY target first and inspect its empty top-level prompt; supply each exact cursor and the common revision. '
+                'Never mix PCs with routers/switches or mix vendor families or prompt modes. Prepare unknown prompts, '
+                'login, enable authentication and pagers individually; bulk input will refuse them. '
+                'Inspect every per-node delivery result; a partial result is not permission to replay the whole batch. '
+                'Read all targets again before further input and drain each unread/limited capture. '
+                'Use batches only for predictable non-interactive sequences: no intermediate wait/error checks or rollback. '
+                'Batch enable with terminal length 0 only when enable is known to be passwordless; otherwise separate them. '
+                'Read all output after a batch and verify results; never replay an uncertain batch. '
+                'Use send_console_key for Enter, pager space or supported control keys; '
+                'use send_console_input only for other keys or literal/partial input. Never encode Enter as literal backslash-r. '
+                'Before EVERY command, batch, key or raw input call, make a fresh get_console_output call, even after a successful send. '
                 'Establish an empty input line at the appropriate prompt; never append commands to an unfinished line. '
                 'A rejected command did not execute; echoed input alone is not command output. '
                 'Use vendor-specific syntax and bounded commands. Read again after input '
@@ -631,6 +679,11 @@ class Session:
                         self.status = params['turn']['status']
                         if params['turn'].get('error'):
                             self.error = 'The model turn failed. Check Settings and try a new turn.'
+                        elif self.status == 'completed' and not any(
+                                self.messages[i]['text'].strip() for i in indices.values()):
+                            self.status = 'failed'
+                            self.error = ('The model ended without a text response. Completed operations remain; '
+                                          'inspect Operations before asking it to continue. No prompt was resent.')
                         break
         except Exception as exc:
             with self.lock:

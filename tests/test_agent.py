@@ -18,6 +18,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import agent_bridge
+import console_capture
 import agent_companion
 import agent_attachments
 from agent_transport import request
@@ -399,6 +400,113 @@ class AgentApprovalTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Read this console'):
             self.bridge.tool(self.session,'POST','/api/automation/console-send',item['arguments'],self.turn)
 
+    def test_console_batch_is_one_exact_approval_and_consumes_observation(self):
+        args = self.console_arguments()
+        args['input'] = 'enable\rterminal length 0\r'
+        thread, result, item = self.launch('console-send', args)
+        self.assertEqual(item['arguments']['input'], 'enable\rterminal length 0\r')
+        self.assertNotIn('RX:', self.bridge.automation.console_read('r1', wait_seconds=.1)['output'])
+        args['input'] = 'reload\r'  # Cannot alter a reviewed paste.
+        self.decide(item)
+        thread.join(3)
+        self.assertEqual(result['result']['input_status'], 'sent')
+        self.assertEqual(result['result']['command_completion'], 'unverified')
+        self.assertIn('terminal length 0', result['result']['output'])
+        self.assertNotIn('reload', result['result']['output'])
+        with self.assertRaisesRegex(ValueError, 'do not insert another Enter'):
+            self.bridge.tool(self.session, 'POST', '/api/automation/console-send', item['arguments'], self.turn)
+
+    def bulk_arguments(self):
+        image = self.fixture.root / 'fake.bin'
+        image.write_text(image.read_text().replace("b'BOOT READY\\r\\n'", "b'R# '").replace(
+            "os.write(1, b'RX:' + data)", "os.write(1, b'RX:' + data.replace(b'\\r', b'\\r\\n') + b'\\r\\nR# ')") )
+        targets = []
+        for node in ('r1', 'r2'):
+            self.lab.start(node)
+            observed = self.bridge.tool(self.session, 'POST', '/api/automation/console-read',
+                                       {'node_id': node, 'wait_seconds': .1, 'latest': True}, self.turn)
+            targets.append({'node_id': node, 'expected_cursor': observed['cursor']})
+        return {'targets': targets, 'input': 'show clock\rshow version\r',
+                'expected_revision': observed['revision'], 'wait_seconds': .1}
+
+    def test_bulk_exact_approval_consumes_all_reads_and_tracks_each_frontier(self):
+        args = self.bulk_arguments()
+        args['max_bytes'] = 8
+        thread, result, item = self.launch('console-send-bulk', args)
+        self.assertEqual([n['id'] for n in item['context']['nodes']], ['r1', 'r2'])
+        self.assertEqual(item['arguments']['input'], 'show clock\rshow version\r')
+        args['targets'].clear()
+        args['input'] = 'reload\r'
+        self.decide(item); thread.join(5)
+        self.assertNotIn('error', result)
+        self.assertEqual(result['result']['input_status'], 'sent')
+        self.assertEqual(self.bridge.observations[self.session['id']], {})
+        self.assertEqual(set(self.bridge.console_backlogs[self.session['id']]), {'r1', 'r2'})
+        with self.assertRaisesRegex(ValueError, 'Read this console'):
+            self.bridge.tool(self.session, 'POST', '/api/automation/console-send-bulk', item['arguments'], self.turn)
+        with self.assertRaises(ValueError):
+            self.decide(item)
+        for capture in result['result']['results']:
+            rest = self.bridge.tool(self.session, 'POST', '/api/automation/console-read',
+                {'node_id':capture['node_id'], 'cursor':capture['cursor'], 'wait_seconds':.1}, self.turn)
+            self.assertIn('show version', rest['output'])
+            self.assertNotIn('reload', rest['output'])
+        self.assertEqual(self.bridge.console_backlogs[self.session['id']], {})
+
+    def test_bulk_requires_every_fresh_read_and_same_prompt_family(self):
+        args = self.bulk_arguments()
+        observations = self.bridge.observations[self.session['id']]
+        saved = observations.pop('r2')
+        with self.assertRaisesRegex(ValueError, 'Read this console'):
+            self.bridge.tool(self.session, 'POST', '/api/automation/console-send-bulk', args, self.turn)
+        for change, message in (({'cursor':'other:3'}, 'cursor'), ({'gap':True}, 'gap'),
+                                ({'unread_cursor':'other:2'}, 'unread'), ({'capture_end':'limit'}, 'incomplete'),
+                                ({'output':'R(config)#'}, 'prompt'), ({'output':'Password:'}, 'prompt'),
+                                ({'revision':'wrong'}, 'revision')):
+            observations['r2'] = {**saved, **change}
+            with self.subTest(change=change), self.assertRaisesRegex((ValueError, lab_server.LabError), message):
+                self.bridge.tool(self.session, 'POST', '/api/automation/console-send-bulk', args, self.turn)
+        observations['r2'] = {**saved, 'output':'pc:~#'}
+        self.lab.node('r2').update(type='pc', image='alpine:latest')
+        revision = self.bridge.automation.state()['revision']
+        for observed in observations.values(): observed['revision'] = revision
+        args['expected_revision'] = revision
+        with self.assertRaisesRegex(lab_server.LabError, 'same device family'):
+            self.bridge.tool(self.session, 'POST', '/api/automation/console-send-bulk', args, self.turn)
+        self.assertEqual(self.bridge.approval_state(self.session), [])
+
+    def test_bulk_permission_denial_and_stale_after_approval_send_nothing(self):
+        args = self.bulk_arguments()
+        self.session['settings']['console_input'] = False
+        with self.assertRaisesRegex(ValueError, 'Enable console_input'):
+            self.bridge.tool(self.session, 'POST', '/api/automation/console-send-bulk', args, self.turn)
+        self.session['settings']['console_input'] = True
+        thread, result, item = self.launch('console-send-bulk', args)
+        self.decide(item, False); thread.join(3)
+        self.assertIn('denied', result['error'])
+        thread, result, item = self.launch('console-send-bulk', args)
+        observed = self.bridge.automation.console_read('r2', wait_seconds=.1)
+        self.bridge.automation.console_send('r2', 'human command\r', observed['revision'], observed['cursor'], wait_seconds=.1)
+        self.decide(item); thread.join(5)
+        self.assertIn('Console changed', result['error'])
+        for node in ('r1', 'r2'):
+            self.assertNotIn('show clock', self.bridge.automation.console_read(node, wait_seconds=.1)['output'])
+
+    def test_bulk_turn_expiry_between_targets_stops_and_reports_partial(self):
+        args = self.bulk_arguments()
+        self.session['settings']['auto_approve'] = True
+        original = console_capture.Console.window
+        def window(console, wait_seconds, max_bytes, **kwargs):
+            result = original(console, wait_seconds, max_bytes, **kwargs)
+            if 'RX:show clock' in result['output']:
+                self.bridge.turns[self.session['id']]['expires'] = time.monotonic() - 1
+            return result
+        with patch.object(console_capture.Console, 'window', window):
+            result = self.bridge.tool(self.session, 'POST', '/api/automation/console-send-bulk', args, self.turn)
+        self.assertEqual(result['input_status'], 'partial')
+        self.assertEqual([r['input_status'] for r in result['results']], ['sent', 'not_sent'])
+        self.assertNotIn('show clock', self.bridge.automation.console_read('r2', wait_seconds=.1)['output'])
+
     def test_incomplete_console_read_requires_continuation_before_approval(self):
         args = self.console_arguments()
         first = self.bridge.tool(self.session, 'POST', '/api/automation/console-read',
@@ -413,6 +521,110 @@ class AgentApprovalTests(unittest.TestCase):
         thread, result, item = self.launch('console-send', args)
         self.decide(item); thread.join(3)
         self.assertEqual(result['result']['input_status'], 'sent')
+
+    def test_delayed_console_read_cannot_restore_revoked_observation(self):
+        args = self.console_arguments()
+        entered, release = threading.Event(), threading.Event()
+        original = self.bridge.automation.console_read
+
+        def delayed(**kwargs):
+            result = original(**kwargs)
+            entered.set()
+            release.wait(3)
+            return result
+
+        with patch.object(self.bridge.automation, 'console_read', side_effect=delayed):
+            worker = threading.Thread(target=lambda: self.bridge.tool(
+                self.session, 'POST', '/api/automation/console-read',
+                {'node_id': 'r1', 'wait_seconds': .1}, self.turn))
+            self.threads.append(worker)
+            worker.start()
+            self.assertTrue(entered.wait(2))
+            with self.bridge.lock:
+                self.bridge.revoke(self.session)
+                self.turn = 'b' * 32
+                self.state['request_id'] = self.turn
+                self.bridge.turns[self.session['id']] = {
+                    'id': self.turn, 'expires': time.monotonic() + 120}
+            release.set()
+            worker.join(3)
+        self.assertNotIn('r1', self.bridge.observations.get(self.session['id'], {}))
+        with self.assertRaisesRegex(ValueError, 'Read this console'):
+            self.bridge.tool(self.session, 'POST', '/api/automation/console-send', args, self.turn)
+
+    def test_disconnected_read_cannot_request_input_approval(self):
+        args = self.console_arguments()
+        observation = self.bridge.observations[self.session['id']]['r1']
+        for ending in ('disconnected', 'lock_lost'):
+            with self.subTest(ending=ending), patch.object(agent_bridge, 'APPROVAL_SECONDS', .05):
+                observation['capture_end'] = ending
+                with self.assertRaisesRegex(ValueError, 'no input was sent'):
+                    self.bridge.tool(self.session, 'POST', '/api/automation/console-send', args, self.turn)
+                self.assertEqual(self.bridge.approval_state(self.session), [])
+
+    def test_console_observations_require_the_current_unexpired_turn(self):
+        self.console_arguments()
+        read_args = {'node_id': 'r1', 'wait_seconds': .1}
+        with self.bridge.lock:
+            self.bridge.observations.clear()
+        self.bridge.tool(self.session, 'POST', '/api/automation/console-read', read_args, 'old-turn')
+        self.assertNotIn(self.session['id'], self.bridge.observations)
+        self.bridge.turns[self.session['id']]['expires'] = time.monotonic() - 1
+        self.bridge.tool(self.session, 'POST', '/api/automation/console-read', read_args, self.turn)
+        self.assertNotIn(self.session['id'], self.bridge.observations)
+        with self.bridge.lock:
+            self.bridge.revoke(self.session)
+        self.bridge.tool(self.session, 'POST', '/api/automation/console-read', read_args)
+        self.assertNotIn(self.session['id'], self.bridge.observations)
+
+    def test_latest_excerpt_cannot_skip_unread_command_output(self):
+        self.session['settings']['auto_approve'] = True
+        args = self.console_arguments()
+        sent = self.bridge.tool(self.session, 'POST', '/api/automation/console-send',
+            {**args, 'input': 'x' * 3000 + '\r', 'max_bytes': 64}, self.turn)
+        self.assertEqual(sent['capture_end'], 'limit')
+        latest = self.bridge.tool(self.session, 'POST', '/api/automation/console-read',
+            {'node_id': 'r1', 'latest': True, 'max_bytes': 64, 'wait_seconds': .1}, self.turn)
+        self.assertGreater(latest['omitted_bytes'], 0)
+        self.assertEqual(latest['capture_end'], 'timeout')
+        self.assertEqual(latest.get('unread_cursor'), sent['cursor'])
+        before = len(self.bridge.approval_state(self.session))
+        with self.assertRaisesRegex(ValueError, 'unread output'):
+            self.bridge.tool(self.session, 'POST', '/api/automation/console-send',
+                {**args, 'expected_cursor': latest['cursor']}, self.turn)
+        self.assertEqual(len(self.bridge.approval_state(self.session)), before)
+        # Drain from the missing frontier, not the latest excerpt's cursor.
+        fresh = self.bridge.tool(self.session, 'POST', '/api/automation/console-read',
+            {'node_id': 'r1', 'cursor': sent['cursor'], 'wait_seconds': .1}, self.turn)
+        self.assertNotIn('unread_cursor', fresh)
+        result = self.bridge.tool(self.session, 'POST', '/api/automation/console-send',
+            {**args, 'expected_cursor': fresh['cursor']}, self.turn)
+        self.assertEqual(result['input_status'], 'sent')
+
+    def test_capture_frontier_overlap_gaps_and_revocation(self):
+        def capture(end, count, reason='timeout', omitted=0, gap=False, epoch='one'):
+            result = {'cursor': f'{epoch}:{end}', 'bytes_read': count, 'omitted_bytes': omitted,
+                      'capture_end': reason, 'gap': gap}
+            with self.bridge.lock:
+                self.bridge.track_console_capture(self.session, 'r1', result)
+            return result
+        capture(100, 100, 'limit')
+        # Scanned past the frontier, but omitted the bytes we needed to see.
+        self.assertEqual(capture(500, 500, omitted=400)['unread_cursor'], 'one:100')
+        self.assertNotIn('unread_cursor', capture(200, 100, 'limit'))
+        self.assertEqual(capture(50, 50)['unread_cursor'], 'one:200')
+        # A complete overlapping read genuinely contains all missing bytes.
+        self.assertNotIn('unread_cursor', capture(250, 250))
+        self.assertNotIn('r1', self.bridge.console_backlogs[self.session['id']])
+        capture(300, 50, 'limit')
+        # Restart/history gap releases the lost frontier; ordinary gap guard
+        # still requires another inspected read before input can be requested.
+        self.assertNotIn('unread_cursor', capture(20, 20, gap=True, epoch='two'))
+        self.assertNotIn('r1', self.bridge.console_backlogs[self.session['id']])
+        capture(30, 10, 'limit', epoch='two')
+        with self.bridge.lock:
+            self.bridge.revoke(self.session)
+        self.assertNotIn(self.session['id'], self.bridge.console_backlogs)
 
     def test_console_cursor_errors_do_not_request_approval_or_send_input(self):
         args = self.console_arguments()
@@ -992,6 +1204,11 @@ class CompanionTests(unittest.TestCase):
             self.assertNotIn('--compact-responses', turn_rpc.config['mcp_servers.weblab.args'])
             self.assertIn('send_console_command', turn_rpc.config['mcp_servers.weblab.enabled_tools'])
             self.assertEqual(turn_rpc.config['mcp_servers.weblab.tools.send_console_command.approval_mode'],'approve')
+            self.assertIn('send_console_key', turn_rpc.config['mcp_servers.weblab.enabled_tools'])
+            self.assertIn('send_console_commands', turn_rpc.config['mcp_servers.weblab.enabled_tools'])
+            self.assertIn('send_console_commands_to_nodes', turn_rpc.config['mcp_servers.weblab.enabled_tools'])
+            self.assertEqual(turn_rpc.config['mcp_servers.weblab.tools.send_console_commands.approval_mode'],'approve')
+            self.assertEqual(turn_rpc.config['mcp_servers.weblab.tools.send_console_key.approval_mode'],'approve')
             self.assertNotIn('model_providers.weblab_ollama.base_url',turn_rpc.config)
             self.assertFalse(turn_rpc.config['features.shell_tool'])
             self.assertTrue(turn_rpc.config['features.code_mode_host'])
@@ -1082,6 +1299,15 @@ class CompanionTests(unittest.TestCase):
         self.assertNotIn('send_console_input',agent_companion.TOOLS)
         self.assertIn('send_console_command',config['mcp_servers.weblab.enabled_tools'])
         self.assertNotIn('send_console_command',agent_companion.TOOLS)
+        self.assertIn('send_console_key',config['mcp_servers.weblab.enabled_tools'])
+        self.assertNotIn('send_console_key',agent_companion.TOOLS)
+        self.assertIn('send_console_commands',config['mcp_servers.weblab.enabled_tools'])
+        self.assertNotIn('send_console_commands',agent_companion.TOOLS)
+        self.assertIn('send_console_commands_to_nodes',config['mcp_servers.weblab.enabled_tools'])
+        self.assertNotIn('send_console_commands_to_nodes',agent_companion.TOOLS)
+        self.assertEqual(config['mcp_servers.weblab.tools.send_console_commands_to_nodes.approval_mode'],'approve')
+        self.assertEqual(config['mcp_servers.weblab.tools.send_console_commands.approval_mode'],'approve')
+        self.assertEqual(config['mcp_servers.weblab.tools.send_console_key.approval_mode'],'approve')
         self.assertEqual(config['mcp_servers.weblab.tools.send_console_command.approval_mode'],'approve')
         self.assertEqual(config['mcp_servers.weblab.tools.send_console_input.approval_mode'],'approve')
         self.assertNotIn('mcp_servers.weblab.default_tools_approval_mode',config)
@@ -1113,6 +1339,8 @@ class CompanionTests(unittest.TestCase):
             rpc.events.put({'method': 'thread/tokenUsage/updated', 'params': {
                 'threadId': thread, 'turnId': 'turn', 'tokenUsage': {'total': counts(n)}}})
         def finish(rpc):
+            rpc.events.put({'method':'item/completed','params':{'turnId':'turn','item':{
+                'type':'agentMessage','id':'answer','text':'Observed test result'}}})
             rpc.events.put({'method':'turn/completed','params':{'turn':{'id':'turn','status':'completed'}}})
             self.wait(lambda:not session.worker.is_alive())
         self.manager.handle('turn',{**self.payload,'prompt':'inspect','request_id':'usage-1'})
@@ -1149,6 +1377,9 @@ class CompanionTests(unittest.TestCase):
             self.assertNotIn('duration_seconds',session.snapshot()['usage']['turns'][-1])
             with session.lock:
                 session.started_at = time.monotonic()-83
+            if status == 'completed':
+                FakeRPC.instances[-1].events.put({'method':'item/completed','params':{'turnId':'turn','item':{
+                    'type':'agentMessage','id':'answer','text':'Observed test result'}}})
             FakeRPC.instances[-1].events.put({'method':'turn/completed','params':{'turn':{'id':'turn','status':status}}})
             self.wait(lambda:not session.worker.is_alive())
             elapsed=session.snapshot()['usage']['turns'][-1]['duration_seconds']
@@ -1212,6 +1443,28 @@ class CompanionTests(unittest.TestCase):
         self.wait(lambda:not session.worker.is_alive())
         self.assertEqual(session.status,'interrupted')
         self.assertIn('connection failed',session.error)
+        self.assertFalse(self.manager.busy.locked())
+
+    def test_empty_completed_turn_is_reported_without_replaying_actions(self):
+        self.manager.handle('state', self.payload)
+        session = self.manager.sessions['a'*32]
+        # An answer from an earlier turn must not conceal a new empty response.
+        session.messages = [{'role': 'assistant', 'text': 'Earlier answer'}]
+        self.manager.handle('turn', {**self.payload, 'prompt': 'inspect', 'request_id': 'empty-response'})
+        self.wait(lambda: session.status == 'running')
+        rpc = FakeRPC.instances[-1]
+        rpc.events.put({'method': 'item/completed', 'params': {'turnId': 'turn', 'item': {
+            'type': 'mcpToolCall', 'tool': 'get_console_output', 'status': 'completed'}}})
+        rpc.events.put({'method': 'turn/completed', 'params': {'turn': {'id': 'turn', 'status': 'completed'}}})
+        self.wait(lambda: not session.worker.is_alive())
+        self.assertEqual(session.status, 'failed')
+        self.assertIn('without a text response', session.error)
+        self.assertIn('Completed operations remain', session.error)
+        self.assertEqual(sum(m == 'turn/start' for m, _ in rpc.calls), 1)
+        self.assertEqual(session.messages[-1]['role'], 'user')
+        saved = json.loads(session.path.read_text())
+        self.assertEqual(saved['status'], 'failed')
+        self.assertEqual(saved['error'], session.error)
         self.assertFalse(self.manager.busy.locked())
 
     def test_deadline_stops_generation_and_explains_preserved_actions(self):

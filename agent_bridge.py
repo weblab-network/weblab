@@ -50,6 +50,8 @@ class Bridge:
             raise ValueError('Configure at least one WL_AGENT_PROVIDERS endpoint')
         self.lock = threading.RLock()
         self.turns, self.approvals, self.observations = {}, {}, {}
+        self.console_backlogs = {}
+        self.link_observations = {}
         self.tool_errors = {}
         self.streams = {}
         self.touch_flushed = time.monotonic()
@@ -62,6 +64,7 @@ class Bridge:
             session['internet_proposals'] = []
             session['settings'].setdefault('lab_changes', False)
             session['settings'].setdefault('console_input', False)
+            session['settings'].setdefault('link_faults', False)
             session['settings'].setdefault('auto_approve', False)
             session['settings'].setdefault('provider', 'ollama')
         self.gateway = UnixServer(self.sockets / 'gateway.sock', Gateway)
@@ -174,8 +177,8 @@ class Bridge:
             return session
 
     def settings(self, data):
-        data = {'provider': 'ollama', 'lab_changes': False, 'internet_changes': False, 'console_input': False, 'auto_approve': False, **data}
-        if set(data) != {'provider', 'endpoint', 'model', 'context_window', 'turn_timeout', 'lab_changes', 'internet_changes', 'console_input', 'auto_approve'}:
+        data = {'provider': 'ollama', 'lab_changes': False, 'internet_changes': False, 'link_faults': False, 'console_input': False, 'auto_approve': False, **data}
+        if set(data) != {'provider', 'endpoint', 'model', 'context_window', 'turn_timeout', 'lab_changes', 'internet_changes', 'link_faults', 'console_input', 'auto_approve'}:
             raise ValueError('Unexpected agent settings')
         if data['provider'] not in ('ollama', 'openai'):
             raise ValueError('Unknown Agent provider')
@@ -195,10 +198,10 @@ class Bridge:
             raise ValueError('Context window must be 4096–131072 tokens')
         if type(timeout) is not int or not 30 <= timeout <= 3600:
             raise ValueError('Turn deadline must be 30–3600 seconds')
-        if any(type(data[k]) is not bool for k in ('lab_changes', 'internet_changes', 'console_input', 'auto_approve')):
+        if any(type(data[k]) is not bool for k in ('lab_changes', 'internet_changes', 'link_faults', 'console_input', 'auto_approve')):
             raise ValueError('Agent permissions must be booleans')
         return dict(provider=data['provider'], endpoint=url, model=model, context_window=context, turn_timeout=timeout,
-                    lab_changes=data['lab_changes'], internet_changes=data['internet_changes'], console_input=data['console_input'],
+                    lab_changes=data['lab_changes'], internet_changes=data['internet_changes'], link_faults=data['link_faults'], console_input=data['console_input'],
                     auto_approve=data['auto_approve'])
 
     def api(self, action, token='', data=None, owner=None):
@@ -227,7 +230,7 @@ class Bridge:
                            'touched': time.time(), 'proposals': [], 'settings': {
                                'provider': 'ollama', 'endpoint': self.providers[0], 'model': 'gpt-oss:20b',
                                'context_window': 32768, 'turn_timeout': 900,
-                               'lab_changes': False, 'internet_changes': False, 'console_input': False, 'auto_approve': False}}
+                               'lab_changes': False, 'internet_changes': False, 'link_faults': False, 'console_input': False, 'auto_approve': False}}
                 self.sessions[hashlib.sha256(token.encode()).hexdigest()] = session
                 self.persist()
             return {'token': token, 'settings': session['settings']}
@@ -374,6 +377,8 @@ class Bridge:
         """Caller holds lock. Pending approvals are ephemeral and never replayed."""
         self.turns.pop(session['id'], None)
         self.observations.pop(session['id'], None)
+        self.console_backlogs.pop(session['id'], None)
+        self.link_observations.pop(session['id'], None)
         for item in self.approvals.get(session['id'], []):
             if item['status'] in ('pending', 'approved'):
                 item['status'] = 'cancelled'
@@ -447,12 +452,90 @@ class Bridge:
             identity=(principal['role'], web_auth.console_identity(session['owner'])))
         return service
 
+    def track_console_capture(self, session, node_id, result):
+        """Under bridge lock: keep an unread frontier without retaining console text."""
+        pending = self.console_backlogs.setdefault(session['id'], {})
+        cursor = pending.get(node_id)
+        if cursor and not result.get('gap'):
+            # A latest/history read may cover the frontier too, but merely
+            # scanning past it and omitting its bytes does not count as reading it.
+            covered = False
+            try:
+                epoch, offset = cursor.rsplit(':', 1)
+                end_epoch, end = result['cursor'].rsplit(':', 1)
+                count = result['bytes_read'] - result['omitted_bytes']
+                covered = epoch == end_epoch and int(end) - count <= int(offset) <= int(end)
+            except (KeyError, TypeError, ValueError, AttributeError):
+                pass
+            if not covered:
+                result['unread_cursor'] = cursor
+                result['next_action'] = ('Earlier captured output is still unread. Call get_console_output '
+                    'with unread_cursor, then follow returned cursors until drained before requesting input. '
+                    'A latest excerpt cannot replace the missing bytes.')
+                return
+        if result.get('capture_end') == 'limit' and result.get('cursor'):
+            pending[node_id] = result['cursor']
+        else:
+            pending.pop(node_id, None)
+
+    def console_observation(self, service, session, arguments):
+        observation = self.observations.get(session['id'], {}).get(arguments['node_id'])
+        if not observation:
+            raise ValueError('Read this console in this conversation before requesting input; no input was sent. '
+                             'Call get_console_output for this node, inspect the output, then use its exact '
+                             'cursor and revision as expected_cursor and expected_revision. '
+                             'Then send the intended command directly; do not insert another Enter/key. '
+                             'Every input consumes the read, including a bare Enter. '
+                             'This is a missing fresh read, not an approval error; no authorization code is needed.')
+        if observation.get('cursor') != arguments['expected_cursor']:
+            raise ValueError('Invalid console cursor: expected_cursor does not match the latest read for this node; '
+                             'no input was sent. Call get_console_output again, inspect the output, then copy '
+                             'its exact cursor and revision into expected_cursor and expected_revision. '
+                             'The cursor is an opaque value, not the CLI prompt (such as SW4#). '
+                             'This is not an approval error; no authorization code is needed.')
+        if observation.get('revision') != arguments['expected_revision']:
+            raise ValueError('Console read revision does not match expected_revision; no input was sent. '
+                             'Call get_console_output again for this node, inspect the output, then use '
+                             'its exact cursor and revision. This is not an approval error; '
+                             'no authorization code is needed.')
+        if observation.get('gap'):
+            raise ValueError('Console history has a gap; read it again before requesting input')
+        if observation.get('unread_cursor'):
+            raise ValueError('Console has unread output; no input was sent. '
+                             'Call get_console_output with unread_cursor=' + observation['unread_cursor'] +
+                             ', then follow returned cursors until drained and inspect the prompt.')
+        if observation.get('capture_end') in ('disconnected', 'lock_lost') or observation.get('error'):
+            raise ValueError('Console access ended during the last read; no input was sent. '
+                             'Call get_console_output again and inspect the current console before requesting input.')
+        if observation.get('capture_end') == 'limit':
+            raise ValueError('Console read is incomplete; no input was sent. '
+                             'Call get_console_output with the returned cursor until capture_end is not limit, '
+                             'then inspect the prompt before requesting input. '
+                             'Do not reread the first chunk or reuse this cursor for input.')
+        service._console_options(arguments['node_id'], arguments['expected_cursor'],
+                                 arguments.get('wait_seconds', 1), arguments.get('max_bytes', 65536))
+        value = arguments['input']
+        if not isinstance(value, str) or not 1 <= len(value.encode('utf-8')) <= 4096:
+            raise ValueError('Console input must be 1–4096 UTF-8 bytes')
+        return observation
+
     def guarded_tool(self, session, operation, data, turn_id):
-        service = self.console_service(session) if operation == 'console-send' else self.automation
-        permission = ('console_input' if operation == 'console-send' else
+        console_operation = operation in ('console-send', 'console-send-bulk')
+        link_operation = operation in ('link-frame-loss', 'link-carrier')
+        service = self.console_service(session) if console_operation else self.automation
+        if operation == 'console-send-bulk':
+            service = copy.copy(service)
+            def check_bulk_turn():
+                with self.lock:
+                    self.active_turn(session, turn_id)
+                    if not session['settings'].get('console_input'):
+                        raise ValueError('Console input permission was revoked')
+            service._console_bulk_guard = check_bulk_turn
+        permission = ('link_faults' if link_operation else 'console_input' if console_operation else
                       'internet_changes' if operation in ('apply-internet', 'stop-internet', 'start-internet') else 'lab_changes')
-        handler = {'apply': service.apply, 'start-node': service.start_node,
-                   'console-send': service.console_send, 'apply-internet': service.apply_internet,
+        handler = {'link-frame-loss': service.link_frame_loss, 'link-carrier': service.link_carrier,
+                   'apply': service.apply, 'start-node': service.start_node,
+                   'console-send': service.console_send, 'console-send-bulk': service.console_send_bulk, 'apply-internet': service.apply_internet,
                    'stop-internet': service.stop_internet, 'start-internet': service.start_internet}[operation]
         if not isinstance(data, dict):
             raise ValueError('Expected tool arguments')
@@ -469,6 +552,25 @@ class Bridge:
                 with self.lab.lock:
                     context = (service.internet_proposal(arguments['proposal_id']) if operation == 'apply-internet'
                                else service.proposal(arguments['proposal_id']))
+            elif link_operation:
+                observed = self.link_observations.get(session['id'], {}).get(arguments['link_id'])
+                if not observed or any(arguments[k] != observed[v] for k, v in (
+                        ('expected_revision', 'revision'), ('expected_link_revision', 'link_revision'))):
+                    raise ValueError('Read get_link_state in this turn before each link fault request')
+                context = service.check_link_action(operation, **arguments)
+            elif operation == 'console-send-bulk':
+                service.console_bulk_options(arguments['targets'], arguments['input'],
+                    arguments.get('wait_seconds', 1), arguments.get('max_bytes', 65536))
+                with self.lab.lock:
+                    service.require_execution_revision(arguments['expected_revision'])
+                    nodes = [copy.deepcopy(self.lab.node(t['node_id'])) for t in arguments['targets']]
+                observations = [self.console_observation(service, session, {
+                    **{k: v for k, v in arguments.items() if k != 'targets'}, **target})
+                    for target in arguments['targets']]
+                family, mode = service.console_bulk_profile(nodes, observations)
+                context = {'nodes': [{k: n.get(k) for k in ('id', 'name', 'type', 'image')} for n in nodes],
+                           'platform': family, 'prompt_mode': mode,
+                           'console_output': {n['id']: o.get('output', '')[-1000:] for n, o in zip(nodes, observations)}}
             else:
                 with self.lab.lock:
                     context = {'node': copy.deepcopy(self.lab.node(arguments['node_id']))}
@@ -478,35 +580,7 @@ class Bridge:
                     if operation == 'stop-internet' and service.internet_runtime_revision(arguments['node_id']) != arguments['expected_runtime_revision']:
                         raise ValueError('Gateway runtime changed; read its settings again before requesting Stop')
                 if operation == 'console-send':
-                    observation = self.observations.get(session['id'], {}).get(arguments['node_id'])
-                    if not observation:
-                        raise ValueError('Read this console in this conversation before requesting input; no input was sent. '
-                                         'Call get_console_output for this node, inspect the output, then use its exact '
-                                         'cursor and revision as expected_cursor and expected_revision. '
-                                         'This is a missing fresh read, not an approval error; no authorization code is needed.')
-                    if observation.get('cursor') != arguments['expected_cursor']:
-                        raise ValueError('Invalid console cursor: expected_cursor does not match the latest read for this node; '
-                                         'no input was sent. Call get_console_output again, inspect the output, then copy '
-                                         'its exact cursor and revision into expected_cursor and expected_revision. '
-                                         'The cursor is an opaque value, not the CLI prompt (such as SW4#). '
-                                         'This is not an approval error; no authorization code is needed.')
-                    if observation.get('revision') != arguments['expected_revision']:
-                        raise ValueError('Console read revision does not match expected_revision; no input was sent. '
-                                         'Call get_console_output again for this node, inspect the output, then use '
-                                         'its exact cursor and revision. This is not an approval error; '
-                                         'no authorization code is needed.')
-                    if observation.get('gap'):
-                        raise ValueError('Console history has a gap; read it again before requesting input')
-                    if observation.get('capture_end') == 'limit':
-                        raise ValueError('Console read is incomplete; no input was sent. '
-                                         'Call get_console_output with the returned cursor until capture_end is not limit, '
-                                         'then inspect the prompt before requesting input. '
-                                         'Do not reread the first chunk or reuse this cursor for input.')
-                    service._console_options(arguments['node_id'], arguments['expected_cursor'],
-                                             arguments.get('wait_seconds', 1), arguments.get('max_bytes', 65536))
-                    value = arguments['input']
-                    if not isinstance(value, str) or not 1 <= len(value.encode('utf-8')) <= 4096:
-                        raise ValueError('Console input must be 1–4096 UTF-8 bytes')
+                    observation = self.console_observation(service, session, arguments)
                     context['console_output'] = observation.get('output', '')[-4000:]
             history = self.approvals.setdefault(session['id'], [])
             if sum(a['status'] in ('pending', 'approved', 'executing') for a in history) >= 4:
@@ -530,8 +604,11 @@ class Bridge:
             self.approval_state(session)
             if item['status'] != 'approved':
                 raise ValueError('Operation ' + item['status'] + '; no action was performed')
-            self.active_turn(session, turn_id)
+            execution_turn = self.active_turn(session, turn_id)
             item['status'] = 'executing'  # Single-use acceptance point. Stop cannot undo accepted work.
+            if link_operation:
+                # Consume even on an uncertain result; mutation results never prime another write.
+                self.link_observations.get(session['id'], {}).pop(arguments['link_id'], None)
         try:
             result = handler(**arguments)  # Rechecks revision/cursor/locks at the point of use.
         except Exception as exc:
@@ -540,12 +617,31 @@ class Bridge:
             raise
         with self.lock:
             item['status'] = 'completed'
+            if link_operation:
+                item['result_evidence'] = {'applied': result['applied'], 'state': copy.deepcopy(result['state'])}
+                if not result.get('applied'):
+                    item['status'], item['error'] = 'uncertain', result.get('error', '')
             if operation == 'console-send':
                 item['input_status'] = result.get('input_status', 'unknown')
+                item['result_evidence'] = copy.deepcopy(result.get('evidence', {}))
                 if item['input_status'] == 'unknown':
                     item['status'] = 'uncertain'
                 # A new explicit read is required before every subsequent input request.
-                self.observations.get(session['id'], {}).pop(arguments['node_id'], None)
+                if self.turns.get(session['id']) is execution_turn and time.monotonic() < execution_turn['expires']:
+                    self.observations.get(session['id'], {}).pop(arguments['node_id'], None)
+                    self.track_console_capture(session, arguments['node_id'], result)
+            if operation == 'console-send-bulk':
+                item['input_status'] = result['input_status']
+                item['result_evidence'] = [{'node_id': r['node_id'], 'input_status': r['input_status'],
+                                            'error': r.get('error')} for r in result['results']]
+                if result['input_status'] != 'sent':
+                    item['status'] = 'uncertain' if result['input_status'] == 'partial' else 'failed'
+                if self.turns.get(session['id']) is execution_turn and time.monotonic() < execution_turn['expires']:
+                    for target in arguments['targets']:
+                        self.observations.get(session['id'], {}).pop(target['node_id'], None)
+                    for capture in result['results']:
+                        if capture['input_status'] != 'not_sent':
+                            self.track_console_capture(session, capture['node_id'], capture)
             if operation in ('start-node', 'start-internet') and not result.get('started'):
                 item['status'], item['error'] = 'failed', result.get('error', '')
         return result
@@ -602,14 +698,15 @@ class Bridge:
         audit = None
         if self.auth and method == 'POST' and path in (
                 '/api/automation/preview', '/api/automation/apply',
-                '/api/automation/start-node', '/api/automation/console-send',
+                '/api/automation/start-node', '/api/automation/console-send', '/api/automation/console-send-bulk',
                 '/api/automation/preview-internet', '/api/automation/apply-internet',
-                '/api/automation/stop-internet', '/api/automation/start-internet'):
+                '/api/automation/stop-internet', '/api/automation/start-internet',
+                '/api/automation/link-frame-loss', '/api/automation/link-carrier'):
             principal = self.auth.session_digest(session.get('owner'))
-            node = data.get('node_id', '') if isinstance(data, dict) else ''
+            node = data.get('link_id', data.get('node_id', '')) if isinstance(data, dict) else ''
             target = node if isinstance(node, str) and re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', node) else ''
             with self.lab.lock:
-                if target not in {item['id'] for item in self.lab.topology['nodes']}:
+                if target not in {item['id'] for item in self.lab.topology['links' if path.endswith(('/link-frame-loss', '/link-carrier')) else 'nodes']}:
                     target = ''
             audit = self.auth.activity_begin(principal['name'] if principal else None, session.get('owner'),
                                             'agent', 'tool.' + path.rsplit('/', 1)[1], target)
@@ -624,8 +721,8 @@ class Bridge:
                                                    'message': str(exc)[:1500]}
             raise
         if audit is not None:
-            outcome = 'tool_ok'
-            if path.endswith('/console-send'):
+            outcome = 'uncertain' if result.get('outcome') == 'uncertain' else 'tool_ok'
+            if path.endswith(('/console-send', '/console-send-bulk')):
                 outcome = 'input_sent' if result.get('input_status') == 'sent' else 'uncertain'
             elif path.endswith(('/start-node', '/start-internet')) and not result.get('started'):
                 outcome = 'failed'
@@ -654,10 +751,32 @@ class Bridge:
             match = re.fullmatch(r'/api/automation/proposals/([a-f0-9]{32})', path)
             if match and match[1] in session['proposals']:
                 return service.proposal(match[1])
+        if method == 'POST' and path == '/api/automation/link-state':
+            with self.lock:
+                observed_turn = self.turns.get(session['id'])
+            result = service.link_state(**data)
+            with self.lock:
+                if (observed_turn is not None and self.turns.get(session['id']) is observed_turn
+                        and time.monotonic() < observed_turn['expires']
+                        and (not turn_id or turn_id == observed_turn['id'])):
+                    reads = self.link_observations.setdefault(session['id'], {})
+                    reads.pop(data['link_id'], None)
+                    reads[data['link_id']] = copy.deepcopy(result)
+                    while len(reads) > 256:
+                        del reads[next(iter(reads))]
+            return result
         if method == 'POST' and path == '/api/automation/console-read':
+            with self.lock:
+                observed_turn = self.turns.get(session['id'])
             result = self.console_service(session).console_read(**data)
             with self.lock:
-                self.observations.setdefault(session['id'], {})[data['node_id']] = copy.deepcopy(result)
+                # A read may outlive Stop/reset, conversation switching or expiry.
+                # It remains a read-only result, but cannot prime a later turn's input.
+                if (observed_turn is not None and self.turns.get(session['id']) is observed_turn
+                        and time.monotonic() < observed_turn['expires']
+                        and (not turn_id or turn_id == observed_turn['id'])):
+                    self.track_console_capture(session, data['node_id'], result)
+                    self.observations.setdefault(session['id'], {})[data['node_id']] = copy.deepcopy(result)
             return result
         if method == 'POST' and path == '/api/automation/internet-settings':
             if data.get('proposal_id') is not None and data['proposal_id'] not in session.get('internet_proposals', []):
@@ -668,8 +787,9 @@ class Bridge:
             with self.lock:
                 session['internet_proposals'] = (session.get('internet_proposals', []) + [result['proposal_id']])[-16:]
             return result
-        if method == 'POST' and path in ('/api/automation/apply', '/api/automation/start-node', '/api/automation/console-send',
-                '/api/automation/apply-internet', '/api/automation/stop-internet', '/api/automation/start-internet'):
+        if method == 'POST' and path in ('/api/automation/apply', '/api/automation/start-node', '/api/automation/console-send', '/api/automation/console-send-bulk',
+                '/api/automation/apply-internet', '/api/automation/stop-internet', '/api/automation/start-internet',
+                '/api/automation/link-frame-loss', '/api/automation/link-carrier'):
             return self.guarded_tool(session, path.rsplit('/', 1)[1], data, turn_id)
         if method == 'POST' and path == '/api/automation/preview':
             result = service.preview(**data)

@@ -15,7 +15,8 @@ import uuid
 IMAGE = 'ghcr.io/weblab-network/ll2s:0.2.0-ovs-rstp1'
 PREVIOUS_IMAGE = 'ghcr.io/weblab-network/ll2s:0.2.0'
 LEGACY_IMAGE = 'll2s:dev'
-IMAGES = (IMAGE, PREVIOUS_IMAGE, LEGACY_IMAGE)
+ARM64_IMAGE = 'll2s:0.2.0-ovs-rstp1-arm64'
+IMAGES = (IMAGE, PREVIOUS_IMAGE, LEGACY_IMAGE, ARM64_IMAGE)
 MAX_CONFIG = 1024 * 1024
 
 
@@ -102,10 +103,14 @@ def inspect_image(run, error, name=IMAGE):
     try:
         image = json.loads(run('docker', 'image', 'inspect', name))[0]
     except (ValueError, IndexError, error) as exc:
+        if name == ARM64_IMAGE:
+            raise error('Build native LL2S first: python3 tools/build_ll2s.py --source /path/to/ll2s; see docs/arm64.md') from exc
         command = f'docker build -t {name} /path/to/ll2s' if name == LEGACY_IMAGE else f'docker pull {name}'
         raise error('Install the LL2S image on the Docker host first: ' + command) from exc
     if not isinstance(image, dict) or not re.fullmatch(r'sha256:[a-f0-9]{64}', str(image.get('Id', ''))):
         raise error('Docker returned an invalid LL2S image ID')
+    if name == ARM64_IMAGE and image.get('Architecture') != 'arm64':
+        raise error('The ARM64 LL2S selector requires a native arm64 image; rebuild it on the ARM host')
     return image
 
 

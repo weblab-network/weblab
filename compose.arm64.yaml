@@ -1,0 +1,9 @@
+# Native Linux ARM64 source build: FRR, LL2S and Alpine PCs, without KVM.
+# See docs/arm64.md for the required native device-image builds.
+services:
+  lab:
+    platform: linux/arm64
+    environment:
+      WL_CONTAINER_ONLY: "1"
+      # Locally compiled FRR retains the existing explicit compatibility opt-in.
+      WL_ALLOW_UNTESTED_FRR: "1"

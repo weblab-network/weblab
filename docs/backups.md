@@ -47,14 +47,24 @@ default. The same stopped-node and administrator requirements apply.
 Reset clears the topology and all saved node storage and logs, including retained
 files from previously removed nodes; those retained files are not included in
 exports of the current topology. Installed images, authentication settings,
-Agent history and published instructions are kept. **Choose ZIP to resume a lab
+and Agent history are kept. **Choose ZIP to resume a lab
 later**: JSON does not preserve complete device state. Save device configurations
 before stopping; exports do not save unsaved running configurations.
+
+**Preserve Instructions** is unchecked each time the reset confirmation opens.
+By default, a successful reset also removes the published exercise and clears
+local previews, including popped-out readers, on connected stations. A tab that
+was offline clears its old preview when it next synchronizes. Check the box to
+keep both published Instructions and local previews. Original Markdown/text
+files are never deleted. Instructions are not included in either JSON or ZIP
+exports, so keep the original exercise file separately. Cancelling, failed
+exports and failed resets leave Instructions intact.
 
 With authentication enabled, only administrators can reset. The server checks
 that all nodes are stopped and rejects reset if the workspace changed or a node
 started since export began or the reset confirmation was opened. Export again
-or reopen the reset confirmation in that case.
+or reopen the reset confirmation in that case. When clearing Instructions, a
+newly published or unpublished document also makes the confirmation stale.
 
 ## Optional Agent conversation
 
@@ -272,11 +282,19 @@ and restore requires both matching images. Changing a node's image selector
 chooses a separate saved-configuration directory; it does not migrate settings.
 
 
-Junos ZIP storage is covered by synthetic-disk round-trip tests; a complete
-real-guest restore/forwarding test remains outstanding. Use `commit` and shut
-down Junos with `request system power-off` and wait for shutdown before
-Stop/export; keep the original base image. The Stop confirmation is a reminder,
-not an automatic guest shutdown.
+Junos ZIP restoration has been checked with real 26.2R1.7 switch and Evolved
+guests on Intel bare metal: committed configuration, clean CLI power-off,
+export, removal of the disposable source storage, restore and boot with saved
+configuration and bidirectional routed PC traffic. Keep the exact original base
+image; it is not included in the archive.
+
+Use `commit` before Stop. For the two tested image filenames, Weblab requests
+graceful shutdown and waits for actual guest exit; **Shutting down** is still a
+running VM and cannot be exported or reset. A failed request or 180-second
+timeout retains the VM for inspection instead of killing it. Manual
+`request system power-off` remains available and is required for other Junos
+versions. Wait for stopped status before export or container/host maintenance;
+see [Junos shutdown behavior](devices.md#juniper-vjunos).
 
 ## LL2S configuration
 

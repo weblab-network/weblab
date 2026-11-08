@@ -66,10 +66,11 @@ fixture.stderr.on('data', data => log += data);
     // Model running status and intercept every Stop: no VM/container is started.
     const nodes=await page.evaluate(()=>topology.nodes);
     const [sw,router,pc]=nodes;
-    const running=new Set(nodes.map(n=>n.id)), stops=[];
+    const running=new Set(nodes.map(n=>n.id)), pending=new Set(), stops=[];
     const responseState=async()=>{
       const data=await (await page.request.get(info.url+'/api/state')).json();
-      for(const n of data.topology.nodes) data.status[n.id]={state:running.has(n.id)?'running':'stopped',error:''};
+      for(const n of data.topology.nodes) data.status[n.id]={state:running.has(n.id)?'running':'stopped',error:'',
+        shutdown_pending:pending.has(n.id),warning:pending.has(n.id)?'Graceful shutdown requested; waiting for Junos to power off.':''};
       return data;
     };
     await page.route('**/api/state',async route=>route.fulfill({json:await responseState()}));
@@ -77,6 +78,7 @@ fixture.stderr.on('data', data => log += data);
       const pathname=new URL(route.request().url()).pathname;
       stops.push(pathname);
       if(pathname==='/api/lab/stop') running.clear();
+      else if(pathname.split('/')[3]===sw.id) pending.add(sw.id);
       else running.delete(pathname.split('/')[3]);
       await route.fulfill({json:await responseState()});
     });
@@ -102,6 +104,17 @@ fixture.stderr.on('data', data => log += data);
     await page.locator('#confirm-stop').click();
     await page.waitForFunction(()=>!busy);
     assert.deepEqual(stops,[`/api/nodes/${pc.id}/stop`,`/api/nodes/${sw.id}/stop`]);
+    await page.evaluate(id=>selectNode(id,false),sw.id);
+    assert.equal(await page.locator('#selected-status').textContent(),'Shutting down');
+    assert.match(await page.locator('#node-warning').textContent(),/waiting for Junos/);
+    await page.locator('#export').click();
+    assert.ok(await page.locator('#export-zip').isDisabled());
+    assert.ok(await page.locator('#reset-without-export').isDisabled());
+    await page.locator('#cancel-export').click();
+    // Completion is a later server observation, not the Stop acknowledgement.
+    pending.clear();running.delete(sw.id);
+    await page.evaluate(async()=>accept(await api('/api/state')));
+    assert.equal(await page.locator('#selected-status').textContent(),'stopped');
     running.add(sw.id);
     await page.evaluate(async()=>accept(await api('/api/state')));
     await page.setViewportSize({width:390,height:844});

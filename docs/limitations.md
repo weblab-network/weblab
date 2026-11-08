@@ -25,10 +25,13 @@ See [installation](installation.md).
   prove that every switching/routing protocol is implemented.
 - Extreme Networks Virtual EXOS and Arista vEOS support consoles, links and persistent
   disks, but not initial configuration snippets or configuration-text extraction.
-- Junos support targets the documented 26.2R1.7 images. Switch forwarding was verified on bare
-  metal; nested-VM forwarding failed. Junos snippets, config-text export and
-  carrier control are unavailable; real-guest ZIP restore verification remains
-  incomplete. Shut down Junos through its CLI before Weblab Stop.
+- Junos support targets the documented 26.2R1.7 images. Both profiles passed
+  real-guest ZIP restore and forwarding on Intel bare metal; nested-VM switch
+  forwarding failed. Snippets, config-text export and carrier control are
+  unavailable. Commit before Stop, then wait for guest exit. Graceful Stop is
+  limited to the exact tested filenames; other versions require CLI power-off.
+  Stop and wait before container/host maintenance; server teardown is not a
+  graceful guest shutdown workflow.
 - FRR supports routing, initial/saved configuration and ZIPs; live config capture,
   general Linux filesystem persistence and STP/MSTP switching are not implemented.
 - LL2S uses Open vSwitch for VLANs and STP/RSTP. One tree covers all VLANs;

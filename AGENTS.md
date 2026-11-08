@@ -49,12 +49,13 @@ active lab. Do not delete saved storage to force snippets without a reset reques
   the development guide. Run suites that launch nodes sequentially to avoid ID
   collisions. Native tests require user-supplied images and any required licenses.
 - The optional Agent window defaults to read/preview. Topology apply/start,
-  Internet gateway changes and console input need separate session settings.
+  Internet gateway changes, link faults and console input need separate session settings.
   Gateway settings reads are paginated; preserve expected revision and runtime
   identity guards for gateway-only stop/start and preview/apply. Default is one browser approval per exact
   action; an explicit session YOLO setting preapproves only enabled actions.
-  Preserve turn expiry, single-use decisions, revision/cursor checks and human
-  locks. Keep the gateway route/provider allowlists and session isolation; never
+  Link faults require a fresh cable read and topology/runtime/fault guards before
+  each exact action. Preserve turn expiry, single-use decisions, revision/cursor
+  checks and human locks. Keep the gateway route/provider allowlists and session isolation; never
   expose the ordinary mutation API or generic command execution. Keep the companion on
   `network_mode: none` with only its dedicated socket/state volumes. OpenAI
   device login uses per-session Codex homes and the fixed-host TLS gateway; never

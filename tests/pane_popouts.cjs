@@ -23,6 +23,14 @@ finally:
 `], {cwd:path.resolve(__dirname,'..'), stdio:['pipe','pipe','pipe']});
 let log = '';
 fixture.stderr.on('data', d => log += d);
+// Returning closes the clicked page. Observe closure, then check the parent pane below.
+async function returnToWorkspace(child) {
+  const closed=child.waitForEvent('close');
+  await child.locator('#pane-return').click({noWaitAfter:true}).catch(error=>{
+    if (!child.isClosed() || !error.message.includes('Target page, context or browser has been closed')) throw error;
+  });
+  await closed;
+}
 (async()=>{
   let browser;
   try {
@@ -74,7 +82,8 @@ fixture.stderr.on('data', d => log += d);
     await consoles.locator('#console-tab').click(); // delegated console key control
     await consoles.locator('#pane-fullscreen').click();await consoles.waitForFunction(()=>!!document.fullscreenElement);
     await consoles.locator('#pane-fullscreen').click();
-    await consoles.locator('#pane-return').click();await page.locator('#console-panel').waitFor();
+    // The click intentionally closes its own page; verify restoration in the parent.
+    await returnToWorkspace(consoles);await page.locator('#console-panel').waitFor();
     assert.ok(await page.evaluate(()=>savedSocket===savedSession.socket && savedSession.lockMine));
     const closing=await pop('#consoles-popout');await closing.close();await page.locator('#console-panel').waitFor();
     assert.equal(sockets.length,1,'Moving/returning a terminal must not create another WebSocket');
@@ -107,7 +116,7 @@ fixture.stderr.on('data', d => log += d);
     await individual.locator('#console-tab-r1').click();
     await page.evaluate(()=>activateConsole('r1'));
     assert.equal(await page.locator('#console-window-r1').count(),0,'Selecting the tab must retain the browser pop-out');
-    await individual.locator('#pane-return').click();await page.locator('#console-window-r1').waitFor();
+    await returnToWorkspace(individual);await page.locator('#console-window-r1').waitFor();
     await checkResizeEdge();
     const individualClose=await pop('#consoles-popout-r1');
     await individualClose.close();await page.locator('#console-window-r1').waitFor();
@@ -138,7 +147,7 @@ fixture.stderr.on('data', d => log += d);
     await page.evaluate(()=>{document.documentElement.dataset.theme='light';window.dispatchEvent(new Event('weblab-theme-change'));});
     assert.equal(await map.locator('html').getAttribute('data-theme'),'light');
     await map.screenshot({path:'/tmp/weblab-map-popout.png'});
-    await map.locator('#pane-return').click();await page.locator('#topology-panel').waitFor();
+    await returnToWorkspace(map);await page.locator('#topology-panel').waitFor();
     await page.locator('#open-agent').click();await page.waitForFunction(()=>$('agent-messages').textContent.includes('Exercise in progress'));
     await page.locator('#agent-chat-tab').click();
     await page.locator('#agent-prompt').fill('Unsent draft');
@@ -147,7 +156,7 @@ fixture.stderr.on('data', d => log += d);
     assert.equal(await agent.locator('#agent-prompt').inputValue(),'Unsent draft');
     await agent.locator('#agent-settings-tab').click();await agent.locator('#agent-chat-tab').click();
     assert.equal(await agent.evaluate(()=>sessionStorage.length),0);
-    await agent.locator('#pane-return').click();await page.locator('#agent-panel').waitFor();
+    await returnToWorkspace(agent);await page.locator('#agent-panel').waitFor();
     assert.equal(sessions,beforeSessions);assert.equal(turns,0);
     assert.equal(await page.locator('#agent-prompt').inputValue(),'Unsent draft');
     // Close children on parent reload; never leave a detached authenticated pane.

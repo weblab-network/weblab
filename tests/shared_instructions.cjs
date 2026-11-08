@@ -124,6 +124,53 @@ let logs=''; fixture.stderr.on('data', d=>logs+=d);
   const privatePopup=await privateEvent;
   await privatePopup.locator('#reader-title').waitFor();
   await privatePopup.waitForFunction(()=>document.querySelector('#reader-title').textContent==='private.md');
+  // Preserve keeps published content and both admins' private readers intact.
+  await choose(peer,'peer.md','# Peer private exercise');
+  const resetDialog=async()=>{
+   await peer.click('#export');await peer.click('#reset-without-export');
+   await peer.waitForFunction(()=>!busy && $('reset-lab-dialog').open);
+  };
+  await resetDialog();
+  await peer.check('#reset-preserve-instructions');
+  await peer.click('#confirm-reset-lab');await peer.waitForFunction(()=>!busy && !$('reset-lab-dialog').open);
+  assert.equal(await peer.locator('#instructions-title').textContent(),'peer.md');
+  assert.equal(await privatePopup.locator('#reader-title').textContent(),'private.md');
+  assert.equal(await guest.locator('#instructions-title').textContent(),'final.txt');
+  // A concurrently published document cannot be silently removed by an old confirmation.
+  await resetDialog();
+  await admin.evaluate(async()=>{
+   const previous=await api('/api/instructions');
+   await api('/api/instructions','PUT',{revision:previous.revision,file:{name:'new.md',text:'New published exercise'}});
+  });
+  await peer.click('#confirm-reset-lab');await peer.waitForFunction(()=>!busy);
+  assert.match(await peer.locator('#reset-lab-message').textContent(),/Instructions changed/);
+  assert.equal(await peer.locator('#instructions-title').textContent(),'peer.md');
+  await peer.click('#cancel-reset-lab');
+  // A delayed pre-reset poll must not resurrect a document after successful reset.
+  let releasePoll, finishPoll, pollError, holdingPoll=false;
+  const pollFinished=new Promise(resolve=>{finishPoll=resolve;});
+  await peer.route('**/api/instructions?revision=*',async route=>{
+   if(holdingPoll) return route.continue();
+   holdingPoll=true;
+   try {
+    const response=await route.fetch();
+    await new Promise(resolve=>{releasePoll=resolve;});
+    await route.fulfill({response});
+   } catch(error) {pollError=error;}
+   finally {finishPoll();}
+  });
+  for(let i=0;i<120 && !releasePoll;i++) await new Promise(resolve=>setTimeout(resolve,50));
+  assert.ok(releasePoll,'a periodic Instructions poll started');
+  await resetDialog();
+  assert.equal(await peer.isChecked('#reset-preserve-instructions'),false);
+  await peer.click('#confirm-reset-lab');await peer.waitForFunction(()=>!busy && !$('reset-lab-dialog').open);
+  releasePoll();await pollFinished;assert.equal(pollError,undefined);
+  await peer.unroute('**/api/instructions?revision=*');
+  for(const page of [admin,writer,guest,peer])
+   await page.waitForFunction(()=>$('instructions-title').textContent==='Instructions' && $('instructions-source').textContent==='No published exercise');
+  await privatePopup.waitForFunction(()=>document.querySelector('#reader-title').textContent==='Instructions');
+  await peer.waitForResponse(r=>r.url().includes('/api/instructions?revision=') && r.status()===200);
+  assert.equal(await peer.locator('#instructions-title').textContent(),'Instructions');
   const closed=privatePopup.waitForEvent('close');await admin.click('#auth-logout');await closed;
   assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
   console.log('PASS shared instructions: preview/publish, all roles, safe rendering, thin scrollbar, stable scroll, stale admin edits, unpublish, reload and no cached private preview crossover.');

@@ -32,10 +32,10 @@ unmanaged network. It has no forwarding or Internet access. See
 Starting with 0.11.0, pull the helper on the **Docker host**, separately from core:
 
 ```sh
-docker pull ghcr.io/weblab-network/weblab-internet:0.12.0
+docker pull ghcr.io/weblab-network/weblab-internet:0.13.0
 ```
 
-Set `WL_INTERNET_IMAGE=ghcr.io/weblab-network/weblab-internet:0.12.0` in the
+Set `WL_INTERNET_IMAGE=ghcr.io/weblab-network/weblab-internet:0.13.0` in the
 deployment's `.env` before creating/recreating core. The matching prebuilt Compose
 file uses that image by default. For a fresh installation, `weblab-install.sh
 --with-internet` pulls it and sets the variable. Source builds remain available
@@ -63,9 +63,9 @@ If you installed Weblab using the installer or a prebuilt image, install Git
 if necessary, then fetch the matching release source into a new directory:
 
 ```sh
-git clone --depth 1 --branch v0.12.0 https://github.com/weblab-network/weblab.git weblab-0.12.0
-docker build -f weblab-0.12.0/packaging/internet/Dockerfile \
-  -t weblab-internet:dev weblab-0.12.0
+git clone --depth 1 --branch v0.13.0 https://github.com/weblab-network/weblab.git weblab-0.13.0
+docker build -f weblab-0.13.0/packaging/internet/Dockerfile \
+  -t weblab-internet:dev weblab-0.13.0
 ```
 
 These commands build the gateway with firewall and forwarding support. If you
@@ -371,6 +371,6 @@ lab-facing firewall and NAT live inside its own container namespace.
 Version 0.12.0 adds an **SSH access** tab in the existing Internet node
 settings. It provides a non-root shell with SSH/Telnet and supports ProxyJump,
 with separate local public-key grants. See [setup, destination limits and saved
-state](external-access.md#enable-the-internet-nodes-ssh-shell). Use matching 0.12.0
+state](external-access.md#enable-the-internet-nodes-ssh-shell). Use matching 0.13.0
 core/helper images, or build both from the same updated
 checkout. Older helpers do not include this capability.

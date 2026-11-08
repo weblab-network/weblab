@@ -50,22 +50,24 @@ fixture.stderr.on('data', data => { fixtureLog += data; });
       const buffer = consoleSessions.get(id).terminal.buffer.active;
       return Array.from({length:buffer.length}, (_, i) => buffer.getLine(i).translateToString(true)).join('\n');
     }, id);
-    const hasText = (id, marker) => page.waitForFunction(({id, marker}) => {
+    const hasText = (id, marker, previous = 0) => page.waitForFunction(({id, marker, previous}) => {
       const buffer = consoleSessions.get(id).terminal.buffer.active;
-      return Array.from({length:buffer.length}, (_, i) => buffer.getLine(i).translateToString(true)).join('\n').includes(marker);
-    }, {id, marker});
+      return Array.from({length:buffer.length}, (_, i) => buffer.getLine(i).translateToString(true)).join('\n').split(marker).length - 1 > previous;
+    }, {id, marker, previous});
     const type = async value => { await page.keyboard.insertText(value); await page.keyboard.press('Enter'); };
     const refreshState = async () => page.evaluate(async () => accept(await api('/api/state')));
 
     await page.waitForFunction(()=>loaded);
     await page.evaluate(()=>openConsole('r1'));await connected('r1');
-    await page.locator('#console-interrupt').tap();await hasText('r1','HEX:03');
+    // Native IOL transport maps browser Ctrl+C to Cisco's Ctrl+Shift+6 (0x1e).
+    await page.locator('#console-interrupt').tap();await hasText('r1','HEX:1e');
     assert.equal(await page.evaluate(()=>consoleSessions.get('r1').terminal.textarea===document.activeElement),true);
     const menu=page.locator('#console-toolbar .console-keys');
     for(const code of ['01','17','05','1e','09','1b5b41']) {
+      const previous = (await text('r1')).split('HEX:'+code).length - 1;
       await menu.locator('summary').tap();
       await menu.locator('[data-console-key="'+code+'"]').tap();
-      await hasText('r1','HEX:'+code);
+      await hasText('r1','HEX:'+code, previous);
       assert.equal(await menu.evaluate(e=>e.open),false);
     }
     // Native keyboard disclosure navigation and Escape do not reach the terminal.
@@ -78,7 +80,8 @@ fixture.stderr.on('data', data => { fixtureLog += data; });
     await page.locator('#console-window-r2 .console-keys summary').tap();
     await page.locator('#console-window-r2 [data-console-key="15"]').tap();await hasText('r2','HEX:15');
     assert.ok(!(await text('r1')).includes('HEX:15'),'Keys target their own floating session');
-    await page.locator('#lock-console-r2').check();await page.waitForFunction(()=>consoleSessions.get('r2').lockMine);
+    // The checkbox shows server-confirmed ownership, not an optimistic click.
+    await page.locator('#lock-console-r2').tap();await page.waitForFunction(()=>consoleSessions.get('r2').lockMine);
     const observer=await browser.newPage({viewport:{width:800,height:1000}});
     await observer.goto(base);await observer.waitForFunction(()=>loaded);
     await observer.evaluate(()=>openConsole('r2'));

@@ -87,13 +87,54 @@ async def model_test(session, args, initialization):
     print('Model structural preview passed (no vendor boot or protocol test).', flush=True)
 
 
+async def link_fault_checks(fixture):
+    lab = fixture.lab
+    url = f'http://127.0.0.1:{fixture.port}'
+    link_id = lab.topology['links'][0]['id']
+    lab.start('r1')
+    lab.automation.console_read('r1', wait_seconds=.1)
+    try:
+        for compact in (False, True):
+            params = StdioServerParameters(command=sys.executable,
+                args=[str(ROOT / 'tools/weblab_mcp.py'), '--url', url, '--allow-link-faults']
+                + (['--compact-responses'] if compact else []))
+            async with stdio_client(params) as (reader, writer):
+                async with ClientSession(reader, writer) as session:
+                    await session.initialize()
+                    names = {t.name for t in (await session.list_tools()).tools}
+                    assert {'get_link_state', 'set_link_frame_loss', 'set_link_carrier'} <= names
+                    assert not {'apply_topology', 'start_node', 'send_console_input', 'apply_internet_settings'} & names
+                    state = payload(await session.call_tool('get_link_state', {'link_id':link_id}))
+                    assert state['a']['node'] == 'r1' and state['b']['node'] == 'r2'
+                    args = dict(link_id=link_id, expected_revision=state['revision'], expected_link_revision=state['link_revision'])
+                    # Fake IOL is not a supported carrier profile; don't invent a success.
+                    rejected = await session.call_tool('set_link_carrier', {**args, 'side':'a', 'up':False})
+                    assert rejected.is_error
+                    result = payload(await session.call_tool('set_link_frame_loss', {
+                        **args, 'blocked_a_to_b':True, 'blocked_b_to_a':False}))
+                    assert result['applied'] and result['state']['blocked_a_to_b']
+                    assert len(json.dumps(result).encode()) < 8000
+                    stale = await session.call_tool('set_link_frame_loss', {
+                        **args, 'blocked_a_to_b':False, 'blocked_b_to_a':False})
+                    assert stale.is_error
+                    state = payload(await session.call_tool('get_link_state', {'link_id':link_id}))
+                    result = payload(await session.call_tool('set_link_frame_loss', dict(link_id=link_id,
+                        expected_revision=state['revision'], expected_link_revision=state['link_revision'],
+                        blocked_a_to_b=False, blocked_b_to_a=False)))
+                    assert result['applied'] and not result['state']['blocked_a_to_b']
+        print('MCP link faults: independent opt-in, full/compact reads, block/clear and stale/profile guards passed.', flush=True)
+    finally:
+        lab.stop_all()
+
+
 async def main(args):
     fixture = test_lab.LabTests()
     fixture.setUp()
     try:
         lab = fixture.lab
-        lab.save({'name': 'Empty', 'nodes': [], 'links': []})
         lab.automation = lab_automation.Automation(lab, lab_server.LabError, lab_server.ports, lab_server.run)
+        await link_fault_checks(fixture)
+        lab.save({'name': 'Empty', 'nodes': [], 'links': []})
         (fixture.root / 'docs').mkdir()
         (fixture.root / 'docs/practice-labs.md').write_text((ROOT / 'docs/practice-labs.md').read_text())
         url = f'http://127.0.0.1:{fixture.port}'
@@ -111,8 +152,13 @@ async def main(args):
                     assert not {'apply_internet_settings', 'stop_internet_node', 'start_internet_node'} & names
                     assert {'get_internet_settings', 'preview_internet_settings'} <= names
                     assert 'get_console_output' in names
+                    assert 'get_link_state' in names
+                    assert not {'set_link_frame_loss', 'set_link_carrier'} & names
                     assert ('send_console_input' in names) == console_input
                     assert ('send_console_command' in names) == console_input
+                    assert ('send_console_key' in names) == console_input
+                    assert ('send_console_commands' in names) == console_input
+                    assert ('send_console_commands_to_nodes' in names) == console_input
                     by_name = {t.name: t for t in (await session.list_tools()).tools}
                     assert by_name['get_lab_state'].annotations.read_only_hint
                     assert by_name['get_console_output'].annotations.read_only_hint
@@ -125,6 +171,12 @@ async def main(args):
                         assert by_name['send_console_input'].annotations.destructive_hint
                         assert by_name['send_console_command'].annotations.destructive_hint
                         assert not by_name['send_console_command'].annotations.read_only_hint
+                        assert by_name['send_console_key'].annotations.destructive_hint
+                        assert not by_name['send_console_key'].annotations.read_only_hint
+                        assert by_name['send_console_commands_to_nodes'].annotations.destructive_hint
+                        assert not by_name['send_console_commands_to_nodes'].annotations.read_only_hint
+                        assert by_name['send_console_commands'].annotations.destructive_hint
+                        assert not by_name['send_console_commands'].annotations.read_only_hint
                     if writable:
                         assert by_name['apply_topology'].annotations.destructive_hint
                     assert 'stop_node' not in names
@@ -252,7 +304,81 @@ async def main(args):
                             'node_id': 'console_echo', 'input': 'STALE\r',
                             'expected_revision': observed['revision'], 'expected_cursor': observed['cursor']})
                         assert stale.is_error
+                        stale_key = await session.call_tool('send_console_key', {**command_args, 'key': 'enter'})
+                        assert stale_key.is_error
+                        # Named keys must deliver exact bytes over the same guarded
+                        # send route, without trusting model escape serialization.
+                        for key, value in (('enter', '\r'), ('space', ' '), ('tab', '\t'),
+                                           ('ctrl_c', '\x03'), ('ctrl_u', '\x15')):
+                            observed = payload(await session.call_tool('get_console_output', {
+                                'node_id': 'console_echo', 'wait_seconds': .1}))
+                            key_args = {'node_id': 'console_echo', 'expected_revision': observed['revision'],
+                                        'expected_cursor': observed['cursor'], 'wait_seconds': .1}
+                            with patch.object(lab.automation, 'console_send', wraps=lab.automation.console_send) as send:
+                                for bad_key in ('', 'ENTER', 'show clock', '\\r', 'enter\n', 'ctrl_d'):
+                                    bad = await session.call_tool('send_console_key', {**key_args, 'key': bad_key})
+                                    assert bad.is_error
+                                for invalid in ({'wait_seconds':0}, {'wait_seconds':31},
+                                                {'max_bytes':0}, {'max_bytes':262145}):
+                                    bad = await session.call_tool('send_console_key', {
+                                        **key_args, 'key':'enter', **invalid})
+                                    assert bad.is_error
+                                send.assert_not_called()
+                                result = payload(await session.call_tool('send_console_key', {**key_args, 'key': key}))
+                                assert result['input_status'] == 'sent'
+                                send.assert_called_once()
+                                assert send.call_args.kwargs['input'] == value, send.call_args
+                        observed = payload(await session.call_tool('get_console_output', {
+                            'node_id': 'console_echo', 'wait_seconds': .1}))
+                        batch_args = {'node_id': 'console_echo', 'expected_revision': observed['revision'],
+                                      'expected_cursor': observed['cursor'], 'wait_seconds': .1}
+                        with patch.object(lab.automation, 'console_send', wraps=lab.automation.console_send) as send:
+                            for commands in ([], ['show clock']*33, ['show clock', ''], ['show clock', 'one\ntwo'],
+                                             ['show clock', 'one\\ntwo'], ['show clock', '\x03'],
+                                             ['x'*2048]*2, ['é'*1024]*2, ['show clock', 2]):
+                                bad = await session.call_tool('send_console_commands', {**batch_args, 'commands': commands})
+                                assert bad.is_error, repr(commands)[:100]
+                            send.assert_not_called()  # Whole-list validation; no prefix was sent.
+                            result = payload(await session.call_tool('send_console_commands', {
+                                **batch_args, 'commands': ['enable', 'terminal length 0']}))
+                            send.assert_called_once()
+                            assert send.call_args.kwargs['input'] == 'enable\rterminal length 0\r'
+                            assert result['input_status'] == 'sent' and result['command_completion'] == 'unverified'
+                        stale_batch = await session.call_tool('send_console_commands', {
+                            **batch_args, 'commands': ['STALE']})
+                        assert stale_batch.is_error
+                        # Multi-node helper schema and strict preflight are independent
+                        # of the unconstrained single-console paste. Give the echo
+                        # devices explicit top-level prompts for this check.
                         lab.stop_all()
+                        image = fixture.root / 'fake.bin'
+                        original_script = image.read_text()
+                        image.write_text(original_script.replace("b'BOOT READY\\r\\n'", "b'R# '").replace(
+                            "os.write(1, b'RX:' + data)", "os.write(1, b'RX:' + data.replace(b'\\r', b'\\r\\n') + b'\\r\\nR# ')") )
+                        lab.save({'name':'Bulk', 'nodes':[fixture.node('bulk_a'), fixture.node('bulk_b')], 'links':[]})
+                        targets = []
+                        for node in ('bulk_a', 'bulk_b'):
+                            lab.start(node)
+                            read = payload(await session.call_tool('get_console_output', {'node_id':node, 'wait_seconds':.1}))
+                            targets.append({'node_id':node, 'expected_cursor':read['cursor']})
+                        bulk_args = {'targets':targets, 'expected_revision':read['revision'],
+                                     'commands':['show clock','show version'], 'wait_seconds':.1}
+                        with patch.object(lab.automation, 'console_send_bulk', wraps=lab.automation.console_send_bulk) as bulk:
+                            for change in ({'commands':['show clock','bad\\r']}, {'targets':[]},
+                                           {'targets':[{'node_id':'bulk_a'}]}, {'wait_seconds':6}):
+                                rejected = await session.call_tool('send_console_commands_to_nodes', {**bulk_args, **change})
+                                assert rejected.is_error
+                            bulk.assert_not_called()
+                            result = payload(await session.call_tool('send_console_commands_to_nodes', bulk_args))
+                            bulk.assert_called_once()
+                            assert bulk.call_args.kwargs['input'] == 'show clock\rshow version\r'
+                            assert result['input_status'] == 'sent', result
+                            assert [r['node_id'] for r in result['results']] == ['bulk_a','bulk_b']
+                            assert all('show clock' in r['output'] and 'show version' in r['output'] for r in result['results'])
+                        rejected = await session.call_tool('send_console_commands_to_nodes', bulk_args)
+                        assert rejected.is_error
+                        lab.stop_all()
+                        image.write_text(original_script)
                         lab.save({'name': 'Empty', 'nodes': [], 'links': []})
                     if not writable:
                         continue
@@ -378,16 +504,31 @@ async def main(args):
                     output = reply['output']
                     assert reply['capture_max_bytes'] == 1024
                     assert reply['capture_end'] == 'limit'
+                    assert reply['evidence']['tail_hint'] == 'incomplete'
+                    assert reply['command_completion'] == 'unverified'
+                    assert len(json.dumps(reply, ensure_ascii=True, indent=2)) < 8000
                     while reply['capture_end'] == 'limit':
                         reply = payload(await session.call_tool('get_console_output', {
                             'node_id': nodes[0]['id'], 'cursor': reply['cursor'], 'max_bytes': 65536, 'wait_seconds': .1}))
                         assert reply['omitted_bytes'] == 0
+                        assert reply['evidence']['scope'] == 'this_capture_only'
                         assert len(json.dumps(reply, ensure_ascii=True, indent=2)) < 8000
                         output += reply['output']
                     # Echo fixture prefixes every PTY read, which may split the
                     # maximum-size input into multiple transport packets.
                     assert output.startswith('RX:') and output.replace('RX:', '') == probe, (
                         'Console continuation lost or duplicated output', len(output), output[:30], output[-30:])
+                    escaped = payload(await session.call_tool('send_console_input', {
+                        'node_id': nodes[0]['id'], 'expected_revision': reply['revision'],
+                        'expected_cursor': reply['cursor'], 'input': '\x01' * 1024,
+                        'max_bytes': 1024, 'wait_seconds': .2}))
+                    assert len(json.dumps(escaped, ensure_ascii=True, indent=2)) <= 8000
+                    escaped_output = escaped['output']
+                    while escaped['capture_end'] == 'limit':
+                        escaped = payload(await session.call_tool('get_console_output', {
+                            'node_id': nodes[0]['id'], 'cursor': escaped['cursor'], 'wait_seconds': .1}))
+                        escaped_output += escaped['output']
+                    assert escaped_output.replace('RX:', '') == '\x01' * 1024
                     lab.stop_all()
                     proposal = payload(await session.call_tool('preview_topology', {
                         'topology': {'name': 'Compact apply', 'nodes': [fixture.node('replacement')], 'links': []},
@@ -415,6 +556,31 @@ async def main(args):
                         offsets = {arg: page['next_offsets'][key] if page['next_offsets'][key] is not None else page['totals'][key]
                                    for arg, key in [('route_offset', 'routes'), ('rule_offset', 'rules'), ('forward_offset', 'port_forwards')]}
                     assert found_rules == oversized['firewall']['rules'] and found_forwards == oversized['port_forwards']
+                    # Eight real PTYs plus heavily escaped output still fit the
+                    # compact result budget, preserving every per-node cursor.
+                    image = fixture.root / 'fake.bin'
+                    original_script = image.read_text()
+                    image.write_text(original_script.replace("b'BOOT READY\\r\\n'", "b'R# '").replace(
+                        "os.write(1, b'RX:' + data)", "os.write(1, b'\\x01' * 128 + b'\\r\\nR# ')") )
+                    lab.save({'name':'Compact bulk', 'nodes':[fixture.node('bulk_' + str(i)) for i in range(8)], 'links':[]})
+                    targets = []
+                    for node in lab.topology['nodes']:
+                        lab.start(node['id'])
+                        read = payload(await session.call_tool('get_console_output', {'node_id':node['id'], 'wait_seconds':.1}))
+                        targets.append({'node_id':node['id'], 'expected_cursor':read['cursor']})
+                    result = payload(await session.call_tool('send_console_commands_to_nodes', {
+                        'targets':targets, 'expected_revision':read['revision'], 'commands':['show version'], 'wait_seconds':.1}))
+                    assert result['input_status'] == 'sent', result
+                    assert len(result['results']) == 8
+                    assert result['capture_max_bytes_per_node'] == 64
+                    assert len(json.dumps(result, ensure_ascii=True, indent=2)) <= 8000
+                    for capture in result['results']:
+                        assert capture['capture_end'] == 'limit' and capture['bytes_read'] == 64
+                        remainder = payload(await session.call_tool('get_console_output', {
+                            'node_id':capture['node_id'], 'cursor':capture['cursor'], 'wait_seconds':.1}))
+                        assert capture['output'] + remainder['output'] == '\x01' * 128 + '\nR#'
+                    lab.stop_all()
+                    image.write_text(original_script)
         print('Compact state pagination preserves every node/link; console chunks roundtrip without loss; ordinary state unchanged.', flush=True)
     finally:
         fixture.tearDown()

@@ -3,6 +3,7 @@
 import argparse
 import json
 import re
+from typing import Annotated, Literal
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
@@ -10,16 +11,25 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
+from pydantic import BaseModel, ConfigDict, Field
 
 MAX_RESPONSE = 4 * 1024 * 1024
 COMPACT_CHARS = 8000
 COMPACT_CONSOLE_BYTES = 1024
+ConsoleWait = Annotated[float, Field(ge=0.1, le=30)]
+ConsoleBudget = Annotated[int, Field(ge=1, le=262144)]
+
+
+class ConsoleTarget(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    node_id: str
+    expected_cursor: str
 
 
 def command_input(command):
     """Validate a single command and append one actual Enter byte."""
     if not isinstance(command, str) or not command.strip():
-        raise ToolError('command must be a nonempty single line; use raw input for a bare Enter')
+        raise ToolError('command must be a nonempty single line; use send_console_key with key="enter" for a bare Enter')
     if any(ord(c) < 32 or 127 <= ord(c) < 160 or c in '\u2028\u2029' for c in command):
         raise ToolError('command must not contain line endings or control characters; Enter is appended automatically')
     if any(escape in command for escape in ('\\r', '\\n')):
@@ -32,6 +42,16 @@ def command_input(command):
     if size > 4095:
         raise ToolError('command must fit 4095 UTF-8 bytes plus one Enter byte')
     return command + '\r'
+
+
+def commands_input(commands):
+    """Validate the entire paste before sending any of it."""
+    if not isinstance(commands, list) or not 1 <= len(commands) <= 32:
+        raise ToolError('commands must contain 1–32 plain command strings')
+    value = ''.join(command_input(command) for command in commands)
+    if len(value.encode('utf-8')) > 4096:
+        raise ToolError('The entire batch, including Enter bytes, must fit 4096 UTF-8 bytes')
+    return value
 
 
 def compact_state(state, node_offset=0, link_offset=0, page_size=8):
@@ -130,7 +150,7 @@ class Client:
             raise ToolError(f'Weblab request failed: {exc}. Read state before retrying any write.') from exc
 
 
-def create_server(url, allow_write=False, allow_console_input=False, compact_responses=False, allow_internet_write=False):
+def create_server(url, allow_write=False, allow_console_input=False, compact_responses=False, allow_internet_write=False, allow_link_faults=False):
     client = Client(url)
     server = MCPServer('Weblab', instructions=(
         'Build original practice labs. First read get_lab_state, list_device_profiles and '
@@ -174,6 +194,50 @@ def create_server(url, allow_write=False, allow_console_input=False, compact_res
             """Read topology, revision and process status; does not establish guest readiness."""
             return client.request('/api/automation/state')
 
+    @server.tool(annotations=read)
+    def get_link_state(link_id: str) -> dict:
+        """Read one cable's named A/B endpoints, directional loss, carrier and support flags.
+
+        Discover exact link_id with get_lab_state. Read before EVERY fault change;
+        use the returned revision and link_revision, including after approval errors.
+        Carrier is requested state; pending/error fields do not prove guest detection
+        or protocol convergence. Diagram-only cables cannot carry traffic or faults.
+        """
+        return client.request('/api/automation/link-state', {'link_id': link_id})
+
+    if allow_link_faults:
+        fault = ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False)
+
+        @server.tool(annotations=fault)
+        def set_link_frame_loss(link_id: str, blocked_a_to_b: bool, blocked_b_to_a: bool,
+                                expected_revision: str, expected_link_revision: str) -> dict:
+            """Set both directional frame-block flags on exactly one cable, after a fresh get_link_state.
+
+            A/B refer to that read's named endpoints. True blocks ALL Ethernet frames
+            in that direction (including BPDUs); False/False clears frame loss only.
+            Carrier stays unchanged. Runtime-only; never changes guest configuration.
+            Obtain approval for this exact fault/clear, then read state and verify the
+            requested test using console evidence. Never blindly retry or clear other faults.
+            """
+            return client.request('/api/automation/link-frame-loss', dict(link_id=link_id,
+                blocked_a_to_b=blocked_a_to_b, blocked_b_to_a=blocked_b_to_a,
+                expected_revision=expected_revision, expected_link_revision=expected_link_revision))
+
+        @server.tool(annotations=fault)
+        def set_link_carrier(link_id: str, side: str, up: bool,
+                             expected_revision: str, expected_link_revision: str) -> dict:
+            """Request unplug (up=False) or reconnect (up=True) for one supported cable endpoint.
+
+            First get_link_state: side a/b identifies its named endpoint, and
+            carrier_supported_a/b must be true. Tested IOL profiles require prior
+            Inspector opt-in while stopped; this tool never enables it automatically.
+            Frame-block flags stay unchanged. A requested change is not a guest
+            acknowledgment: inspect pending/error and console/protocol evidence.
+            On an uncertain result, read/review before any new request; never retry blindly.
+            """
+            return client.request('/api/automation/link-carrier', dict(link_id=link_id, side=side, up=up,
+                expected_revision=expected_revision, expected_link_revision=expected_link_revision))
+
     def console_budget(max_bytes):
         if compact_responses:
             if type(max_bytes) is not int or not 1 <= max_bytes <= 262144:
@@ -187,6 +251,10 @@ def create_server(url, allow_write=False, allow_console_input=False, compact_res
             result['capture_budget_notice'] = ('Ollama compact mode caps each capture at 1024 raw bytes to protect '
                 'output and cursor metadata from downstream truncation. Follow cursors for complete output. '
                 'Omitted bytes in a latest read are older history, not a complete command result.')
+            if len(json.dumps(result, ensure_ascii=True, indent=2)) > COMPACT_CHARS and 'evidence' in result:
+                # Heuristic duplicates are expendable; captured bytes/cursors are not.
+                result['evidence'] = {'scope': 'this_capture_only', 'tail_hint': 'omitted_for_budget',
+                                      'notice': 'Inspect output; hints omitted to preserve the capture and cursor.'}
         return result
 
     @server.tool(annotations=read)
@@ -258,7 +326,7 @@ def create_server(url, allow_write=False, allow_console_input=False, compact_res
 
     @server.tool(annotations=read)
     def get_console_output(node_id: str, cursor: str | None = None,
-                           wait_seconds: float = 1, max_bytes: int = 65536,
+                           wait_seconds: ConsoleWait = 1, max_bytes: ConsoleBudget = 65536,
                            latest: bool = True) -> dict:
         """Observe retained/live console output without typing or acquiring an input lock.
 
@@ -272,6 +340,17 @@ def create_server(url, allow_write=False, allow_console_input=False, compact_res
         BEFORE sending input. Do not mistake old boot text for current boot status.
         wait_seconds is 0.1–30; max_bytes is 1–262144. Output is terminal text,
         not launcher logs or a command result. Inspect prompts and evidence yourself.
+        evidence contains bounded capture-only tail/error hints, not live CLI state.
+        An old prompt before a later expiry/pager/login message is not current.
+        no_new_output is not command completion. Unknown hints need inspection.
+        For requested console work with only idle boot/syslog text and no prompt,
+        use send_console_key(key="enter") once, then read again, after checking
+        there is no known pending input, question, pager or active command.
+        If an empty prompt is already present, send the intended command directly:
+        do not insert Enter between the fresh read and that command.
+        In the Agent window, unread_cursor identifies skipped output from an earlier
+        limited capture. Read from unread_cursor before further input; latest
+        excerpts cannot substitute for collecting the missing bytes.
         lock_owned_by_session=true means the authenticated Agent may send approved
         input through its own login's lock; it does not need the user to release
         that lock. Other logins' locks remain protected. The owner can explicitly
@@ -283,15 +362,75 @@ def create_server(url, allow_write=False, allow_console_input=False, compact_res
 
     if allow_console_input:
         @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=True))
+        def send_console_commands_to_nodes(targets: Annotated[list[ConsoleTarget], Field(min_length=1, max_length=8)],
+                                          commands: list[str], expected_revision: str,
+                                          wait_seconds: Annotated[float, Field(ge=0.1, le=5)] = 1,
+                                          max_bytes: ConsoleBudget = 65536) -> dict:
+            """Paste the same 1–32 commands into 1–8 explicitly selected consoles.
+
+            FIRST get_console_output for EVERY target, drain incomplete/unread
+            output, inspect its empty top-level prompt, and put that node's exact
+            cursor into targets=[{node_id, expected_cursor}, ...]. All reads must
+            share expected_revision. Prepare missing prompts individually, never
+            broadcast Enter/enable/login blindly. Separate PCs, vendors and
+            privilege levels: all targets must have the SAME family and mode.
+            Recognizes stock Cisco/FRR/EOS EXEC, Junos operational, EXOS/LL2S EXEC
+            and Alpine shell prompts; configuration/custom/unknown prompts are
+            refused. If unsure about CLI context, use individual commands.
+
+            Same 4096-byte/plain-command limits as send_console_commands. One
+            exact approval/YOLO action; checks every target's prompt/cursor/lock
+            before the first paste. A later change can cause partial delivery.
+            Inspect EACH result's input_status; never retry the whole batch.
+            No intermediate command checks, automatic retries or rollback.
+            Use only predictable non-interactive commands: passwords, pagers,
+            confirmations and enable with unknown authentication need separate
+            handling. Delivery is not execution. Read every target again before
+            further input. wait_seconds is 0.1–5 PER NODE; max_bytes is a TOTAL
+            output budget divided across nodes (at least one byte each). Follow
+            each limited result's cursor/unread_cursor to collect remaining output.
+            """
+            budget = min(max_bytes, 512) if compact_responses else max_bytes
+            return client.request('/api/automation/console-send-bulk', {
+                'targets': [target.model_dump() for target in targets], 'input': commands_input(commands),
+                'expected_revision': expected_revision, 'wait_seconds': wait_seconds, 'max_bytes': budget})
+
+        @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=True))
+        def send_console_commands(node_id: str, commands: list[str], expected_revision: str,
+                                  expected_cursor: str, wait_seconds: ConsoleWait = 1,
+                                  max_bytes: ConsoleBudget = 65536) -> dict:
+            """Paste 1–32 authorized CLI commands into ONE node, with Enter after each.
+
+            Pass plain nonempty strings, without line endings, control characters
+            or literal backslash-r/backslash-n. The entire paste must fit 4096
+            UTF-8 bytes. Read the console first; use its exact revision/cursor
+            and an empty prompt in the intended mode. Same permission, exact
+            approval/YOLO, expiry and human locks as single-command input.
+            One batch is one approval and one paste, NOT a command-by-command
+            executor: no intermediate waits, error checks, rollback or retries.
+            Use only predictable non-interactive sequences. Keep login, passwords,
+            confirmations, pagers and commands needing inspection separate.
+            ["enable", "terminal length 0"] is appropriate only when enable is
+            known not to ask for a password; otherwise send enable separately.
+            Later lines may run after an earlier error. Inspect all output and
+            the final prompt. Delivery/timeout does not prove execution. Read
+            again before any further input; never blindly replay an uncertain batch.
+            """
+            return console_result(client.request('/api/automation/console-send', {
+                'node_id': node_id, 'input': commands_input(commands), 'expected_revision': expected_revision,
+                'expected_cursor': expected_cursor, 'wait_seconds': wait_seconds,
+                'max_bytes': console_budget(max_bytes)}), max_bytes)
+
+        @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=True))
         def send_console_command(node_id: str, command: str, expected_revision: str,
-                                 expected_cursor: str, wait_seconds: float = 1,
-                                 max_bytes: int = 65536) -> dict:
+                                 expected_cursor: str, wait_seconds: ConsoleWait = 1,
+                                 max_bytes: ConsoleBudget = 65536) -> dict:
             """Submit ONE authorized CLI command; the server appends Enter automatically.
 
             Prefer this tool for ordinary commands, e.g. command="show clock".
             Do not include Enter escapes, line endings or control keys. Maximum
-            4095 UTF-8 bytes. Use send_console_input for bare Enter, pager keys,
-            control keys or intentional literal escape text. Never use this to
+            4095 UTF-8 bytes. Use send_console_key for Enter, pager space or supported
+            control keys; send_console_input for other literal input. Never use this to
             append to an unfinished line: first inspect a fresh get_console_output
             and establish an empty input line at the appropriate CLI prompt.
             Use that read's exact revision/cursor. Same console-input permission,
@@ -299,6 +438,8 @@ def create_server(url, allow_write=False, allow_console_input=False, compact_res
             input. It may change configuration; it is not a read-only filter.
             A sent result or timeout is NOT execution or success. Read subsequent
             output with the cursor and verify the result before the next command.
+            command_completion remains unverified even if a prompt is visible;
+            inspect evidence.error_lines and the actual device response.
             No automatic enable, login, pager handling, clearing or retry occurs.
             """
             return console_result(client.request('/api/automation/console-send', {
@@ -307,13 +448,41 @@ def create_server(url, allow_write=False, allow_console_input=False, compact_res
                 'max_bytes': console_budget(max_bytes)}), max_bytes)
 
         @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=True))
+        def send_console_key(node_id: str, key: Literal['enter', 'space', 'tab', 'ctrl_c', 'ctrl_u'],
+                             expected_revision: str, expected_cursor: str,
+                             wait_seconds: ConsoleWait = 1, max_bytes: ConsoleBudget = 65536) -> dict:
+            """Press ONE named console key, without encoding control characters.
+
+            key="enter" sends a real Enter. When authorized console work finds only
+            idle boot/syslog messages with no prompt, no known unfinished input and
+            no login/password/pager/confirmation question, press Enter once, then
+            read the console again. An earlier Press RETURN message can be followed
+            by later startup logs. Do not conclude it is still booting from old logs.
+            Do not blindly repeat keys or use Enter to submit unknown pending input.
+            space advances a known pager; tab completes input; ctrl_c interrupts;
+            ctrl_u clears a line on CLIs supporting it. Inspect the current state
+            and choose only the key appropriate to the user's requested work.
+            Requires a fresh get_console_output and its exact revision/cursor.
+            Same console-input permission, approval/YOLO and human locks as raw
+            input. No automatic retries or command-completion inference.
+            """
+            keys = {'enter': '\r', 'space': ' ', 'tab': '\t', 'ctrl_c': '\x03', 'ctrl_u': '\x15'}
+            if key not in keys:
+                raise ToolError('Unsupported console key; choose enter, space, tab, ctrl_c or ctrl_u')
+            return console_result(client.request('/api/automation/console-send', {
+                'node_id': node_id, 'input': keys[key], 'expected_revision': expected_revision,
+                'expected_cursor': expected_cursor, 'wait_seconds': wait_seconds,
+                'max_bytes': console_budget(max_bytes)}), max_bytes)
+
+        @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=True))
         def send_console_input(node_id: str, input: str, expected_revision: str,
-                               expected_cursor: str, wait_seconds: float = 1,
-                               max_bytes: int = 65536) -> dict:
+                               expected_cursor: str, wait_seconds: ConsoleWait = 1,
+                               max_bytes: ConsoleBudget = 65536) -> dict:
             """Send explicitly authorized input to a shared device CLI, then collect output.
 
             Prefer send_console_command for ordinary commands with automatic Enter.
-            This raw tool is for bare Enter, control/pager keys and partial input.
+            Prefer send_console_key for Enter and supported control/pager keys.
+            This raw tool is for other keys, literal text and partial input.
             Requires a recent get_console_output revision and cursor. Refuses changed
             history or another station's lock. Input is raw text (1–4096 UTF-8 bytes):
             include \\r to press Enter; no newline is appended. Control characters work
@@ -436,10 +605,11 @@ def main():
     parser.add_argument('--allow-write', action='store_true', help='Expose apply/start tools; keep client approval enabled')
     parser.add_argument('--allow-internet-write', action='store_true', help='Expose Internet settings apply and gateway-only stop/start tools')
     parser.add_argument('--allow-console-input', action='store_true', help='Expose shared-console input separately from topology writes')
+    parser.add_argument('--allow-link-faults', action='store_true', help='Expose guarded directional frame blocking and cable unplug/reconnect')
     parser.add_argument('--compact-responses', action='store_true', help='Paginate discovery and cap console chunks for local-model output budgets')
     args = parser.parse_args()
     create_server(args.url, args.allow_write, args.allow_console_input, args.compact_responses,
-                  args.allow_internet_write).run(transport='stdio')
+                  args.allow_internet_write, args.allow_link_faults).run(transport='stdio')
 
 
 if __name__ == '__main__':
