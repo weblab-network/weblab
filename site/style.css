@@ -131,6 +131,7 @@ figcaption > span { color: var(--accent); margin-right: 18px; }
 .agent-usage-feature > p { font-size: 14px; color: var(--muted); margin-top: 12px; }
 .agent-usage-feature .workspace-shot { margin-top: 18px; }
 .agent-usage-feature > .text-link { margin-top: 15px; }
+.failure-test-shot { max-width: 760px; }
 .access-layout { display: grid; grid-template-columns: 1.7fr 1fr; gap: 40px; }
 .table-wrap { min-width: 0; overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; text-align: left; font-size: 14px; }

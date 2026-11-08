@@ -142,3 +142,13 @@ kept unchanged: the full topology, consoles and packet decoding are real lab
 output. Scale it through CSS and preserve the full-size image link. The sandbox
 has FRR/LL2S/PC exercises; external SSH access, Agent and Internet access require
 a separate installation.
+
+## Agent failure test and ARM64
+
+`/#agent-failure-tests` shows the approved MSTP cable-fault exercise in a compact
+preview linking to the unchanged full-size `assets/agent-mstp-failover.png`.
+Keep the measured result separate from convergence-time claims: all 12 directed
+PC checks passed after failover and restoration, while the transition probe lost
+10 of 40 packets. This is a self-hosted Agent example, unavailable in the public
+sandbox. The installation section links to the native ARM64 source profile and
+states its initial scope; prebuilt release images and the installer remain amd64.

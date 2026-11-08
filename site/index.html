@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f5f4ef">
   <title>Weblab.Network — A workbench for network engineering</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css?v=c58b79c0fbf6">
+  <link rel="stylesheet" href="style.css?v=4a43da77b6f7">
   <script src="page.js?v=286240326c71" defer></script>
 </head>
 <body>
@@ -38,7 +38,7 @@
           <figcaption><strong>Real multi-vendor test topology.</strong><span class="snapshot-families">Cisco · Juniper · Extreme · Arista · FRR · Alpine</span><a class="text-link" href="assets/multi-vendor.png" target="_blank" rel="noopener">View full size ↗</a></figcaption>
         </figure>
       </div>
-      <div class="release-strip"><a href="https://github.com/weblab-network/weblab/releases/tag/v0.12.0"><strong>v0.12.0</strong> SSH access, pop-out windows and PDF exercises <span aria-hidden="true">↗</span></a><span>Runs locally · Opens in your browser</span></div>
+      <div class="release-strip"><a href="https://github.com/weblab-network/weblab/releases/tag/v0.13.1"><strong>v0.13.1</strong> Agent failure tests, bulk console commands and ARM64 builds <span aria-hidden="true">↗</span></a><span>Runs locally · Opens in your browser</span></div>
       <figure class="workspace-shot hero-shot">
         <div class="shot-bar"><span>WEBLAB / WORKSPACE</span><span>TOPOLOGY · CONSOLES · AGENT</span></div>
         <a href="assets/weblab-agent-create-exercise.png" target="_blank" rel="noopener" aria-label="Inspect full size: practice-lab workspace, opens in a new tab"><img src="assets/weblab-agent-create-exercise.png" width="1920" height="1200" alt="Agent-created practice lab with FRR routers, LL2S switches, Linux PCs, live consoles and OSPF/RSTP student tasks." fetchpriority="high"><span class="image-hint">Inspect full size ↗</span></a>
@@ -152,6 +152,17 @@
           </details>
           <a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Agent-window#allowance-and-token-usage">Understand allowance and token counts ↗</a>
         </div>
+        <section id="agent-failure-tests" class="agent-usage-feature" aria-labelledby="failure-tests-title">
+          <p class="eyebrow">FAILURE SCENARIOS / NEW IN v0.13.1</p>
+          <h3 id="failure-tests-title">Let the Agent test failure and recovery.</h3>
+          <p>With your permission, the Agent can apply directional frame loss or unplug a supported link, inspect the device response, restore the connection and verify recovery. Link faults have a separate permission, off by default; each action needs approval unless you explicitly enable session YOLO for it.</p>
+          <figure class="workspace-shot failure-test-shot">
+            <a href="assets/agent-mstp-failover.png" target="_blank" rel="noopener" aria-label="Open full-size Agent MSTP failure test in a new tab"><img src="assets/agent-mstp-failover.png" width="1920" height="1080" loading="lazy" alt="Five-switch MSTP topology and four PCs beside the Agent's cable-failure report, a switch spanning-tree console and successful PC pings"><span class="image-hint">Inspect full size ↗</span></a>
+            <figcaption>Real MSTP exercise: SW4 rerouted through SW5 after the SW2–SW4 cable fault. All 12 directed PC connectivity checks passed after failover and after restoration. The transition probe lost 10 of 40 packets; exact convergence time was not measured.</figcaption>
+          </figure>
+          <p>This example uses the optional Agent in a self-hosted installation. Agent access is unavailable in the public sandbox.</p>
+          <a class="text-link" href="https://github.com/weblab-network/weblab/releases/tag/v0.13.1">Read the v0.13.1 release notes ↗</a>
+        </section>
         <a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Agent-window">Agent installation, permissions and history ↗</a>
     </section>
 
@@ -231,9 +242,10 @@
     <section id="start" class="container chapter start-section" aria-labelledby="start-title">
       <div class="section-heading"><p class="eyebrow">05 / INSTALLATION</p><h2 id="start-title">Put a lab on your host.</h2><p>Start with containers for routing and switching, or bring supported vendor images. Weblab runs the devices on your machine and the workspace in your browser.</p></div>
       <div class="installation-layout">
-        <div class="host-spec"><p class="eyebrow">HOST REQUIREMENTS</p><dl><div><dt>Platform</dt><dd>x86-64 Linux host or VM</dd></div><div><dt>Runtime</dt><dd>Rootful Docker + Compose</dd></div><div><dt>Virtual devices</dt><dd>KVM for QEMU profiles; vJunos-switch requires bare-metal Intel</dd></div><div><dt>Optional</dt><dd>Agent companion · authentication</dd></div></dl><a class="button primary" href="https://github.com/weblab-network/weblab/wiki/Installation">Open installation guide <span aria-hidden="true">↗</span></a></div>
+        <div class="host-spec"><p class="eyebrow">HOST REQUIREMENTS</p><dl><div><dt>Platform</dt><dd>x86-64 Linux for the full device set; ARM64 for native FRR, LL2S and PCs</dd></div><div><dt>Runtime</dt><dd>Rootful Docker + Compose</dd></div><div><dt>Virtual devices</dt><dd>KVM for QEMU profiles; vJunos-switch requires bare-metal Intel</dd></div><div><dt>Optional</dt><dd>Agent companion · authentication</dd></div></dl><a class="button primary" href="https://github.com/weblab-network/weblab/wiki/Installation">Open installation guide <span aria-hidden="true">↗</span></a></div>
         <ol class="steps"><li><span>01</span><div><h3>Install the workspace</h3><p>Follow the guide for host permissions, persistent storage and remote access. The Agent is a separate Compose option.</p></div></li><li><span>02</span><div><h3>Choose your devices</h3><p>Use Weblab FRR routers with LLDP, read-only SNMP, VLAN routing and IPv4 VRRP alongside LL2S switches and Alpine PCs, without KVM. Supported vendor images and licenses are user-supplied.</p><a class="text-link" href="https://github.com/weblab-network/weblab/wiki/Device-profiles">Device profiles ↗</a></div></li><li><span>03</span><div><h3>Run an exercise</h3><p>Build a topology or import an example. Check device state from the consoles, and save configurations before stopping.</p><a class="text-link" href="https://github.com/weblab-network/weblab/blob/main/examples/frr-ospf.md">Start with FRR OSPF ↗</a></div></li></ol>
       </div>
+      <p class="deployment-note"><strong>New: Linux ARM64 source profile.</strong> Build the core, custom FRR with LLDP/SNMP/VLAN/VRRP and LL2S natively, then add Alpine PCs. No KVM or x86 emulation is needed. The installer and prebuilt release images remain amd64; vendor guests, Agent, Internet and external SSH helpers are outside this initial ARM profile. <a class="text-link" href="https://github.com/weblab-network/weblab/wiki/ARM64-container-labs">ARM64 setup and example lab ↗</a></p>
       <div class="device-index"><span>SUPPORTED FAMILIES</span><p>Cisco IOL / IOSv · Arista vEOS · Virtual EXOS · Juniper vJunos · FRRouting · LL2S · Alpine</p></div>
       <div class="install-command"><div><span class="eyebrow">SOURCE / MIT LICENSE</span><code id="clone-command">git clone https://github.com/weblab-network/weblab.git</code></div><button type="button" id="copy-command" hidden>Copy command</button></div><p id="copy-status" role="status" aria-live="polite"></p>
       <p class="deployment-note">For your host or a trusted group. Review the installation guide before allowing remote access. Vendor images and required licenses are user-supplied, except for the separately documented optional EXOS sample distribution.</p>
